@@ -4,6 +4,7 @@ import json
 from typing import TypeVar, Type, Optional, Any
 from pydantic import BaseModel
 from utils.progress import progress
+from llm.models import ModelProvider
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -37,7 +38,7 @@ def call_llm(
     llm = get_model(model_name, model_provider)
     
     # For non-Deepseek models, we can use structured output
-    if not (model_info and model_info.is_deepseek()):
+    if model_provider not in [ModelProvider.OLLAMA] and not (model_info and model_info.is_deepseek()):
         llm = llm.with_structured_output(
             pydantic_model,
             method="json_mode",
@@ -54,6 +55,13 @@ def call_llm(
                 parsed_result = extract_json_from_deepseek_response(result.content)
                 if parsed_result:
                     return pydantic_model(**parsed_result)
+                
+            # Ollama: manual JSON extraction (assuming same formatting)
+            elif model_provider == ModelProvider.OLLAMA:
+                parsed_result = extract_json_from_ollama_response(result.content)
+                if parsed_result:
+                    return pydantic_model(**parsed_result)
+                
             else:
                 return result
                 
@@ -104,4 +112,26 @@ def extract_json_from_deepseek_response(content: str) -> Optional[dict]:
                 return json.loads(json_text)
     except Exception as e:
         print(f"Error extracting JSON from Deepseek response: {e}")
+    return None
+
+def extract_json_from_ollama_response(content: str) -> Optional[dict]:
+    """Extract JSON from Ollama's response, handling cases where JSON is not formatted inside code blocks."""
+    try:
+        # First, try loading raw JSON if it's returned as plain text
+        return json.loads(content.strip())
+    except json.JSONDecodeError:
+        pass  # If this fails, proceed to extract from markdown
+
+    try:
+        # If JSON is wrapped inside markdown ```json ... ```
+        json_start = content.find("```json")
+        if json_start != -1:
+            json_text = content[json_start + 7:]
+            json_end = json_text.find("```")
+            if json_end != -1:
+                json_text = json_text[:json_end].strip()
+            return json.loads(json_text)
+    except Exception as e:
+        print(f"Error extracting JSON from Ollama response: {e}")
+
     return None

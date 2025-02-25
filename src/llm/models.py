@@ -5,6 +5,9 @@ from langchain_openai import ChatOpenAI
 from enum import Enum
 from pydantic import BaseModel
 from typing import Tuple
+from langchain_ollama import ChatOllama
+
+
 
 
 class ModelProvider(str, Enum):
@@ -12,6 +15,7 @@ class ModelProvider(str, Enum):
     OPENAI = "OpenAI"
     GROQ = "Groq"
     ANTHROPIC = "Anthropic"
+    OLLAMA = "Ollama"
 
 
 class LLMModel(BaseModel):
@@ -31,6 +35,16 @@ class LLMModel(BaseModel):
 
 # Define available models
 AVAILABLE_MODELS = [
+    LLMModel(
+        display_name="[ollama] tinyllama (1.1B)",
+        model_name="tinyllama",
+        provider=ModelProvider.OLLAMA
+    ),
+    LLMModel(
+        display_name="[ollama] deepseek 1.5b",
+        model_name="deepseek-r1:1.5b",
+        provider=ModelProvider.OLLAMA
+    ),
     LLMModel(
         display_name="[anthropic] claude-3.5-haiku",
         model_name="claude-3-5-haiku-latest",
@@ -107,3 +121,5 @@ def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | Ch
             print(f"API Key Error: Please make sure ANTHROPIC_API_KEY is set in your .env file.")
             raise ValueError("Anthropic API key not found.  Please make sure ANTHROPIC_API_KEY is set in your .env file.")
         return ChatAnthropic(model=model_name, api_key=api_key)
+    elif model_provider == ModelProvider.OLLAMA:
+        return ChatOllama(model=model_name, base_url="http://localhost:11434")

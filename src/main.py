@@ -25,6 +25,8 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from tabulate import tabulate
 from utils.visualize import save_graph_as_png
+import time
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -274,6 +276,9 @@ if __name__ == "__main__":
         }
     }
 
+    # Start the timer after LLM and analysts are selected
+    start_time = time.time()
+
     # Run the hedge fund
     result = run_hedge_fund(
         tickers=tickers,
@@ -285,4 +290,13 @@ if __name__ == "__main__":
         model_name=model_choice,
         model_provider=model_provider,
     )
+
+    # Stop timer after execution
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    hours, remainder = divmod(elapsed_time, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
     print_trading_output(result)
+
+    print(f"\n⏱ Total elapsed time: {int(hours)}h {int(minutes)}m {seconds:.2f}s.")
