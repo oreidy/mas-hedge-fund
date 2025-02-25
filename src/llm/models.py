@@ -66,8 +66,28 @@ AVAILABLE_MODELS = [
         provider=ModelProvider.GROQ
     ),
     LLMModel(
-        display_name="[groq] llama-3.3 70b",
+        display_name="[groq] llama-3.3-70b-versatile",
         model_name="llama-3.3-70b-versatile",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] Llama-3.3-70b-specdec",
+        model_name="llama-3.3-70b-specdec",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] Mixtral-8x7b-32768",
+        model_name="mixtral-8x7b-32768",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] Llama-3.1-8b-instant",
+        model_name="llama-3.1-8b-instant",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] Gemma2-9b-it",
+        model_name="gemma2-9b-it",
         provider=ModelProvider.GROQ
     ),
     LLMModel(

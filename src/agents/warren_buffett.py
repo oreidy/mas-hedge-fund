@@ -87,12 +87,9 @@ def warren_buffett_agent(state: AgentState):
         analysis_data[ticker] = {
             "signal": signal,
             "score": total_score,
-            "max_score": max_possible_score,
-            "fundamental_analysis": fundamental_analysis,
-            "consistency_analysis": consistency_analysis,
-            "intrinsic_value_analysis": intrinsic_value_analysis,
-            "market_cap": market_cap,
             "margin_of_safety": margin_of_safety,
+            "fundamental_summary": fundamental_analysis["details"],  
+            "consistency_summary": consistency_analysis["details"],  
         }
 
         progress.update_status("warren_buffett_agent", ticker, "Generating Buffett analysis")
