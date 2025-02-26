@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+
+
 import sys
 
 from datetime import datetime, timedelta
@@ -22,6 +25,7 @@ from tools.api import (
 )
 from utils.display import print_backtest_results, format_backtest_row
 from typing_extensions import Callable
+import time
 
 init(autoreset=True)
 
@@ -557,7 +561,7 @@ class Backtester:
         plt.ylabel("Portfolio Value ($)")
         plt.xlabel("Date")
         plt.grid(True)
-        plt.show()
+        plt.show(block=False)
 
         # Compute daily returns
         performance_df["Daily Return"] = performance_df["Portfolio Value"].pct_change().fillna(0)
@@ -706,6 +710,7 @@ if __name__ == "__main__":
             model_provider = "Unknown"
             print(f"\nSelected model: {Fore.GREEN + Style.BRIGHT}{model_choice}{Style.RESET_ALL}\n")
 
+    
     # Create and run the backtester
     backtester = Backtester(
         agent=run_hedge_fund,
@@ -719,5 +724,16 @@ if __name__ == "__main__":
         initial_margin_requirement=args.margin_requirement,
     )
 
+    # Start the timer after LLM and analysts are selected
+    start_time = time.time()
+
     performance_metrics = backtester.run_backtest()
     performance_df = backtester.analyze_performance()
+
+    # Stop timer after execution
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    hours, remainder = divmod(elapsed_time, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    print(f"\n⏱ Total elapsed time: {int(hours)}h {int(minutes)}m {seconds:.2f}s.")
