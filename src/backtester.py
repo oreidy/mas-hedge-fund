@@ -377,7 +377,7 @@ class Backtester:
                 executed_trades[ticker] = executed_quantity
 
             # ---------------------------------------------------------------
-            # 2) Now that trades have executed trades, recalculate the final
+            # 2) Now that trades have been executed, recalculate the final
             #    portfolio value for this day.
             # ---------------------------------------------------------------
             total_value = self.calculate_portfolio_value(current_prices)

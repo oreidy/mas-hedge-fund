@@ -165,6 +165,7 @@ def print_backtest_results(table_rows: list) -> None:
             ticker_rows,
             headers=[
                 "Date",
+                "Time",
                 "Ticker",
                 "Action",
                 "Quantity",
@@ -178,6 +179,7 @@ def print_backtest_results(table_rows: list) -> None:
             tablefmt="grid",
             colalign=(
                 "left",  # Date
+                "left",  # Time
                 "left",  # Ticker
                 "center",  # Action
                 "right",  # Quantity
@@ -229,6 +231,7 @@ def format_backtest_row(
         return_color = Fore.GREEN if return_pct >= 0 else Fore.RED
         return [
             date,
+            
             f"{Fore.WHITE}{Style.BRIGHT}PORTFOLIO SUMMARY{Style.RESET_ALL}",
             "",  # Action
             "",  # Quantity
@@ -243,8 +246,10 @@ def format_backtest_row(
             f"{Fore.RED}{max_drawdown:.2f}%{Style.RESET_ALL}" if max_drawdown is not None else "",  # Max Drawdown
         ]
     else:
+        time_str = date.split(" ")[1] if " " in date else "00:00:00"
         return [
             date,
+            time_str,
             f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
             f"{action_color}{action.upper()}{Style.RESET_ALL}",
             f"{action_color}{quantity:,.0f}{Style.RESET_ALL}",
