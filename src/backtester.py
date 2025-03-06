@@ -574,7 +574,7 @@ class Backtester:
             annualized_sharpe = np.sqrt(252) * ((mean_daily_return - daily_rf) / std_daily_return)
         else:
             annualized_sharpe = 0
-        print(f"\nSharpe Ratio: {Fore.YELLOW}{annualized_sharpe:.2f}{Style.RESET_ALL}")
+        print(f"\nAnnualized Sharpe Ratio: {Fore.YELLOW}{annualized_sharpe:.2f}{Style.RESET_ALL}")
 
         # Max Drawdown
         rolling_max = performance_df["Portfolio Value"].cummax()
