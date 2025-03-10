@@ -27,8 +27,65 @@ from data.models import (
 from market_calendar import is_trading_day, adjust_date_range
 from sec_edgar_scraper import fetch_insider_trades_for_ticker, fetch_multiple_insider_trades
 
+# ===== CACHE INITIALIZATION =====
 # Create a global cache instance with disk persistence
 _cache = DiskCache(cache_dir=Path("./cache"))
+
+
+# ===== PRICE FUNCTIONS =====
+def get_prices(ticker: str, start_date: str, end_date: str) -> List[Price]:
+    """
+    Fetch price data for a single ticker.
+    This is the main public API that maintains compatibility with the original function.
+    
+    Args:
+        ticker: Stock ticker symbol
+        start_date: Start date string (YYYY-MM-DD)
+        end_date: End date string (YYYY-MM-DD)
+        
+    Returns:
+        List of Price objects
+    """
+
+    # Ensure dates are strings
+    start_date = str(start_date) if not isinstance(start_date, str) else start_date
+    end_date = str(end_date) if not isinstance(end_date, str) else end_date
+
+    # Check if dates are trading days and adjust if needed
+    try:
+        if not is_trading_day(start_date) or not is_trading_day(end_date):
+            adjusted_start, adjusted_end = adjust_date_range(start_date, end_date)
+            print(f"Adjusting date range for {ticker}: {start_date}-{end_date} -> {adjusted_start}-{adjusted_end}")
+            start_date, end_date = adjusted_start, adjusted_end
+    except ValueError as e:
+        print(f"Warning: {e} - continuing with original dates")
+
+    # Run the async function in a new event loop
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        results = loop.run_until_complete(get_prices_async([ticker], start_date, end_date))
+        return results.get(ticker, [])
+    finally:
+        loop.close()
+
+
+async def get_prices_async(tickers: List[str], start_date: str, end_date: str) -> Dict[str, List[Price]]:
+    """Fetch prices for multiple tickers asynchronously"""
+
+    # Ensure dates are strings
+    start_date = str(start_date) if not isinstance(start_date, str) else start_date
+    end_date = str(end_date) if not isinstance(end_date, str) else end_date
+
+    # Check if dates need adjustment for trading days
+    if not is_trading_day(start_date) or not is_trading_day(end_date):
+        try:
+            start_date, end_date = adjust_date_range(start_date, end_date)
+        except ValueError as e:
+            print(f"Warning: {e} - continuing with original dates")
+
+    df_results = await fetch_prices_batch(tickers, start_date, end_date)
+    return {ticker: df_to_price_objects(df) for ticker, df in df_results.items()}
 
 
 async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
@@ -100,12 +157,21 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
         print(f"Error fetching batch price data: {e}")
         return cached_results
 
+
+def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """Get price data as DataFrame. Same as original function."""
+    prices = get_prices(ticker, start_date, end_date)
+    return prices_to_df(prices)
+
+
+# ===== DATA CONVERSION UTILITIES =====
 def df_to_cache_format(df: pd.DataFrame) -> List[Dict]:
     """Convert DataFrame to a format suitable for caching"""
     df = df.reset_index()
     df['time'] = df['Date'].dt.strftime('%Y-%m-%d')
     result = df.to_dict('records')
     return result
+
 
 def df_to_price_objects(df: pd.DataFrame) -> List[Price]:
     """Convert DataFrame to a list of Price objects"""
@@ -121,6 +187,50 @@ def df_to_price_objects(df: pd.DataFrame) -> List[Price]:
         )
         prices.append(price)
     return prices
+
+
+def prices_to_df(prices: List[Price]) -> pd.DataFrame:
+    """Convert prices to a DataFrame. Same as original function."""
+    df = pd.DataFrame([p.model_dump() for p in prices])
+    df["Date"] = pd.to_datetime(df["time"])
+    df.set_index("Date", inplace=True)
+    numeric_cols = ["open", "close", "high", "low", "volume"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df.sort_index(inplace=True)
+    return df
+
+
+# ===== FINANCIAL METRICS FUNTIONS =====
+def get_financial_metrics(
+    ticker: str,
+    end_date: str,
+    period: str = "ttm",
+    limit: int = 10,
+) -> List[FinancialMetrics]:
+    """
+    Fetch financial metrics for a single ticker.
+    Maintains compatibility with the original function.
+    
+    Args:
+        ticker: Stock ticker symbol
+        end_date: End date string (YYYY-MM-DD)
+        period: Period type ("ttm", "annual", etc.)
+        limit: Maximum number of periods to return
+        
+    Returns:
+        List of FinancialMetrics objects
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        results = loop.run_until_complete(fetch_financial_metrics_async([ticker], end_date, period, limit))
+        return results.get(ticker, [])
+    except Exception as e:
+        print(f"Error fetching prices for {ticker} between {start_date} and {end_date}: {e}")
+    finally:
+        loop.close()
+
 
 async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "ttm", limit: int = 10):
     """Fetch financial metrics for multiple tickers in parallel"""
@@ -246,6 +356,29 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
     # Convert results to dictionary
     return {ticker: metrics for ticker, metrics in results}
 
+
+# ===== MARKET CAP FUNTIONS =====
+def get_market_cap(
+    ticker: str,
+    end_date: str,
+) -> float:
+    """Fetch market cap for a ticker at a specific date"""
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Try using info first (current market cap, not historical)
+        market_cap = ticker_obj.info.get('marketCap')
+        
+        # If we need a historical market cap, calculate it
+        if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
+            market_cap = get_historical_market_cap(ticker, end_date)
+        
+        return market_cap
+    except Exception as e:
+        print(f"Error fetching market cap for {ticker}: {e}")
+        return None
+
+
 def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
     """Get historical market cap for a ticker at a specific date"""
     try:
@@ -270,7 +403,26 @@ def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
         print(f"Error calculating historical market cap for {ticker} at {date}: {e}")
         return None
 
+
 # ===== INSIDER TRADES FROM SEC EDGAR =====
+def get_insider_trades(
+    ticker: str,
+    end_date: str,
+    start_date: str = None,
+    limit: int = 1000,
+) -> List[InsiderTrade]:
+    """
+    Fetch insider trades for a single ticker.
+    Maintains compatibility with the original function.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        results = loop.run_until_complete(get_insider_trades_async([ticker], end_date, start_date))
+        return results.get(ticker, [])[:limit]
+    finally:
+        loop.close()
+
 
 async def get_insider_trades_async(tickers: List[str], end_date: str, start_date: str = None) -> Dict[str, List[InsiderTrade]]:
     """
@@ -326,6 +478,26 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
                 results[ticker] = []
     
     return results
+
+
+# ===== COMPANY NEWS =====
+def get_company_news(
+    ticker: str,
+    end_date: str,
+    start_date: str = None,
+    limit: int = 1000,
+) -> List[CompanyNews]:
+    """
+    Fetch company news for a single ticker.
+    Maintains compatibility with the original function.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        results = loop.run_until_complete(get_company_news_async([ticker], end_date, start_date))
+        return results.get(ticker, [])[:limit]
+    finally:
+        loop.close()
 
 
 async def get_company_news_async(tickers: List[str], end_date: str, start_date: str = None) -> Dict[str, List[CompanyNews]]:
@@ -401,92 +573,7 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
     return results
 
 
-# ===== PUBLIC API FUNCTIONS =====
-
-async def get_prices_async(tickers: List[str], start_date: str, end_date: str) -> Dict[str, List[Price]]:
-    """Fetch prices for multiple tickers asynchronously"""
-
-    # Ensure dates are strings
-    start_date = str(start_date) if not isinstance(start_date, str) else start_date
-    end_date = str(end_date) if not isinstance(end_date, str) else end_date
-
-    # Check if dates need adjustment for trading days
-    if not is_trading_day(start_date) or not is_trading_day(end_date):
-        try:
-            start_date, end_date = adjust_date_range(start_date, end_date)
-        except ValueError as e:
-            print(f"Warning: {e} - continuing with original dates")
-
-    df_results = await fetch_prices_batch(tickers, start_date, end_date)
-    return {ticker: df_to_price_objects(df) for ticker, df in df_results.items()}
-
-def get_prices(ticker: str, start_date: str, end_date: str) -> List[Price]:
-    """
-    Fetch price data for a single ticker.
-    This is the main public API that maintains compatibility with the original function.
-    
-    Args:
-        ticker: Stock ticker symbol
-        start_date: Start date string (YYYY-MM-DD)
-        end_date: End date string (YYYY-MM-DD)
-        
-    Returns:
-        List of Price objects
-    """
-
-    # Ensure dates are strings
-    start_date = str(start_date) if not isinstance(start_date, str) else start_date
-    end_date = str(end_date) if not isinstance(end_date, str) else end_date
-
-    # Check if dates are trading days and adjust if needed
-    try:
-        if not is_trading_day(start_date) or not is_trading_day(end_date):
-            adjusted_start, adjusted_end = adjust_date_range(start_date, end_date)
-            print(f"Adjusting date range for {ticker}: {start_date}-{end_date} -> {adjusted_start}-{adjusted_end}")
-            start_date, end_date = adjusted_start, adjusted_end
-    except ValueError as e:
-        print(f"Warning: {e} - continuing with original dates")
-
-    # Run the async function in a new event loop
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(get_prices_async([ticker], start_date, end_date))
-        return results.get(ticker, [])
-    finally:
-        loop.close()
-
-
-
-def get_financial_metrics(
-    ticker: str,
-    end_date: str,
-    period: str = "ttm",
-    limit: int = 10,
-) -> List[FinancialMetrics]:
-    """
-    Fetch financial metrics for a single ticker.
-    Maintains compatibility with the original function.
-    
-    Args:
-        ticker: Stock ticker symbol
-        end_date: End date string (YYYY-MM-DD)
-        period: Period type ("ttm", "annual", etc.)
-        limit: Maximum number of periods to return
-        
-    Returns:
-        List of FinancialMetrics objects
-    """
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(fetch_financial_metrics_async([ticker], end_date, period, limit))
-        return results.get(ticker, [])
-    except Exception as e:
-        print(f"Error fetching prices for {ticker} between {start_date} and {end_date}: {e}")
-    finally:
-        loop.close()
-
+# ===== USELESS FUNCTIONS =====
 def search_line_items(
     ticker: str,
     line_items: list[str],
@@ -614,84 +701,12 @@ def search_line_items(
         print(f"Error searching line items for {ticker}: {e}")
         return []
 
-def get_insider_trades(
-    ticker: str,
-    end_date: str,
-    start_date: str = None,
-    limit: int = 1000,
-) -> List[InsiderTrade]:
-    """
-    Fetch insider trades for a single ticker.
-    Maintains compatibility with the original function.
-    """
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(get_insider_trades_async([ticker], end_date, start_date))
-        return results.get(ticker, [])[:limit]
-    finally:
-        loop.close()
 
-def get_company_news(
-    ticker: str,
-    end_date: str,
-    start_date: str = None,
-    limit: int = 1000,
-) -> List[CompanyNews]:
-    """
-    Fetch company news for a single ticker.
-    Maintains compatibility with the original function.
-    """
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(get_company_news_async([ticker], end_date, start_date))
-        return results.get(ticker, [])[:limit]
-    finally:
-        loop.close()
-
-def get_market_cap(
-    ticker: str,
-    end_date: str,
-) -> float:
-    """Fetch market cap for a ticker at a specific date"""
-    try:
-        ticker_obj = yf.Ticker(ticker)
-        
-        # Try using info first (current market cap, not historical)
-        market_cap = ticker_obj.info.get('marketCap')
-        
-        # If we need a historical market cap, calculate it
-        if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
-            market_cap = get_historical_market_cap(ticker, end_date)
-        
-        return market_cap
-    except Exception as e:
-        print(f"Error fetching market cap for {ticker}: {e}")
-        return None
-
-def prices_to_df(prices: List[Price]) -> pd.DataFrame:
-    """Convert prices to a DataFrame. Same as original function."""
-    df = pd.DataFrame([p.model_dump() for p in prices])
-    df["Date"] = pd.to_datetime(df["time"])
-    df.set_index("Date", inplace=True)
-    numeric_cols = ["open", "close", "high", "low", "volume"]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df.sort_index(inplace=True)
-    return df
-
-def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Get price data as DataFrame. Same as original function."""
-    prices = get_prices(ticker, start_date, end_date)
-    return prices_to_df(prices)
-
-# Batch version of get_price_data
 async def get_price_data_batch(tickers: List[str], start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
     """Get price data as DataFrames for multiple tickers in one batch request"""
     return await fetch_prices_batch(tickers, start_date, end_date)
 
-# Utility functions for parallel processing of multiple tickers
+
 def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, batch_size: int = 20):
     """
     Process multiple tickers efficiently with batching and parallel processing.
