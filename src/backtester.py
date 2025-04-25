@@ -22,7 +22,9 @@ from tools.api import (
     get_prices,
     get_financial_metrics,
     get_insider_trades,
+    get_data_for_tickers
 )
+from utils.market_calendar import is_trading_day, get_next_trading_day, get_previous_trading_day
 from utils.display import print_backtest_results, format_backtest_row
 from typing_extensions import Callable
 import time
@@ -42,6 +44,8 @@ class Backtester:
         model_provider: str = "OpenAI",
         selected_analysts: list[str] = [],
         initial_margin_requirement: float = 0.0,
+        debug_mode: bool = False,
+        verbose_data: bool = False,
     ):
         """
         :param agent: The trading agent (Callable).
@@ -53,6 +57,8 @@ class Backtester:
         :param model_provider: Which LLM provider (OpenAI, etc).
         :param selected_analysts: List of analyst names or IDs to incorporate.
         :param initial_margin_requirement: The margin ratio (e.g. 0.5 = 50%).
+        :param debug_mode: Whether to enable detailed debugging output.
+        :param verbose_data: Whether to show detailed data output.
         """
         self.agent = agent
         self.tickers = tickers
@@ -275,28 +281,78 @@ class Backtester:
         return total_value
 
     def prefetch_data(self):
+
+        from utils.logger import logger
+
         """Pre-fetch all data needed for the backtest period."""
         print("\nPre-fetching data for the entire backtest period...")
 
-        # Convert end_date string to datetime, fetch up to 1 year before
+        logger.debug("prefetch_data() is runing", module="prefetch_data")
+
+        # Convert string dates to datetime objects
+        start_date_dt = datetime.strptime(self.start_date, "%Y-%m-%d")
         end_date_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
-        start_date_dt = end_date_dt - relativedelta(years=1)
-        start_date_str = start_date_dt.strftime("%Y-%m-%d")
 
-        for ticker in self.tickers:
-            # Fetch price data for the entire period, plus 1 year
-            get_prices(ticker, start_date_str, self.end_date)
+        # Adjust the dates to fetch up to 1 year of historical lookback data before start date
+        historical_start_dt = start_date_dt - relativedelta(years=1)
+        historical_start_str = historical_start_dt.strftime("%Y-%m-%d")
 
-            # Fetch financial metrics
-            get_financial_metrics(ticker, self.end_date, limit=10)
+        # Check if the start and end dates are trading days
+        start_valid = is_trading_day(start_date_dt)
+        end_valid = is_trading_day(end_date_dt)
 
-            # Fetch insider trades
-            get_insider_trades(ticker, self.end_date, start_date=self.start_date, limit=1000)
+        # Notify if start and end date are not trading days with suggestion for other dates.
+        if not start_valid:
+            next_day = get_next_trading_day(start_date_dt)
+            prev_day = get_previous_trading_day(start_date_dt)
+            print(f"Start date {start_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.")
+            
+            # Automatically adjust to next trading day instead of exiting
+            self.start_date = next_day
+            print(f"Automatically adjusted start date to next trading day: {self.start_date}")
+    
+        if not end_valid:
+            next_day = get_next_trading_day(end_date_dt)
+            prev_day = get_previous_trading_day(end_date_dt)
+            print(f"End date {end_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.")
+            
+            # Automatically adjust to previous trading day instead of exiting
+            self.end_date = prev_day
+            print(f"Automatically adjusted end date to previous trading day: {self.end_date}")
+    
 
-            # Fetch company news
-            get_company_news(ticker, self.end_date, start_date=self.start_date, limit=1000)
+        logger.info(f"Fetching historical data from {historical_start_str} to {self.end_date}", module="prefetch_data")
 
-        print("Data pre-fetch complete.")
+        data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date)
+
+        # Log a summary of fetched data
+        if self.debug_mode:
+            logger.debug("\n=== DATA FETCHED SUMMARY from prefetch_data ===", module="prefetch_data")
+            logger.debug(f"Tickers: {self.tickers}", module="prefetch_data")
+            logger.debug(f"Period: {self.start_date} to {self.end_date}", module="prefetch_data")
+            
+            for ticker in self.tickers:
+                ticker_data = data.get(ticker, {})
+                prices = ticker_data.get("prices")
+                metrics = ticker_data.get("metrics", [])
+                insider_trades = ticker_data.get("insider_trades", [])
+                news = ticker_data.get("news", [])
+                
+                logger.debug(f"\nData structure for {ticker}:", module="prefetch_data")
+                logger.debug(f"  - prices: DataFrame with {prices.shape[0] if hasattr(prices, 'shape') else 0} rows, {prices.shape[1] if hasattr(prices, 'shape') else 0} columns", module="prefetch_data")
+                logger.debug(f"  - metrics: List with {len(metrics)} items", module="prefetch_data")
+                logger.debug(f"  - insider_trades: List with {len(insider_trades)} items", module="prefetch_data")
+                logger.debug(f"  - news: List with {len(news)} items", module="prefetch_data")
+                
+                # If verbose_data is enabled, show sample data
+                if self.verbose_data:
+                    if hasattr(prices, 'head'):
+                        logger.debug(f"\nPrices sample:\n{prices.head()}", module="prefetch_data", ticker=ticker)
+                    
+                    if metrics and len(metrics) > 0:
+                        logger.debug(f"\nMetrics sample:\n {metrics[0].model_dump()}", module="prefetch_data", ticker=ticker)
+
+        logger.info("Data pre-fetch complete.", module="prefetch_data")
 
     def parse_agent_response(self, agent_output):
         """Parse JSON output from the agent (fallback to 'hold' if invalid)."""
@@ -310,6 +366,8 @@ class Backtester:
             return {"action": "hold", "quantity": 0}
 
     def run_backtest(self):
+        from utils.logger import logger
+
         # Pre-fetch all data at the start
         self.prefetch_data()
 
@@ -324,7 +382,7 @@ class Backtester:
             'net_exposure': None
         }
 
-        print("\nStarting backtest...")
+        logger.info("Starting backtest...", module="run_backtest")
 
         # Initialize portfolio values list with initial capital
         if len(dates) > 0:
@@ -347,14 +405,21 @@ class Backtester:
                     ticker: get_price_data(ticker, previous_date_str, current_date_str).iloc[-1]["close"]
                     for ticker in self.tickers
                 }
-            except Exception:
+                logger.debug(f"Retrieved prices for {current_date_str}", module="run_backtest")
+                if self.verbose_data:
+                    for ticker, price in current_prices.items():
+                        logger.debug(f"Price for {ticker}: {price}", module="run_backtest", ticker=ticker)
+
+            except Exception as e:
                 # If data is missing or there's an API error, skip this day
-                print(f"Error fetching prices between {previous_date_str} and {current_date_str}")
+                logger.error(f"Error fetching prices between {previous_date_str} and {current_date_str}: {e}", module="run_backtest")
                 continue
 
             # ---------------------------------------------------------------
             # 1) Execute the agent's trades
             # ---------------------------------------------------------------
+            logger.debug(f"Running hedge fund agent for {current_date_str}", module="run_backtest")
+
             output = self.agent(
                 tickers=self.tickers,
                 start_date=lookback_start,
@@ -366,6 +431,13 @@ class Backtester:
             )
             decisions = output["decisions"]
             analyst_signals = output["analyst_signals"]
+
+            if self.debug_mode:
+                logger.debug(f"Agent decisions for {current_date_str}:", module="run_backtest")
+                for ticker, decision in decisions.items():
+                    logger.debug(f"  {ticker}: {decision.get('action', 'hold')} {decision.get('quantity', 0)} shares", 
+                                module="run_backtest", 
+                                ticker=ticker)
 
             # Execute trades for each ticker
             executed_trades = {}
@@ -621,6 +693,7 @@ class Backtester:
 ### 4. Run the Backtest #####
 if __name__ == "__main__":
     import argparse
+    from utils.logger import setup_logger, logger
 
     parser = argparse.ArgumentParser(description="Run backtesting simulation")
     parser.add_argument(
@@ -654,7 +727,44 @@ if __name__ == "__main__":
         help="Margin ratio for short positions, e.g. 0.5 for 50% (default: 0.0)",
     )
 
+    # Debugging options
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode with detailed logging",
+    )
+    parser.add_argument(
+        "--log-to-file",
+        action="store_true",
+        help="Save logs to a file in the logs directory",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        help="Specify a custom log file path",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Minimize output (overrides debug mode)",
+    )
+    parser.add_argument(
+        "--verbose-data",
+        action="store_true",
+        help="Show detailed data output (works with debug mode)",
+    )
+
     args = parser.parse_args()
+
+    # Set up the logger with command line arguments
+    setup_logger(
+        debug_mode=args.debug and not args.quiet,
+        log_to_file=args.log_to_file,
+        log_file=args.log_file
+    )
+
+    # Set a global flag for verbose data output
+    verbose_data = args.verbose_data and args.debug and not args.quiet
 
     # Parse tickers from comma-separated string
     tickers = [ticker.strip() for ticker in args.tickers.split(",")] if args.tickers else []
@@ -722,6 +832,8 @@ if __name__ == "__main__":
         model_provider=model_provider,
         selected_analysts=selected_analysts,
         initial_margin_requirement=args.margin_requirement,
+        debug_mode=args.debug and not args.quiet,
+        verbose_data=args.verbose_data and args.debug and not args.quiet,
     )
 
     # Start the timer after LLM and analysts are selected

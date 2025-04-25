@@ -19,6 +19,7 @@ from utils.display import print_trading_output
 from utils.analysts import ANALYST_ORDER
 from utils.progress import progress
 from llm.models import LLM_ORDER, get_model_info
+from utils.logger import logger, setup_logger, LogLevel
 
 import argparse
 from datetime import datetime
@@ -168,10 +169,46 @@ if __name__ == "__main__":
         "--show-agent-graph", action="store_true", help="Show the agent graph"
     )
 
+    # Debugging options
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode with detailed logging",
+    )
+    parser.add_argument(
+        "--log-to-file",
+        action="store_true",
+        help="Save logs to a file in the logs directory",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        help="Specify a custom log file path",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Minimize output (overrides debug mode)",
+    )
+    parser.add_argument(
+        "--verbose-data",
+        action="store_true",
+        help="Show detailed data output (works with debug mode)",
+    )
+
     args = parser.parse_args()
+
+    # Set up the logger with command line arguments
+    setup_logger(
+        debug_mode=args.debug and not args.quiet,
+        log_to_file=args.log_to_file,
+        log_file=args.log_file
+    )
 
     # Parse tickers from comma-separated string
     tickers = [ticker.strip() for ticker in args.tickers.split(",")]
+
+    logger.info(f"Starting hedge fund with tickers: {tickers}", module="main")
 
     # Select analysts
     selected_analysts = None
@@ -289,6 +326,7 @@ if __name__ == "__main__":
         selected_analysts=selected_analysts,
         model_name=model_choice,
         model_provider=model_provider,
+        debug_mode=args.debug,
     )
 
     # Stop timer after execution

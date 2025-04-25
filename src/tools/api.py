@@ -24,8 +24,9 @@ from data.models import (
 )
 
 # Import the market calendar and SEC EDGAR scraper
-from market_calendar import is_trading_day, adjust_date_range
-from sec_edgar_scraper import fetch_insider_trades_for_ticker, fetch_multiple_insider_trades
+from utils.market_calendar import is_trading_day, adjust_date_range
+from tools.sec_edgar_scraper import fetch_insider_trades_for_ticker, fetch_multiple_insider_trades
+
 
 # ===== CACHE INITIALIZATION =====
 # Create a global cache instance with disk persistence
@@ -47,44 +48,46 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> List[Price]:
         List of Price objects
     """
 
-    # Ensure dates are strings
-    start_date = str(start_date) if not isinstance(start_date, str) else start_date
-    end_date = str(end_date) if not isinstance(end_date, str) else end_date
+    # Alway import logger at function level to avoid circular imports
+    from utils.logger import logger
 
-    # Check if dates are trading days and adjust if needed
-    try:
-        if not is_trading_day(start_date) or not is_trading_day(end_date):
-            adjusted_start, adjusted_end = adjust_date_range(start_date, end_date)
-            print(f"Adjusting date range for {ticker}: {start_date}-{end_date} -> {adjusted_start}-{adjusted_end}")
-            start_date, end_date = adjusted_start, adjusted_end
-    except ValueError as e:
-        print(f"Warning: {e} - continuing with original dates")
+    # Log function call
+    logger.debug(f"Fetching prices for {ticker} from {start_date} to {end_date}", module="get_prices", ticker=ticker)
 
     # Run the async function in a new event loop
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
         results = loop.run_until_complete(get_prices_async([ticker], start_date, end_date))
-        return results.get(ticker, [])
+        return results.get(ticker, []) # Review: why is it not just return results? Why .get()?
     finally:
-        loop.close()
+        loop.close() # Review: Why do I have to close the loop? Why can't I just omit this finally:?
 
 
 async def get_prices_async(tickers: List[str], start_date: str, end_date: str) -> Dict[str, List[Price]]:
     """Fetch prices for multiple tickers asynchronously"""
+
+    from utils.logger import logger
+
+    logger.debug(f"Running get_prices_async() for {len(tickers)} tickers from {start_date} to {end_date}", 
+                module="get_prices_async")
 
     # Ensure dates are strings
     start_date = str(start_date) if not isinstance(start_date, str) else start_date
     end_date = str(end_date) if not isinstance(end_date, str) else end_date
 
     # Check if dates need adjustment for trading days
+    logger.debug(f"Checking if {start_date} and {end_date} are trading days.", 
+                        module="get_prices_async")
+
     if not is_trading_day(start_date) or not is_trading_day(end_date):
         try:
+            logger.debug(f"Either stard_date {start_date} or end_date {end_date} isn't a trading day.")
             start_date, end_date = adjust_date_range(start_date, end_date)
         except ValueError as e:
-            print(f"Warning: {e} - continuing with original dates")
+            logger.warning(f"Warning: {e} - continuing with original dates", module="get_prices_async")
 
-    df_results = await fetch_prices_batch(tickers, start_date, end_date)
+    df_results = await fetch_prices_batch(tickers, start_date, end_date) # Review: Why do I need "await" here?
     return {ticker: df_to_price_objects(df) for ticker, df in df_results.items()}
 
 
@@ -94,10 +97,19 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
     Uses yfinance's batch download capability for efficiency.
     Adjusts dates to trading days to handle market holidays.
     """
+
+    from utils.logger import logger
+
+    logger.debug(f"Running fetch_prices_batch() for {len[tickers]} tickers", module="fetch_prices_batch")
+
     # First check cache for all tickers
     cached_results = {}
     tickers_to_fetch = []
     
+    # Cache tracking counters
+    cache_hits = 0
+    total_tickers = len(tickers)
+
     for ticker in tickers:
         cached_data = _cache.get_prices(ticker, start_date, end_date)
         if cached_data:
@@ -106,15 +118,43 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
             df["Date"] = pd.to_datetime(df["time"])
             df.set_index("Date", inplace=True)
             cached_results[ticker] = df
+            cache_hits += 1
         else:
             tickers_to_fetch.append(ticker)
+
+    # Log cache statistics
+    cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
+    download_percentage = 100 - cache_percentage
+    logger.debug(
+        f"PRICE DATA CACHE STATS:\n"
+        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
+        f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)",
+        module="fetch_prices_batch"
+    )
     
     if not tickers_to_fetch:
+        # Debug: Preview data when everything comes from cache
+        if cached_results and len(cached_results) > 0:
+            example_ticker = list(cached_results.keys())[0]
+            df_sample = cached_results[example_ticker]
+            logger.debug(
+                f"Debug from fetch_prices_batch if all data is in cache.\n"
+                f"Sample cached price data for {example_ticker}:\n"
+                f"Shape: {df_sample.shape}\n"
+                f"Date range: {df_sample.index.min()} to {df_sample.index.max()}\n"
+                f"First row:\n{df_sample.head(1)}\n"
+                f"Last row:\n{df_sample.tail(1)}",
+                module="fetch_prices_batch",
+                ticker=example_ticker
+            )
+
         return cached_results
     
     # Fetch data for tickers not in cache
     try:
         # yfinance batch download
+        logger.debug(f"Downloading price data for {len(tickers_to_fetch)} tickers", 
+                         module="fetch_prices_batch")
         data = yf.download(
             tickers_to_fetch, 
             start=start_date, 
@@ -127,39 +167,65 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
         # Process the results
         results = cached_results.copy()
         
-        # Handle single vs multiple ticker results differently
-        if len(tickers_to_fetch) == 1:
-            ticker = tickers_to_fetch[0]
-            # For single ticker, data is a simple DataFrame
-            df = data.copy()
-            df.columns = [col.lower() for col in df.columns]
-            df.rename(columns={'adj close': 'close'}, inplace=True)
-            
-            # Cache the processed data
-            _cache.set_prices(ticker, df_to_cache_format(df))
-            results[ticker] = df
-        else:
-            # For multiple tickers, data is a MultiIndex DataFrame
+        # Debug: Structure of the downloaded data
+        if isinstance(data, pd.DataFrame):
+            logger.debug(f"Data type: {type(data)}", module="fetch_prices_batch")
+            if len(data.columns) > 0:
+                logger.debug(f"Columns: {data.columns}", module="fetch_prices_batch")
+                # Check if it's a MultiIndex
+                if isinstance(data.columns, pd.MultiIndex):
+                    logger.debug(f"MultiIndex levels: {data.columns.levels}", 
+                                 module="fetch_prices_batch")
+        
+        # Process data as MultiIndex DataFrame
+        if isinstance(data, pd.DataFrame) and not data.empty:
+            # For each ticker in our fetch list
             for ticker in tickers_to_fetch:
+                # Check if this ticker exists in the data
                 if ticker in data.columns.levels[0]:
+                    # Extract the ticker-specific data
                     ticker_data = data[ticker].copy()
-                    ticker_data.columns = [col.lower() for col in ticker_data.columns]
+                    
+                    # Ensure the column names are lowercase
+                    ticker_data.columns = ticker_data.columns.str.lower()
+                    
+                    # Check for 'adj close' and rename to 'close' if needed
                     if 'adj close' in ticker_data.columns:
                         ticker_data.rename(columns={'adj close': 'close'}, inplace=True)
-                    
+
                     # Cache the processed data
                     _cache.set_prices(ticker, df_to_cache_format(ticker_data))
                     results[ticker] = ticker_data
+
+        # Debug: Before return, preview the downloaded data
+        if len(tickers_to_fetch) > 0 and len(results) > 0:
+            for ticker in tickers_to_fetch[:1]:  # Preview first downloaded ticker
+                logger.debug(
+                        f"Debug from fetch_prices_batch if some data is downloaded.\n"
+                        f"Sample downloaded price data for {ticker}:\n"
+                        f"Shape: {results[ticker].shape}\n"
+                        f"Date range: {results[ticker].index.min()} to {results[ticker].index.max()}\n"
+                        f"First row:\n{results[ticker].head(1)}\n" # Review: Doees this make sense if there is only one ticker?
+                        f"Last row:\n{results[ticker].tail(1)}",
+                        module="fetch_prices_batch",
+                        ticker=ticker
+                    )
         
         return results
         
     except Exception as e:
-        print(f"Error fetching batch price data: {e}")
+        logger.error(f"Error fetching batch price data: {e}", module="fetch_prices_batch") # Review: why "as e:" ?
         return cached_results
 
 
 def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Get price data as DataFrame. Same as original function."""
+    """Get price data as DataFrame."""
+
+    from utils.logger import logger
+
+    logger.debug(f"Running get_price_data() for {ticker} from {start_date} to {end_date}", 
+                module="get_price_data", ticker=ticker)
+
     prices = get_prices(ticker, start_date, end_date)
     return prices_to_df(prices)
 
@@ -221,26 +287,48 @@ def get_financial_metrics(
     Returns:
         List of FinancialMetrics objects
     """
+    from utils.logger import logger
+
+    logger.debug(f"Running get_financial_metrics() for {ticker} up to {end_date} (period: {period}, limit: {limit})", 
+                module="get_financial_metrics", ticker=ticker)
+
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
         results = loop.run_until_complete(fetch_financial_metrics_async([ticker], end_date, period, limit))
         return results.get(ticker, [])
     except Exception as e:
-        print(f"Error fetching prices for {ticker} between {start_date} and {end_date}: {e}")
+        logger.error(f"Error fetching financial metrics for {ticker} before {end_date}: {e}", 
+                    module="get_financial_metrics", ticker=ticker)
     finally:
         loop.close()
 
 
 async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "ttm", limit: int = 10):
     """Fetch financial metrics for multiple tickers in parallel"""
+
+    from utils.logger import logger
+
+    logger.debug(f"Running fetch_financial_metrics_async() for {len(tickers)} tickers", 
+                module="fetch_financial_metrics_async")
+
+    # Counter for cache tracking
+    cache_hits = 0
+    total_tickers = len(tickers)
+    results_dict = {}
+
     async def fetch_ticker_metrics(ticker):
+        nonlocal cache_hits, results_dict # Review: What does nonlocal do? What is it for?
+
         cached_data = _cache.get_financial_metrics(ticker)
         if cached_data:
             filtered_data = [metric for metric in cached_data if metric["report_period"] <= end_date]
             filtered_data.sort(key=lambda x: x["report_period"], reverse=True)
             if filtered_data:
-                return ticker, [FinancialMetrics(**metric) for metric in filtered_data[:limit]]
+                cache_hits += 1
+                metrics = [FinancialMetrics(**metric) for metric in filtered_data[:limit]]
+                results_dict[ticker] = {'source': 'cache', 'data': metrics}
+                return ticker, metrics
         
         # Not in cache, fetch from yfinance
         try:
@@ -253,6 +341,8 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
             cash_flow = ticker_obj.cashflow
             
             if income_stmt.empty or balance_sheet.empty or cash_flow.empty:
+                logger.warning(f"Empty financial statements for {ticker}", 
+                              module="fetch_financial_metrics_async", ticker=ticker)
                 return ticker, []
             
             # Get quarterly or annual data based on period
@@ -310,7 +400,7 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                         price_to_book_ratio=market_cap / stockholders_equity if market_cap and stockholders_equity and stockholders_equity > 0 else None,
                         price_to_sales_ratio=market_cap / total_revenue if market_cap and total_revenue and total_revenue > 0 else None,
                         enterprise_value=None,  # Would need to calculate
-                        enterprise_value_to_ebitda_ratio=None,
+                        enterprise_value_to_ebitda_ratio=None, # Review: Why are some of these metrics equal to None?
                         enterprise_value_to_revenue_ratio=None,
                         free_cash_flow_yield=free_cash_flow / market_cap if market_cap and free_cash_flow else None,
                         gross_margin=float(income_stmt.loc['Gross Profit', col]) / total_revenue if 'Gross Profit' in income_stmt.index and total_revenue else None,
@@ -337,24 +427,57 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     )
                     financial_metrics.append(metrics)
                 except Exception as e:
-                    print(f"Error processing financial data for {ticker} at {report_date}: {e}")
+                    logger.error(f"Error processing financial data for {ticker} at {report_date}: {e}", 
+                                module="fetch_financial_metrics_async", ticker=ticker)
                     continue
             
             # Cache the results
             if financial_metrics:
                 _cache.set_financial_metrics(ticker, [metric.model_dump() for metric in financial_metrics])
             
+            results_dict[ticker] = {'source': 'download', 'data': financial_metrics}
             return ticker, financial_metrics
+        
         except Exception as e:
-            print(f"Error fetching financial metrics for {ticker}: {e}")
+            logger.error(f"Error fetching financial metrics for {ticker}: {e}", 
+                        module="fetch_financial_metrics_async", ticker=ticker)
             return ticker, []
     
     # Create tasks for all tickers
-    tasks = [fetch_ticker_metrics(ticker) for ticker in tickers]
-    results = await asyncio.gather(*tasks)
+    tasks = [fetch_ticker_metrics(ticker) for ticker in tickers] # Review: What are these tasks for?
+    results = await asyncio.gather(*tasks) # Review: what is the * and the .gather
     
+    # Debug: Log cache statistics
+    cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
+    download_percentage = 100 - cache_percentage
+    logger.debug(
+        f"FINANCIAL METRICS CACHE STATS:\n"
+        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
+        f"  - Downloaded: {total_tickers - cache_hits}/{total_tickers} tickers ({download_percentage:.1f}%)",
+        module="fetch_financial_metrics_async"
+    )
+    
+    # Review: Can the following code be simplified?
+    # Debug: Data preview
+    for source in ['cache', 'download']: # Review: Why does it know where the data is from?
+        previewed = False # Review: what is this for?
+        for ticker, info in results_dict.items():
+            if info['source'] == source and info['data']:
+                logger.debug(
+                    f"Sample {source} financial metrics for {ticker}:\n"
+                    f"Metrics count: {len(info['data'])}\n"
+                    f"Sample metric period: {info['data'][0].report_period}\n"
+                    f"Key ratios: ROE={info['data'][0].return_on_equity}, D/E={info['data'][0].debt_to_equity}",
+                    module="fetch_financial_metrics_async",
+                    ticker=ticker
+                )
+                previewed = True
+                break
+        if previewed:
+            break
+
     # Convert results to dictionary
-    return {ticker: metrics for ticker, metrics in results}
+    return {ticker: metrics for ticker, metrics in results} # Review: What does this line of code do?
 
 
 # ===== MARKET CAP FUNTIONS =====
@@ -363,24 +486,40 @@ def get_market_cap(
     end_date: str,
 ) -> float:
     """Fetch market cap for a ticker at a specific date"""
+
+    from utils.logger import logger
+
+    logger.debug(f"Running get_market_cap() for {ticker} at {end_date}", 
+                module="get_market_cap", ticker=ticker)
+
     try:
         ticker_obj = yf.Ticker(ticker)
         
         # Try using info first (current market cap, not historical)
         market_cap = ticker_obj.info.get('marketCap')
+        logger.debug(f"Market cap for {[ticker]} is {market_cap}", module="get_market_cap")
         
         # If we need a historical market cap, calculate it
         if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
             market_cap = get_historical_market_cap(ticker, end_date)
+            logger.debug(f"Market cap for{[ticker]} is either None or there is a problem with the end_date. Function get_historical_market_cap() is used instead. Historical market cap: {market_cap}",
+                         module="get_market_cap")
         
         return market_cap
     except Exception as e:
-        print(f"Error fetching market cap for {ticker}: {e}")
+        logger.error(f"Error fetching market cap for {ticker}: {e}", 
+                    module="get_market_cap", ticker=ticker)
         return None
 
 
 def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
     """Get historical market cap for a ticker at a specific date"""
+
+    from utils.logger import logger
+
+    logger.debug(f"Running get_historical_market_cap() for {ticker} at {date}", 
+                module="get_historical_market_cap", ticker=ticker)
+
     try:
         # Get historical price data
         end_date = datetime.datetime.strptime(date, '%Y-%m-%d') + datetime.timedelta(days=1)
@@ -390,17 +529,24 @@ def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
         shares_outstanding = ticker_obj.info.get('sharesOutstanding')
         
         if not shares_outstanding:
+            logger.warning(f"No shares outstanding data for {ticker}", 
+                              module="get_historical_market_cap", ticker=ticker)
             return None
         
         # Get historical price
         hist = ticker_obj.history(start=date, end=end_date_str)
+        logger.debug(f"Historical price for {[ticker]} (1d {date} -> {end_date_str})", 
+                     module="get_historical_market_cap", ticker=ticker)
         if hist.empty:
+            logger.warning(f"${ticker}: possibly delisted; no price data found  (1d {date} -> {end_date_str})", 
+                          module="get_historical_market_cap", ticker=ticker)
             return None
         
         close_price = hist['Close'].iloc[0]
         return close_price * shares_outstanding
     except Exception as e:
-        print(f"Error calculating historical market cap for {ticker} at {date}: {e}")
+        logger.error(f"Error calculating historical market cap for {ticker} at {date}: {e}", 
+                    module="get_historical_market_cap", ticker=ticker)
         return None
 
 
@@ -415,6 +561,12 @@ def get_insider_trades(
     Fetch insider trades for a single ticker.
     Maintains compatibility with the original function.
     """
+
+    from utils.logger import logger
+
+    logger.debug(f"Running get_insider_trades() for {ticker} from {start_date or 'earliest'} to {end_date}", 
+                module="get_insider_trades", ticker=ticker)
+
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
@@ -436,7 +588,16 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
     Returns:
         Dictionary mapping tickers to lists of InsiderTrade objects
     """
+    from utils.logger import logger
+
+    logger.debug(f"Running get_insider_trades_async() for {len(tickers)} tickers", 
+                module="get_insider_trades_async")
+
     results = {}
+
+    # Cache tracking
+    cache_hits = 0
+    total_tickers = len(tickers)
     
     # First try to get data from cache
     for ticker in tickers:
@@ -444,7 +605,7 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
         if cached_data:
             # Filter by date range
             filtered_data = [
-                InsiderTrade(**trade) for trade in cached_data
+                InsiderTrade(**trade) for trade in cached_data # Review: Why are there two** in InsiderTrade(**trade)?
                 if (start_date is None or (trade.get("transaction_date") or trade["filing_date"]) >= start_date)
                 and (trade.get("transaction_date") or trade["filing_date"]) <= end_date
             ]
@@ -452,15 +613,28 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
             # If we have recent data, use it
             if filtered_data and (datetime.datetime.now() - datetime.datetime.strptime(cached_data[-1]["filing_date"], "%Y-%m-%d")).days < 7:
                 results[ticker] = filtered_data
+                cache_hits += 1
                 continue
     
     # For any tickers not found in cache, fetch from SEC EDGAR
     tickers_to_fetch = [ticker for ticker in tickers if ticker not in results]
     
+    # Log cache statistics
+    cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
+    download_percentage = 100 - cache_percentage
+    logger.debug(
+        f"INSIDER TRADES CACHE STATS:\n"
+        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
+        f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)",
+        module="get_insider_trades_async"
+    )
+
     if tickers_to_fetch:
         try:
-            # Use our SEC EDGAR scraper to fetch insider trades
+            # Use the SEC EDGAR scraper to fetch insider trades
             edgar_results = await fetch_multiple_insider_trades(tickers_to_fetch, start_date, end_date)
+            logger.debug(f"SEC EDGAR scraper results: {edgar_results}",
+                         module="get_insider_trades_async")
             
             # Update results and cache
             for ticker, trades in edgar_results.items():
@@ -472,11 +646,43 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
                 results[ticker] = trades
                 
         except Exception as e:
-            print(f"Error fetching insider trades from SEC EDGAR: {e}")
+            logger.error(f"Error fetching insider trades from SEC EDGAR: {e}", 
+                        module="get_insider_trades_async")
             # Fall back to returning empty lists for tickers not in cache
             for ticker in tickers_to_fetch:
                 results[ticker] = []
     
+    # Debug: Data preview before return
+    # Preview cached data
+    if cache_hits > 0:
+        for ticker, trades in results.items():
+            if len(trades) > 0 and ticker not in tickers_to_fetch:
+                logger.debug(
+                    f"Sample cached insider trades for {ticker}:\n"
+                    f"Total trades: {len(trades)}\n"
+                    f"Most recent trade: {trades[0].filing_date}\n"
+                    f"Transaction shares: {trades[0].transaction_shares}, Value: {trades[0].transaction_value}",
+                    module="get_insider_trades_async", 
+                    ticker=ticker
+                )
+                break
+    
+    # Debug: Preview downloaded data
+    if tickers_to_fetch and any(ticker in results for ticker in tickers_to_fetch):
+        for ticker in tickers_to_fetch:
+            if ticker in results and results[ticker]:
+                logger.debug(
+                    f"Sample downloaded insider trades for {ticker}:\n"
+                    f"Total trades: {len(results[ticker])}\n"
+                    f"Most recent trade: {results[ticker][0].filing_date if results[ticker] else 'N/A'}\n"
+                    f"Transaction shares: {results[ticker][0].transaction_shares if results[ticker] else 'N/A'}, "
+                    f"Value: {results[ticker][0].transaction_value if results[ticker] else 'N/A'}",
+                    module="get_insider_trades_async", 
+                    ticker=ticker
+                )
+                break
+
+
     return results
 
 
@@ -491,6 +697,11 @@ def get_company_news(
     Fetch company news for a single ticker.
     Maintains compatibility with the original function.
     """
+
+    from utils.logger import logger
+
+    logger.debug(f"Running get_company_news() for {[ticker]} from {start_date} to {end_date}", module="get_company_news", ticker=ticker)
+
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
@@ -513,7 +724,16 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
     Returns:
         Dictionary mapping tickers to lists of CompanyNews objects
     """
+
+    from utils.logger import logger
+
+    logger.debug(f"Running get_company_news_async() for {[tickers]} from {start_date} to {end_date}", module="get_company_news_async")
+
     results = {}
+
+    # Cache tracking
+    cache_hits = 0
+    total_tickers = len(tickers)
     
     # First try to get data from cache
     for ticker in tickers:
@@ -529,14 +749,26 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
             # If we have recent data, use it
             if filtered_data and (datetime.datetime.now() - datetime.datetime.strptime(cached_data[-1]["date"], "%Y-%m-%d")).days < 3:
                 results[ticker] = filtered_data
+                cache_hits += 1
                 continue
     
     # For any tickers not found in cache or with outdated data, fetch from Yahoo Finance
     tickers_to_fetch = [ticker for ticker in tickers if ticker not in results]
     
+    # Log cache statistics
+    cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
+    download_percentage = 100 - cache_percentage
+    logger.debug(
+        f"COMPANY NEWS CACHE STATS:\n"
+        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
+        f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)",
+        module="get_company_news_async"
+    )
+
     if tickers_to_fetch:
         for ticker in tickers_to_fetch:
             try:
+                # with LogCapture(debug_mode=True, module="yfinance") as capture:
                 ticker_obj = yf.Ticker(ticker)
                 news_data = ticker_obj.news
                 
@@ -570,10 +802,39 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
                 print(f"Error fetching news for {ticker}: {e}")
                 results[ticker] = []
     
-    return results
+    # Debug: Data preview before return
+    # Preview cached data
+    if cache_hits > 0:
+        for ticker, news_items in results.items():
+            if len(news_items) > 0 and ticker not in tickers_to_fetch:
+                logger.debug(
+                    f"Sample cached company news for {ticker}:\n"
+                    f"Total news items: {len(news_items)}\n"
+                    f"Most recent news ({news_items[0].date}): {news_items[0].title}",
+                    module="get_company_news_async", 
+                    ticker=ticker
+                )
+                break
+    
+    # Debug: Preview downloaded data
+    if tickers_to_fetch and any(ticker in results for ticker in tickers_to_fetch):
+        for ticker in tickers_to_fetch:
+            if ticker in results and results[ticker]:
+                logger.debug(
+                    f"Sample downloaded company news for {ticker}:\n"
+                    f"Total news items: {len(results[ticker])}\n"
+                    f"Most recent news ({results[ticker][0].date if results[ticker] else 'N/A'}): "
+                    f"{results[ticker][0].title if results[ticker] else 'N/A'}",
+                    module="get_company_news_async", 
+                    ticker=ticker
+                )
+                break
+    
+    return results # Review: Do I need to use return results.get(ticker, [])
+                # Do I need to close the loop?
 
 
-# ===== USELESS FUNCTIONS =====
+# ===== USED BY AN AGENT =====
 def search_line_items(
     ticker: str,
     line_items: list[str],
@@ -596,6 +857,12 @@ def search_line_items(
     Returns:
         List of LineItem objects
     """
+
+    from utils.logger import logger
+
+    logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
+                module="search_line_items", ticker=ticker)
+
     try:
         ticker_obj = yf.Ticker(ticker)
         
@@ -641,7 +908,7 @@ def search_line_items(
                     "outstanding_shares": None,  # Special handling
                     "total_assets": ("Total Assets", balance_sheet),
                     "total_liabilities": ("Total Liabilities Net Minority Interest", balance_sheet),
-                    "working_capital": None,  # Special calculation
+                    "working_capital": None,  # Special calculation 
                     "debt_to_equity": None,  # Special calculation
                     "free_cash_flow": None,  # Special calculation
                     "operating_margin": None,  # Special calculation
@@ -692,25 +959,35 @@ def search_line_items(
                     if field in df.index:
                         value = df.loc[field, col]
                         setattr(line_item, item, float(value))
+
+            logger.debug(f"Retrieved {len(results)} line items for {ticker}", 
+                    module="search_line_items", ticker=ticker)
             
             results.append(line_item)
         
         return results
     
     except Exception as e:
-        print(f"Error searching line items for {ticker}: {e}")
+        logger.error(f"Error searching line items for {ticker}: {e}", 
+                module="search_line_items", ticker=ticker)
         return []
 
 
+# ===== LIKELY A USELESS FUNCTION =====
 async def get_price_data_batch(tickers: List[str], start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
     """Get price data as DataFrames for multiple tickers in one batch request"""
+
+    from utils.logger import logger
+    logger.debug(f"Running get_price_data_batch() for {len(tickers)} tickers from {start_date} to {end_date}", 
+                module="get_price_data_batch")
     return await fetch_prices_batch(tickers, start_date, end_date)
 
-
+# ===== DATA FETCHING FUNCTION FOR SRC/BACKTESTER.PY =====
 def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, batch_size: int = 20):
     """
     Process multiple tickers efficiently with batching and parallel processing.
     Returns a dictionary with all data for each ticker.
+    Is used by the prefetch_data() function in src/backtester to fetch all data needed to run a backtest.
     
     Args:
         tickers: List of stock ticker symbols
@@ -722,14 +999,10 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
         Dictionary of ticker to data mapping
     """
 
-    # Check for market holidays
-    try:
-        if not is_trading_day(start_date) or not is_trading_day(end_date):
-            adjusted_start, adjusted_end = adjust_date_range(start_date, end_date)
-            print(f"Adjusting date range for {ticker}: {start_date}-{end_date} -> {adjusted_start}-{adjusted_end}")
-            start_date, end_date = adjusted_start, adjusted_end
-    except ValueError as e:
-        print(f"Warning: {e} - continuing with original dates")
+    from utils.logger import logger
+    
+    logger.debug(f"Running get_data_for_tickers() for {len(tickers)} tickers from {start_date} to {end_date}", 
+                module="get_data_for_tickers")
 
     # Split tickers into batches of batch_size
     ticker_batches = [tickers[i:i+batch_size] for i in range(0, len(tickers), batch_size)]
@@ -742,10 +1015,8 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
         
         # Process each batch of tickers
         for batch in ticker_batches:
-            # Get price data in a batch
+            # Get price data, financial metrics, insider trades, and news in a batch
             price_task = fetch_prices_batch(batch, start_date, end_date)
-            
-            # Get financial metrics and news in parallel
             metrics_task = fetch_financial_metrics_async(batch, end_date)
             insider_task = get_insider_trades_async(batch, end_date, start_date)
             news_task = get_company_news_async(batch, end_date, start_date)
@@ -766,9 +1037,70 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                     "insider_trades": insider_data.get(ticker, []),
                     "news": news_data.get(ticker, [])
                 }
-    
+    except Exception as e:
+        logger.error(f"Error fetching data for tickers: {e}", module="get_data_for_tickers")
     finally:
         loop.close()
+
+    # Preview the results
+    if results:
+        example_ticker = next(iter(results))
+        logger.debug("--- DATA PREVIEW from get_data_for_tickers ---", module="get_data_for_tickers")
+        logger.debug(f"Sample data for ticker: {example_ticker}", 
+                    module="get_data_for_tickers", ticker=example_ticker)
+        
+        # Preview prices
+        if isinstance(results[example_ticker]["prices"], pd.DataFrame) and not results[example_ticker]["prices"].empty:
+            prices_df = results[example_ticker]["prices"]
+            logger.debug(
+                f"Prices sample:\n\n"
+                f"Prices data shape: {prices_df.shape}\n"
+                f"First row: {prices_df.head(1)}",
+                module="get_data_for_tickers", 
+                ticker=example_ticker
+            )
+            
+        # Preview metrics
+        metrics = results[example_ticker]["metrics"]
+        if metrics:
+            metrics_dump = metrics[0].model_dump() if hasattr(metrics[0], 'model_dump') else metrics[0]
+            logger.debug(
+                f"Metrics sample:\n {metrics_dump}",
+                module="get_data_for_tickers", 
+                ticker=example_ticker
+            )
+            
+        # Preview insider trades
+        insider_trades = results[example_ticker]["insider_trades"]
+        if insider_trades:
+            logger.debug(
+                f"Insider trades count: {len(insider_trades)}",
+                module="get_data_for_tickers", 
+                ticker=example_ticker
+            )
+            if insider_trades:
+                trades_dump = insider_trades[0].model_dump() if hasattr(insider_trades[0], 'model_dump') else insider_trades[0]
+                logger.debug(
+                    f"Sample trade: {trades_dump}",
+                    module="get_data_for_tickers", 
+                    ticker=example_ticker
+                )
+        
+        # Preview news
+        news = results[example_ticker]["news"]
+        if news:
+            logger.debug(
+                f"News count: {len(news)}",
+                module="get_data_for_tickers", 
+                ticker=example_ticker
+            )
+            if news:
+                news_dump = news[0].model_dump() if hasattr(news[0], 'model_dump') else news[0]
+                logger.debug(
+                    f"Sample news: {news_dump}",
+                    module="get_data_for_tickers", 
+                    ticker=example_ticker
+                )
     
     return results
 
