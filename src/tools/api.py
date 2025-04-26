@@ -23,9 +23,10 @@ from data.models import (
     InsiderTradeResponse,
 )
 
-# Import the market calendar and SEC EDGAR scraper
+# Import the market calendar, SEC EDGAR scraper and logger.
 from utils.market_calendar import is_trading_day, adjust_date_range
 from tools.sec_edgar_scraper import fetch_insider_trades_for_ticker, fetch_multiple_insider_trades
+from utils.logger import logger
 
 
 # ===== CACHE INITIALIZATION =====
@@ -48,9 +49,6 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> List[Price]:
         List of Price objects
     """
 
-    # Alway import logger at function level to avoid circular imports
-    from utils.logger import logger
-
     # Log function call
     logger.debug(f"Fetching prices for {ticker} from {start_date} to {end_date}", module="get_prices", ticker=ticker)
 
@@ -66,8 +64,6 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> List[Price]:
 
 async def get_prices_async(tickers: List[str], start_date: str, end_date: str) -> Dict[str, List[Price]]:
     """Fetch prices for multiple tickers asynchronously"""
-
-    from utils.logger import logger
 
     logger.debug(f"Running get_prices_async() for {len(tickers)} tickers from {start_date} to {end_date}", 
                 module="get_prices_async")
@@ -98,9 +94,7 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
     Adjusts dates to trading days to handle market holidays.
     """
 
-    from utils.logger import logger
-
-    logger.debug(f"Running fetch_prices_batch() for {len[tickers]} tickers", module="fetch_prices_batch")
+    logger.debug(f"Running fetch_prices_batch() for {len(tickers)} tickers", module="fetch_prices_batch")
 
     # First check cache for all tickers
     cached_results = {}
@@ -125,28 +119,27 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
     # Log cache statistics
     cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
     download_percentage = 100 - cache_percentage
-    logger.debug(
-        f"PRICE DATA CACHE STATS:\n"
-        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
-        f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)",
-        module="fetch_prices_batch"
-    )
+    logger.debug(f"PRICE DATA CACHE STATS:", module="fetch_prices_batch")
+    logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="fetch_prices_batch")
+    logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="fetch_prices_batch")
     
     if not tickers_to_fetch:
         # Debug: Preview data when everything comes from cache
         if cached_results and len(cached_results) > 0:
             example_ticker = list(cached_results.keys())[0]
             df_sample = cached_results[example_ticker]
-            logger.debug(
-                f"Debug from fetch_prices_batch if all data is in cache.\n"
-                f"Sample cached price data for {example_ticker}:\n"
-                f"Shape: {df_sample.shape}\n"
-                f"Date range: {df_sample.index.min()} to {df_sample.index.max()}\n"
-                f"First row:\n{df_sample.head(1)}\n"
-                f"Last row:\n{df_sample.tail(1)}",
-                module="fetch_prices_batch",
-                ticker=example_ticker
-            )
+            logger.debug(f"Debug from fetch_prices_batch if all data is in cache.",
+                module="fetch_prices_batch", ticker=example_ticker)
+            logger.debug(f"Sample cached price data for {example_ticker}:",
+                module="fetch_prices_batch", ticker=example_ticker)
+            logger.debug(f"Shape: {df_sample.shape}",
+                module="fetch_prices_batch", ticker=example_ticker)
+            logger.debug(f"Date range: {df_sample.index.min()} to {df_sample.index.max()}",
+                module="fetch_prices_batch", ticker=example_ticker)
+            logger.debug(f"First row:\n{df_sample.head(1)}",
+                module="fetch_prices_batch", ticker=example_ticker)
+            logger.debug(f"Last row:\n{df_sample.tail(1)}",
+                module="fetch_prices_batch", ticker=example_ticker)
 
         return cached_results
     
@@ -200,17 +193,19 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
         # Debug: Before return, preview the downloaded data
         if len(tickers_to_fetch) > 0 and len(results) > 0:
             for ticker in tickers_to_fetch[:1]:  # Preview first downloaded ticker
-                logger.debug(
-                        f"Debug from fetch_prices_batch if some data is downloaded.\n"
-                        f"Sample downloaded price data for {ticker}:\n"
-                        f"Shape: {results[ticker].shape}\n"
-                        f"Date range: {results[ticker].index.min()} to {results[ticker].index.max()}\n"
-                        f"First row:\n{results[ticker].head(1)}\n" # Review: Doees this make sense if there is only one ticker?
-                        f"Last row:\n{results[ticker].tail(1)}",
-                        module="fetch_prices_batch",
-                        ticker=ticker
-                    )
-        
+                logger.debug(f"Debug from fetch_prices_batch if some data is downloaded.",
+                        module="fetch_prices_batch", ticker=ticker)
+                logger.debug(f"Sample downloaded price data for {ticker}:",
+                        module="fetch_prices_batch", ticker=ticker)
+                logger.debug(f"Shape: {results[ticker].shape}",
+                        module="fetch_prices_batch", ticker=ticker)
+                logger.debug(f"Date range: {results[ticker].index.min()} to {results[ticker].index.max()}",
+                        module="fetch_prices_batch", ticker=ticker)
+                logger.debug(f"First row:\n{results[ticker].head(1)}" ,
+                        module="fetch_prices_batch", ticker=ticker)# Review: Doees this make sense if there is only one ticker?
+                logger.debug(f"Last row:\n{results[ticker].tail(1)}",
+                        module="fetch_prices_batch", ticker=ticker)
+
         return results
         
     except Exception as e:
@@ -220,8 +215,6 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
 
 def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     """Get price data as DataFrame."""
-
-    from utils.logger import logger
 
     logger.debug(f"Running get_price_data() for {ticker} from {start_date} to {end_date}", 
                 module="get_price_data", ticker=ticker)
@@ -287,7 +280,6 @@ def get_financial_metrics(
     Returns:
         List of FinancialMetrics objects
     """
-    from utils.logger import logger
 
     logger.debug(f"Running get_financial_metrics() for {ticker} up to {end_date} (period: {period}, limit: {limit})", 
                 module="get_financial_metrics", ticker=ticker)
@@ -306,8 +298,6 @@ def get_financial_metrics(
 
 async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "ttm", limit: int = 10):
     """Fetch financial metrics for multiple tickers in parallel"""
-
-    from utils.logger import logger
 
     logger.debug(f"Running fetch_financial_metrics_async() for {len(tickers)} tickers", 
                 module="fetch_financial_metrics_async")
@@ -487,8 +477,6 @@ def get_market_cap(
 ) -> float:
     """Fetch market cap for a ticker at a specific date"""
 
-    from utils.logger import logger
-
     logger.debug(f"Running get_market_cap() for {ticker} at {end_date}", 
                 module="get_market_cap", ticker=ticker)
 
@@ -514,8 +502,6 @@ def get_market_cap(
 
 def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
     """Get historical market cap for a ticker at a specific date"""
-
-    from utils.logger import logger
 
     logger.debug(f"Running get_historical_market_cap() for {ticker} at {date}", 
                 module="get_historical_market_cap", ticker=ticker)
@@ -562,8 +548,6 @@ def get_insider_trades(
     Maintains compatibility with the original function.
     """
 
-    from utils.logger import logger
-
     logger.debug(f"Running get_insider_trades() for {ticker} from {start_date or 'earliest'} to {end_date}", 
                 module="get_insider_trades", ticker=ticker)
 
@@ -588,7 +572,6 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
     Returns:
         Dictionary mapping tickers to lists of InsiderTrade objects
     """
-    from utils.logger import logger
 
     logger.debug(f"Running get_insider_trades_async() for {len(tickers)} tickers", 
                 module="get_insider_trades_async")
@@ -622,12 +605,9 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
     # Log cache statistics
     cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
     download_percentage = 100 - cache_percentage
-    logger.debug(
-        f"INSIDER TRADES CACHE STATS:\n"
-        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
-        f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)",
-        module="get_insider_trades_async"
-    )
+    logger.debug(f"INSIDER TRADES CACHE STATS:", module="get_insider_trades_async")    
+    logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="get_insider_trades_async")    
+    logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="get_insider_trades_async")
 
     if tickers_to_fetch:
         try:
@@ -657,30 +637,32 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
     if cache_hits > 0:
         for ticker, trades in results.items():
             if len(trades) > 0 and ticker not in tickers_to_fetch:
-                logger.debug(
-                    f"Sample cached insider trades for {ticker}:\n"
-                    f"Total trades: {len(trades)}\n"
-                    f"Most recent trade: {trades[0].filing_date}\n"
-                    f"Transaction shares: {trades[0].transaction_shares}, Value: {trades[0].transaction_value}",
-                    module="get_insider_trades_async", 
-                    ticker=ticker
-                )
+                logger.debug(f"Sample cached insider trades for {ticker}:" , module="get_insider_trades_async", ticker=ticker)
+                logger.debug(f"Total trades: {len(trades)}" , module="get_insider_trades_async", ticker=ticker)
+                logger.debug(f"Most recent trade: {trades[0].filing_date}", module="get_insider_trades_async", ticker=ticker)
+                logger.debug(f"Transaction shares: {trades[0].transaction_shares}, Value: {trades[0].transaction_value}", module="get_insider_trades_async", ticker=ticker)
+                
                 break
+            else:
+                logger.debug("Preview of cached data not working", module="get_insider_trades_async")
+    else:
+        logger.debug("No cached data to preview", module="get_insider_trades_async")
     
     # Debug: Preview downloaded data
     if tickers_to_fetch and any(ticker in results for ticker in tickers_to_fetch):
         for ticker in tickers_to_fetch:
             if ticker in results and results[ticker]:
-                logger.debug(
-                    f"Sample downloaded insider trades for {ticker}:\n"
-                    f"Total trades: {len(results[ticker])}\n"
-                    f"Most recent trade: {results[ticker][0].filing_date if results[ticker] else 'N/A'}\n"
-                    f"Transaction shares: {results[ticker][0].transaction_shares if results[ticker] else 'N/A'}, "
-                    f"Value: {results[ticker][0].transaction_value if results[ticker] else 'N/A'}",
-                    module="get_insider_trades_async", 
-                    ticker=ticker
-                )
+                logger.debug(f"Sample downloaded insider trades for {ticker}:" , module="get_insider_trades_async", ticker=ticker)
+                logger.debug(f"Total trades: {len(results[ticker])}" , module="get_insider_trades_async", ticker=ticker)
+                logger.debug(f"Most recent trade: {results[ticker][0].filing_date if results[ticker] else 'N/A'}" , module="get_insider_trades_async", ticker=ticker)
+                logger.debug(f"Transaction shares: {results[ticker][0].transaction_shares if results[ticker] else 'N/A'}, " , module="get_insider_trades_async", ticker=ticker)
+                logger.debug(f"Value: {results[ticker][0].transaction_value if results[ticker] else 'N/A'}"  , module="get_insider_trades_async", ticker=ticker)
+
                 break
+            else:
+                logger.debug("Preview of downloaded data not working", module="get_insider_trades_async")
+    else:
+        logger.debug("No downloaded data to preview", module="get_insider_trades_async")
 
 
     return results
@@ -725,8 +707,6 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
         Dictionary mapping tickers to lists of CompanyNews objects
     """
 
-    from utils.logger import logger
-
     logger.debug(f"Running get_company_news_async() for {[tickers]} from {start_date} to {end_date}", module="get_company_news_async")
 
     results = {}
@@ -758,13 +738,11 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
     # Log cache statistics
     cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
     download_percentage = 100 - cache_percentage
-    logger.debug(
-        f"COMPANY NEWS CACHE STATS:\n"
-        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
-        f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)",
-        module="get_company_news_async"
-    )
-
+    logger.debug(f"COMPANY NEWS CACHE STATS:", module="get_company_news_async")
+    logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="get_company_news_async")   
+    logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="get_company_news_async")
+        
+    
     if tickers_to_fetch:
         for ticker in tickers_to_fetch:
             try:
@@ -807,38 +785,30 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
     if cache_hits > 0:
         for ticker, news_items in results.items():
             if len(news_items) > 0 and ticker not in tickers_to_fetch:
-                logger.debug(
-                    f"Sample cached company news for {ticker}:\n"
-                    f"Total news items: {len(news_items)}\n"
-                    f"Most recent news ({news_items[0].date}): {news_items[0].title}",
-                    module="get_company_news_async", 
-                    ticker=ticker
-                )
+                logger.debug(f"Sample cached company news for {ticker}:", module="get_company_news_async", ticker=ticker)
+                logger.debug(f"Total news items: {len(news_items)}", module="get_company_news_async", ticker=ticker)
+                logger.debug(f"Most recent news ({news_items[0].date}): {news_items[0].title}", module="get_company_news_async", ticker=ticker)
+                
                 break
     
     # Debug: Preview downloaded data
     if tickers_to_fetch and any(ticker in results for ticker in tickers_to_fetch):
         for ticker in tickers_to_fetch:
             if ticker in results and results[ticker]:
-                logger.debug(
-                    f"Sample downloaded company news for {ticker}:\n"
-                    f"Total news items: {len(results[ticker])}\n"
-                    f"Most recent news ({results[ticker][0].date if results[ticker] else 'N/A'}): "
-                    f"{results[ticker][0].title if results[ticker] else 'N/A'}",
-                    module="get_company_news_async", 
-                    ticker=ticker
-                )
+                logger.debug(f"Sample downloaded company news for {ticker}:", module="get_company_news_async", ticker=ticker)
+                logger.debug(f"Total news items: {len(results[ticker])}", module="get_company_news_async", ticker=ticker)
+                logger.debug(f"Most recent news ({results[ticker][0].date if results[ticker] else 'N/A'}): " , module="get_company_news_async", ticker=ticker)
+                    
                 break
     
     return results # Review: Do I need to use return results.get(ticker, [])
                 # Do I need to close the loop?
 
 
-# ===== USED BY AN AGENT =====
+# ===== USED BY AGENTS =====
 def search_line_items(
     ticker: str,
     line_items: list[str],
-    start_date: str,
     end_date: str,
     period: str = "ttm",
     limit: int = 10,
@@ -857,8 +827,6 @@ def search_line_items(
     Returns:
         List of LineItem objects
     """
-
-    from utils.logger import logger
 
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)
@@ -925,34 +893,57 @@ def search_line_items(
                             price = hist['Close'].iloc[0]
                             if price > 0:
                                 setattr(line_item, item, market_cap / price)
+                                logger.debug(f"Successfully set outstanding_shares={market_cap/price} for {ticker}", 
+                                             module="search_line_items", ticker=ticker)
+                            else:
+                                logger.debug(f"Cannot set outstanding_shares: price is zero for {ticker}", 
+                                             module="search_line_items", ticker=ticker)
+                        else:
+                            logger.debug(f"Cannot set outstanding_shares: no price history for {ticker} on {report_date}", 
+                                        module="search_line_items", ticker=ticker)
+                    else:
+                        logger.debug(f"Cannot set outstanding_shares: no market cap for {ticker} on {report_date}", 
+                                    module="search_line_items", ticker=ticker)
                 
                 elif item == "working_capital":
                     # Working capital = Current Assets - Current Liabilities
-                    current_assets = balance_sheet.loc.get("Total Current Assets", col)
-                    current_liabilities = balance_sheet.loc.get("Total Current Liabilities", col)
+                    current_assets = balance_sheet.loc["Total Current Assets", col] if "Total Current Assets" in balance_sheet.index else None
+                    current_liabilities = balance_sheet.loc["Total Current Liabilities", col] if "Total Current Liabilities" in balance_sheet.index else None
                     if current_assets is not None and current_liabilities is not None:
                         setattr(line_item, item, float(current_assets - current_liabilities))
+                    else:
+                        logger.debug(f"Missing data for working_capital calculation: current_assets={current_assets is not None}, current_liabilities={current_liabilities is not None}", 
+                        module="search_line_items", ticker=ticker)
                 
                 elif item == "debt_to_equity":
                     # Debt to Equity
-                    total_liabilities = balance_sheet.loc.get("Total Liabilities Net Minority Interest", col)
-                    stockholders_equity = balance_sheet.loc.get("Stockholders Equity", col)
+                    total_liabilities = balance_sheet.loc["Total Liabilities Net Minority Interest", col] if "Total Liabilities Net Minority Interest" in balance_sheet.index else None
+                    stockholders_equity = balance_sheet.loc["Stockholders Equity", col] if "Stockholders Equity" in balance_sheet.index else None
                     if total_liabilities is not None and stockholders_equity is not None and float(stockholders_equity) > 0:
                         setattr(line_item, item, float(total_liabilities) / float(stockholders_equity))
+                    else:
+                        logger.debug(f"Missing data for debt_to_equity calculation: total_liabilities={total_liabilities is not None}, stockholders_equity={stockholders_equity is not None}", 
+                        module="search_line_items", ticker=ticker)
                 
                 elif item == "free_cash_flow":
                     # Free Cash Flow = Operating Cash Flow + Capital Expenditure
-                    operating_cash_flow = cash_flow.loc.get("Operating Cash Flow", col)
-                    capital_expenditure = cash_flow.loc.get("Capital Expenditure", col)
+                    operating_cash_flow = cash_flow.loc["Operating Cash Flow", col] if "Operating Cash Flow" in cash_flow.index else None
+                    capital_expenditure = cash_flow.loc["Capital Expenditure", col] if "Capital Expenditure" in cash_flow.index else None
                     if operating_cash_flow is not None and capital_expenditure is not None:
                         setattr(line_item, item, float(operating_cash_flow + capital_expenditure))
+                    else:
+                        logger.debug(f"Missing data for free_cash_flow calculation: operating_cash_flow={operating_cash_flow is not None}, capital_expenditure={capital_expenditure is not None}", 
+                        module="search_line_items", ticker=ticker)
                 
                 elif item == "operating_margin":
                     # Operating Margin = Operating Income / Revenue
-                    operating_income = income_stmt.loc.get("Operating Income", col)
-                    total_revenue = income_stmt.loc.get("Total Revenue", col)
+                    operating_income = income_stmt.loc["Operating Income", col] if "Operating Income" in income_stmt.index else None
+                    total_revenue = income_stmt.loc["Total Revenue", col] if "Total Revenue" in income_stmt.index else None
                     if operating_income is not None and total_revenue is not None and float(total_revenue) > 0:
                         setattr(line_item, item, float(operating_income) / float(total_revenue))
+                    else:
+                        logger.debug(f"Missing data for operating_margin calculation: operating_income={operating_income is not None}, total_revenue={total_revenue is not None}", 
+                        module="search_line_items", ticker=ticker)
                 
                 elif item_mapping.get(item):
                     field, df = item_mapping[item]
@@ -998,8 +989,6 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
     Returns:
         Dictionary of ticker to data mapping
     """
-
-    from utils.logger import logger
     
     logger.debug(f"Running get_data_for_tickers() for {len(tickers)} tickers from {start_date} to {end_date}", 
                 module="get_data_for_tickers")

@@ -68,6 +68,8 @@ class Backtester:
         self.model_name = model_name
         self.model_provider = model_provider
         self.selected_analysts = selected_analysts
+        self.debug_mode = debug_mode
+        self.verbose_data = verbose_data
 
         # Store the margin ratio (e.g. 0.5 means 50% margin required).
         self.margin_ratio = initial_margin_requirement
@@ -327,7 +329,7 @@ class Backtester:
 
         # Log a summary of fetched data
         if self.debug_mode:
-            logger.debug("\n=== DATA FETCHED SUMMARY from prefetch_data ===", module="prefetch_data")
+            logger.debug("=== DATA FETCHED SUMMARY from prefetch_data ===", module="prefetch_data")
             logger.debug(f"Tickers: {self.tickers}", module="prefetch_data")
             logger.debug(f"Period: {self.start_date} to {self.end_date}", module="prefetch_data")
             
@@ -338,7 +340,7 @@ class Backtester:
                 insider_trades = ticker_data.get("insider_trades", [])
                 news = ticker_data.get("news", [])
                 
-                logger.debug(f"\nData structure for {ticker}:", module="prefetch_data")
+                logger.debug(f"Data structure for {ticker}:", module="prefetch_data")
                 logger.debug(f"  - prices: DataFrame with {prices.shape[0] if hasattr(prices, 'shape') else 0} rows, {prices.shape[1] if hasattr(prices, 'shape') else 0} columns", module="prefetch_data")
                 logger.debug(f"  - metrics: List with {len(metrics)} items", module="prefetch_data")
                 logger.debug(f"  - insider_trades: List with {len(insider_trades)} items", module="prefetch_data")

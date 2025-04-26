@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 import pickle
+from utils.logger import logger
 
 @lru_cache(maxsize=1)
 def get_nyse_calendar(start_year=2020, end_year=2025):
@@ -22,10 +23,10 @@ def get_nyse_calendar(start_year=2020, end_year=2025):
             # Check if the calendar covers our date range
             if (min(calendar_data).year <= start_year and 
                 max(calendar_data).year >= end_year):
-                print(f"Loaded NYSE calendar from cache: {len(calendar_data)} trading days.")    
+                logger.debug(f"Loaded NYSE calendar from cache: {len(calendar_data)} trading days.", module="get_nyse_calendar")    
                 return calendar_data
         except Exception as e:
-            print(f"Error loading calendar cache: {e}")
+            logger.error(f"Error loading calendar cache: {e}", module="get_nyse_calendar")
     
     # If cache doesn't exist or is invalid, create new calendar
     start = f"{start_year}-01-01"
@@ -36,7 +37,7 @@ def get_nyse_calendar(start_year=2020, end_year=2025):
     
     # Convert to set of dates for faster lookup
     calendar_dates = set(pd.to_datetime(calendar).date)
-    print(f"Fetched NYSE calendar: {len(calendar_dates)} trading days from {start} to {end}.")
+    logger.debug(f"Fetched NYSE calendar: {len(calendar_dates)} trading days from {start} to {end}.", module="get_nyse_calendar")
     
     # Save to cache
     cache_file.parent.mkdir(exist_ok=True)
@@ -56,7 +57,7 @@ def is_trading_day(date_str):
         
     calendar = get_nyse_calendar()
     is_trading = date in calendar
-    print(f"Checking if {date} is a trading day: {is_trading}")
+    logger.debug(f"Checking if {date} is a trading day: {is_trading}", module="is_trading_day")
     return is_trading
 
 def get_previous_trading_day(date_str):
@@ -105,20 +106,18 @@ def adjust_date_range(start_date, end_date):
     If start_date is not a trading day, use the next trading day.
     If end_date is not a trading day, use the previous trading day.
     """
-    print(f"Original date range: {start_date} to {end_date}")
+    logger.debug(f"Original date range: {start_date} to {end_date}", module="adjust_date_range")
     
     original_start = start_date
     original_end = end_date
 
     if not is_trading_day(start_date):
         start_date = get_next_trading_day(start_date)
-        print(f"Adjusted start date from {original_start} to {start_date} (next trading day)")
+        logger.debug(f"Adjusted start date from {original_start} to {start_date} (next trading day)", module="adjust_date_range")
     
     if not is_trading_day(end_date):
         end_date = get_previous_trading_day(end_date)
-        print(f"Adjusted end date from {original_end} to {end_date} (previous trading day)")
-    
-    print(f"Final adjusted date range: {start_date} to {end_date}")
+        logger.debug(f"Adjusted end date from {original_end} to {end_date} (previous trading day)", module="adjust_date_range")
     
     return start_date, end_date
 
@@ -133,19 +132,19 @@ def check_nyse_calendar(start_year=2020, end_year=2025):
     calendar_list = sorted(list(calendar))
     
     # Print the first and last few days
-    print(f"NYSE Trading Calendar ({len(calendar_list)} days)")
-    print(f"First 10 trading days: {calendar_list[:10]}")
-    print(f"Last 10 trading days: {calendar_list[-10:]}")
+    logger.info(f"NYSE Trading Calendar ({len(calendar_list)} days)", module="check_nyse_calendar")
+    logger.debug(f"First 10 trading days: {calendar_list[:10]}", module="check_nyse_calendar")
+    logger.debug(f"Last 10 trading days: {calendar_list[-10:]}", module="check_nyse_calendar")
     
     # Check specific ranges
     jan_2024_days = [d for d in calendar_list if d.year == 2024 and d.month == 1]
-    print(f"\nJanuary 2024 trading days: {jan_2024_days}")
+    logger.debug(f"January 2024 trading days: {jan_2024_days}", module="check_nyse_calendar")
     
     # Check specific dates
     test_dates = ["2024-01-03", "2024-01-04", "2024-01-05"]
     for date_str in test_dates:
         date = datetime.strptime(date_str, '%Y-%m-%d').date()
         is_trading = date in calendar
-        print(f"Is {date_str} a trading day? {is_trading}")
+        logger.debug(f"Is {date_str} a trading day? {is_trading}", module="check_nyse_calendar")
     
     return calendar
