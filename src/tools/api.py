@@ -62,7 +62,7 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> List[Price]:
         loop.close() # Review: Why do I have to close the loop? Why can't I just omit this finally:?
 
 
-async def get_prices_async(tickers: List[str], start_date: str, end_date: str) -> Dict[str, List[Price]]:
+async def get_prices_async(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, List[Price]]:
     """Fetch prices for multiple tickers asynchronously"""
 
     logger.debug(f"Running get_prices_async() for {len(tickers)} tickers from {start_date} to {end_date}", 
@@ -83,11 +83,11 @@ async def get_prices_async(tickers: List[str], start_date: str, end_date: str) -
         except ValueError as e:
             logger.warning(f"Warning: {e} - continuing with original dates", module="get_prices_async")
 
-    df_results = await fetch_prices_batch(tickers, start_date, end_date) # Review: Why do I need "await" here?
+    df_results = await fetch_prices_batch(tickers, start_date, end_date, verbose_data=verbose_data) # Review: Why do I need "await" here?
     return {ticker: df_to_price_objects(df) for ticker, df in df_results.items()}
 
 
-async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
+async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, pd.DataFrame]:
     """
     Fetch historical prices for multiple tickers in a single batch request.
     Uses yfinance's batch download capability for efficiency.
@@ -123,7 +123,7 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
     logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="fetch_prices_batch")
     logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="fetch_prices_batch")
     
-    if not tickers_to_fetch:
+    if not tickers_to_fetch and verbose_data:
         # Debug: Preview data when everything comes from cache
         if cached_results and len(cached_results) > 0:
             example_ticker = list(cached_results.keys())[0]
@@ -161,7 +161,7 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
         results = cached_results.copy()
         
         # Debug: Structure of the downloaded data
-        if isinstance(data, pd.DataFrame):
+        if isinstance(data, pd.DataFrame) and verbose_data:
             logger.debug(f"Data type: {type(data)}", module="fetch_prices_batch")
             if len(data.columns) > 0:
                 logger.debug(f"Columns: {data.columns}", module="fetch_prices_batch")
@@ -191,7 +191,7 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str)
                     results[ticker] = ticker_data
 
         # Debug: Before return, preview the downloaded data
-        if len(tickers_to_fetch) > 0 and len(results) > 0:
+        if len(tickers_to_fetch) > 0 and len(results) > 0 and verbose_data:
             for ticker in tickers_to_fetch[:1]:  # Preview first downloaded ticker
                 logger.debug(f"Debug from fetch_prices_batch if some data is downloaded.",
                         module="fetch_prices_batch", ticker=ticker)
@@ -440,12 +440,12 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
     # Debug: Log cache statistics
     cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
     download_percentage = 100 - cache_percentage
-    logger.debug(
-        f"FINANCIAL METRICS CACHE STATS:\n"
-        f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)\n"
-        f"  - Downloaded: {total_tickers - cache_hits}/{total_tickers} tickers ({download_percentage:.1f}%)",
-        module="fetch_financial_metrics_async"
-    )
+    logger.debug(f"FINANCIAL METRICS CACHE STATS:", 
+                 module="fetch_financial_metrics_async")
+    logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", 
+                 module="fetch_financial_metrics_async")
+    logger.debug(f"  - Downloaded: {total_tickers - cache_hits}/{total_tickers} tickers ({download_percentage:.1f}%)", 
+                 module="fetch_financial_metrics_async")
     
     # Review: Can the following code be simplified?
     # Debug: Data preview
@@ -453,14 +453,15 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
         previewed = False # Review: what is this for?
         for ticker, info in results_dict.items():
             if info['source'] == source and info['data']:
-                logger.debug(
-                    f"Sample {source} financial metrics for {ticker}:\n"
-                    f"Metrics count: {len(info['data'])}\n"
-                    f"Sample metric period: {info['data'][0].report_period}\n"
-                    f"Key ratios: ROE={info['data'][0].return_on_equity}, D/E={info['data'][0].debt_to_equity}",
-                    module="fetch_financial_metrics_async",
-                    ticker=ticker
-                )
+                logger.debug(f"Sample {source} financial metrics for {ticker}:",
+                    module="fetch_financial_metrics_async", ticker=ticker)
+                logger.debug(f"Metrics count: {len(info['data'])}",
+                    module="fetch_financial_metrics_async", ticker=ticker)
+                logger.debug(f"Sample metric period: {info['data'][0].report_period}",
+                    module="fetch_financial_metrics_async", ticker=ticker)
+                logger.debug(f"Key ratios: ROE={info['data'][0].return_on_equity}, D/E={info['data'][0].debt_to_equity}",
+                    module="fetch_financial_metrics_async", ticker=ticker)
+
                 previewed = True
                 break
         if previewed:
@@ -965,16 +966,16 @@ def search_line_items(
 
 
 # ===== LIKELY A USELESS FUNCTION =====
-async def get_price_data_batch(tickers: List[str], start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
+async def get_price_data_batch(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, pd.DataFrame]:
     """Get price data as DataFrames for multiple tickers in one batch request"""
 
     from utils.logger import logger
     logger.debug(f"Running get_price_data_batch() for {len(tickers)} tickers from {start_date} to {end_date}", 
                 module="get_price_data_batch")
-    return await fetch_prices_batch(tickers, start_date, end_date)
+    return await fetch_prices_batch(tickers, start_date, end_date, verbose_data=verbose_data)
 
 # ===== DATA FETCHING FUNCTION FOR SRC/BACKTESTER.PY =====
-def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, batch_size: int = 20):
+def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, batch_size: int = 20, verbose_data: bool = False):
     """
     Process multiple tickers efficiently with batching and parallel processing.
     Returns a dictionary with all data for each ticker.
@@ -1005,7 +1006,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
         # Process each batch of tickers
         for batch in ticker_batches:
             # Get price data, financial metrics, insider trades, and news in a batch
-            price_task = fetch_prices_batch(batch, start_date, end_date)
+            price_task = fetch_prices_batch(batch, start_date, end_date, verbose_data=verbose_data)
             metrics_task = fetch_financial_metrics_async(batch, end_date)
             insider_task = get_insider_trades_async(batch, end_date, start_date)
             news_task = get_company_news_async(batch, end_date, start_date)
@@ -1032,7 +1033,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
         loop.close()
 
     # Preview the results
-    if results:
+    if results and verbose_data:
         example_ticker = next(iter(results))
         logger.debug("--- DATA PREVIEW from get_data_for_tickers ---", module="get_data_for_tickers")
         logger.debug(f"Sample data for ticker: {example_ticker}", 
@@ -1041,13 +1042,12 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
         # Preview prices
         if isinstance(results[example_ticker]["prices"], pd.DataFrame) and not results[example_ticker]["prices"].empty:
             prices_df = results[example_ticker]["prices"]
-            logger.debug(
-                f"Prices sample:\n\n"
-                f"Prices data shape: {prices_df.shape}\n"
-                f"First row: {prices_df.head(1)}",
-                module="get_data_for_tickers", 
-                ticker=example_ticker
-            )
+            logger.debug(f"Prices sample:",
+                module="get_data_for_tickers", ticker=example_ticker)
+            logger.debug(f"Prices data shape: {prices_df.shape}",
+                module="get_data_for_tickers", ticker=example_ticker)
+            logger.debug(f"First row: {prices_df.head(1)}",
+                module="get_data_for_tickers", ticker=example_ticker)
             
         # Preview metrics
         metrics = results[example_ticker]["metrics"]

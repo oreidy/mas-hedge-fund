@@ -325,7 +325,7 @@ class Backtester:
 
         logger.info(f"Fetching historical data from {historical_start_str} to {self.end_date}", module="prefetch_data")
 
-        data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date)
+        data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
 
         # Log a summary of fetched data
         if self.debug_mode:
