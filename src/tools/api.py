@@ -476,7 +476,11 @@ def get_market_cap(
     ticker: str,
     end_date: str,
 ) -> float:
-    """Fetch market cap for a ticker at a specific date"""
+    """
+    Fetch market cap for a ticker at a specific date.
+    yfinance only provides the market cap for the current day.
+    For any other date, get_historical_market_cap is called.
+    """
 
     logger.debug(f"Running get_market_cap() for {ticker} at {end_date}", 
                 module="get_market_cap", ticker=ticker)
@@ -491,7 +495,7 @@ def get_market_cap(
         # If we need a historical market cap, calculate it
         if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
             market_cap = get_historical_market_cap(ticker, end_date)
-            logger.debug(f"Market cap for{[ticker]} is either None or there is a problem with the end_date. Function get_historical_market_cap() is used instead. Historical market cap: {market_cap}",
+            logger.info(f"Market cap for{[ticker]} is either None or the end_date isn't the current date.",
                          module="get_market_cap")
         
         return market_cap
@@ -502,27 +506,97 @@ def get_market_cap(
 
 
 def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
-    """Get historical market cap for a ticker at a specific date"""
+    """
+    Get historical market cap for a ticker at a specific date by retrieving shares outstanding 
+    from the most recent quarterly balance sheet and adjusting for any stock splits that 
+    occurred between that quarter's end date and the requested date.
+    """
 
     logger.debug(f"Running get_historical_market_cap() for {ticker} at {date}", 
                 module="get_historical_market_cap", ticker=ticker)
 
     try:
-        # Get historical price data
-        end_date = datetime.datetime.strptime(date, '%Y-%m-%d') + datetime.timedelta(days=1)
+        # Get historical data
+        end_date = datetime.datetime.strptime(date, '%Y-%m-%d') + datetime.timedelta(days=1) # Since end_date in yfinance is exclusive
         end_date_str = end_date.strftime('%Y-%m-%d')
-        
+
         ticker_obj = yf.Ticker(ticker)
-        shares_outstanding = ticker_obj.info.get('sharesOutstanding')
+
+        # Get splits data
+        splits = ticker_obj.splits
         
-        if not shares_outstanding:
-            logger.warning(f"No shares outstanding data for {ticker}", 
-                              module="get_historical_market_cap", ticker=ticker)
+        # Get quarterly balance sheets
+        quarters = ticker_obj.quarterly_balance_sheet
+        if quarters.empty:
+            logger.warning(f"No quarterly data available for {ticker}", 
+                          module="get_historical_market_cap", ticker=ticker)
             return None
         
+        # Convert all quarter dates to strings for easier comparison
+        quarter_dates = [(q_date, q_date.strftime('%Y-%m-%d')) for q_date in quarters.columns]
+        # Sort by date string (newer dates first)
+        quarter_dates.sort(key=lambda x: x[1], reverse=True)
+
+        # Find the most recent quarter before end_date
+        quarter_date = None
+        for q_date, q_date_str in quarter_dates:
+            if q_date_str <= end_date_str:  # Compare date strings directly
+                quarter_date = q_date
+                break
+
+        if not quarter_date:
+            logger.warning(f"No quarterly data before {date} for {ticker}", 
+                          module="get_historical_market_cap", ticker=ticker)
+            return None
+        
+        # Get shares from that quarter and check for multiple potential field names
+        shares = None
+        share_field_names = [
+            'Share Issued',
+            'Shares Isseud', 
+            'Common Stock Shares Outstanding',
+            'ShareIssued',
+            'SharesIssued',
+            'CommonStockSharesOutstanding',
+            'Common Stock',
+            'CommonStock'
+        ]
+        
+        for field in share_field_names:
+            if field in quarters.index:
+                shares = quarters[quarter_date].get(field)
+                if shares and shares > 0:
+                    logger.debug(f"Found shares ({shares:,.0f}) using field '{field}' for quarter ending {quarter_date.strftime('%Y-%m-%d')}",
+                               module="get_historical_market_cap", ticker=ticker)
+                    break
+                    
+        if not shares or shares <= 0:
+            logger.warning(f"No valid shares data in quarter ending {quarter_date.strftime('%Y-%m-%d')} for {ticker}",
+                          module="get_historical_market_cap", ticker=ticker)
+            return None
+        
+        # Adjust for splits between quarterly data date and end_date
+        if not splits.empty:
+            # Convert quarter_date to string for comparison
+            q_date_str = quarter_date.strftime('%Y-%m-%d')
+            
+            # Find and apply relevant splits
+            relevant_splits = []
+            for split_date, ratio in zip(splits.index, splits.values):
+                split_date_str = split_date.strftime('%Y-%m-%d')
+                if q_date_str < split_date_str <= end_date_str:
+                    relevant_splits.append((split_date, ratio))
+            
+            # Apply the splits to our share count
+            for split_date, split_ratio in relevant_splits:
+                shares *= split_ratio
+                logger.debug(f"Adjusted shares for split on {split_date.strftime('%Y-%m-%d')} ({split_ratio}:1)",
+                        module="get_historical_market_cap", ticker=ticker)
+            
+            
         # Get historical price
         hist = ticker_obj.history(start=date, end=end_date_str)
-        logger.debug(f"Historical price for {[ticker]} (1d {date} -> {end_date_str})", 
+        logger.debug(f"Historical price for {[ticker]}: {hist} (1d {date} -> {end_date_str})", 
                      module="get_historical_market_cap", ticker=ticker)
         if hist.empty:
             logger.warning(f"${ticker}: possibly delisted; no price data found  (1d {date} -> {end_date_str})", 
@@ -530,7 +604,8 @@ def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
             return None
         
         close_price = hist['Close'].iloc[0]
-        return close_price * shares_outstanding
+        return close_price * shares
+    
     except Exception as e:
         logger.error(f"Error calculating historical market cap for {ticker} at {date}: {e}", 
                     module="get_historical_market_cap", ticker=ticker)

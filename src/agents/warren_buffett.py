@@ -7,6 +7,7 @@ from typing_extensions import Literal
 from tools.api import get_financial_metrics, get_market_cap, search_line_items
 from utils.llm import call_llm
 from utils.progress import progress
+from utils.logger import logger
 
 
 class WarrenBuffettSignal(BaseModel):
@@ -17,6 +18,9 @@ class WarrenBuffettSignal(BaseModel):
 
 def warren_buffett_agent(state: AgentState):
     """Analyzes stocks using Buffett's principles and LLM reasoning."""
+
+    logger.debug("Accessing Warren Buffet Agent")
+
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
@@ -234,22 +238,42 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
 
 def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
     """Calculate intrinsic value using DCF with owner earnings."""
-    if not financial_line_items:
-        return {"value": None, "details": ["Insufficient data for valuation"]}
 
+    if not financial_line_items:
+        logger.warning("Insufficient financial line items for valuation", 
+                       module="warren_buffett_agent")
+        
     # Calculate owner earnings
     earnings_data = calculate_owner_earnings(financial_line_items)
     if not earnings_data["owner_earnings"]:
-        return {"value": None, "details": earnings_data["details"]}
+        logger.warning("Owner earnings calculation failed", 
+                       module="warren_buffett_agent")
 
     owner_earnings = earnings_data["owner_earnings"]
 
     # Get current market data
     latest_financial_line_items = financial_line_items[0]
-    shares_outstanding = latest_financial_line_items.outstanding_shares
+    ticker = latest_financial_line_items.ticker
+
+    shares_outstanding = getattr(latest_financial_line_items, 'outstanding_shares', None)
 
     if not shares_outstanding:
-        return {"value": None, "details": ["Missing shares outstanding data"]}
+        logger.warning(f"Missing outstanding_shares data for {ticker}. Using fallback valuation method.",
+                      module="warren_buffett_agent", ticker=ticker)
+        
+        # Simplified estimation of business value as fallback
+        intrinsic_value = owner_earnings * 15
+        return {
+            "intrinsic_value": intrinsic_value,
+            "owner_earnings": owner_earnings,
+            "assumptions": {
+                "growth_rate": 0.05,
+                "discount_rate": 0.09,
+                "terminal_multiple": 15,  # Using a direct multiple for the fallback method
+                "projection_years": 10,
+            },
+            "details": ["Intrinsic value estimated using simplified multiple method due to missing shares data"],
+        }
 
     # Buffett's DCF assumptions
     growth_rate = 0.05  # Conservative 5% growth

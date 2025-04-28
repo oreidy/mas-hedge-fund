@@ -287,9 +287,8 @@ class Backtester:
         from utils.logger import logger
 
         """Pre-fetch all data needed for the backtest period."""
-        print("\nPre-fetching data for the entire backtest period...")
 
-        logger.debug("prefetch_data() is runing", module="prefetch_data")
+        logger.info("\nPre-fetching data for the entire backtest period...", module="prefetch_data")
 
         # Convert string dates to datetime objects
         start_date_dt = datetime.strptime(self.start_date, "%Y-%m-%d")

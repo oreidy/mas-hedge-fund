@@ -8,6 +8,7 @@ import json
 from typing_extensions import Literal
 from utils.progress import progress
 from utils.llm import call_llm
+from utils.logger import logger
 
 class BillAckmanSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
@@ -20,6 +21,8 @@ def bill_ackman_agent(state: AgentState):
     Analyzes stocks using Bill Ackman's investing principles and LLM reasoning.
     Fetches multiple periods of data so we can analyze long-term trends.
     """
+    logger.debug("Accessing Bill Ackman Agent")
+    
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
