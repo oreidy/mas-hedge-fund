@@ -111,6 +111,22 @@ class DiskCache:
             expire=self._get_expiration("company_news")
         )
     
+    def get_outstanding_shares(self, ticker: str, date: str):
+        """Get cached outstanding shares count for a ticker at a specific date."""
+        cache_key = f"outstanding_shares:{ticker}:{date}"
+        # Use existing financial_metrics cache for outstanding shares data
+        return self.caches["financial_metrics"].get(cache_key)
+
+    def set_outstanding_shares(self, ticker: str, date: str, shares: float):
+        """Cache outstanding shares count for a ticker at a specific date."""
+        cache_key = f"outstanding_shares:{ticker}:{date}"
+        # Use existing financial_metrics cache for outstanding shares data
+        self.caches["financial_metrics"].set(
+            cache_key, 
+            shares, 
+            expire=self._get_expiration("financial_metrics")
+        )
+
     def update_prices(self, ticker, new_data):
         """Smart update that only adds new prices"""
         cache_key = f"prices:{ticker}"

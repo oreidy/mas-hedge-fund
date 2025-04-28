@@ -266,6 +266,7 @@ def get_financial_metrics(
     end_date: str,
     period: str = "ttm",
     limit: int = 10,
+    verbose_data: bool = False
 ) -> List[FinancialMetrics]:
     """
     Fetch financial metrics for a single ticker.
@@ -287,7 +288,7 @@ def get_financial_metrics(
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(fetch_financial_metrics_async([ticker], end_date, period, limit))
+        results = loop.run_until_complete(fetch_financial_metrics_async([ticker], end_date, period, limit, verbose_data=verbose_data))
         return results.get(ticker, [])
     except Exception as e:
         logger.error(f"Error fetching financial metrics for {ticker} before {end_date}: {e}", 
@@ -296,7 +297,7 @@ def get_financial_metrics(
         loop.close()
 
 
-async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "ttm", limit: int = 10):
+async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "ttm", limit: int = 10, verbose_data: bool = False):
     """Fetch financial metrics for multiple tickers in parallel"""
 
     logger.debug(f"Running fetch_financial_metrics_async() for {len(tickers)} tickers", 
@@ -360,7 +361,7 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     stockholders_equity = float(balance_sheet.loc['Stockholders Equity', col]) if 'Stockholders Equity' in balance_sheet.index else None
                     
                     # Calculate financial ratios
-                    market_cap = get_historical_market_cap(ticker, report_date)
+                    market_cap = get_historical_market_cap(ticker, report_date, verbose_data=verbose_data)
                     
                     # ROE, margins, etc.
                     return_on_equity = net_income / stockholders_equity if stockholders_equity and net_income else None
@@ -470,11 +471,140 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
     # Convert results to dictionary
     return {ticker: metrics for ticker, metrics in results} # Review: What does this line of code do?
 
+# ===== GET OUTSTANDING SHARES =====
+def get_outstanding_shares(
+    ticker: str, 
+    date: str = None,   
+    verbose_data: bool = False
+) -> Optional[float]:
+    """
+    Get historical outstanding shares count for a company.
+    
+    Args:
+        ticker: Stock ticker symbol
+        date: Date to get shares for (YYYY-MM-DD), defaults to current date
+        use_cache: Whether to use the cache
+        debug_mode: Whether to print debugging information
+        verbose_data: Whether to print detailed data information
+        
+    Returns:
+        Number of outstanding shares or None if not available
+    """
+        
+    logger.debug(f"Getting outstanding shares for {ticker} at {date}", 
+                module="get_outstanding_shares", ticker=ticker)
+
+
+    cached_shares = _cache.get_outstanding_shares(ticker, date)
+    if cached_shares:
+        logger.debug(f"Retrieved outstanding shares from cache: {cached_shares:}", 
+                    module="get_outstanding_shares", ticker=ticker)
+        return cached_shares
+
+    try:
+        # Get ticker object from yfinance
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Get quarterly balance sheets
+        quarters = ticker_obj.quarterly_balance_sheet
+        if quarters.empty:
+            logger.warning(f"No quarterly data available for {ticker}", 
+                          module="get_outstanding_shares", ticker=ticker)
+            return None
+        
+        # Convert all quarter dates to strings for easier comparison
+        quarter_dates = [(q_date, q_date.strftime('%Y-%m-%d')) for q_date in quarters.columns]
+        # Sort by date string (newer dates first)
+        quarter_dates.sort(key=lambda x: x[1], reverse=True)
+
+        # Find the most recent quarter before or equal to the specified date
+        quarter_date = None
+        for q_date, q_date_str in quarter_dates:
+            if q_date_str <= date:
+                quarter_date = q_date
+                break
+
+        if not quarter_date:
+            logger.warning(f"No quarterly data before {date} for {ticker}", 
+                          module="get_outstanding_shares", ticker=ticker)
+            return None
+        
+        # Get shares from that quarter by checking multiple potential field names
+        shares = None
+        share_field_names = [
+            'Share Issued',
+            'Shares Issued', 
+            'Common Stock Shares Outstanding',
+            'ShareIssued',
+            'SharesIssued',
+            'CommonStockSharesOutstanding',
+            'Common Stock',
+            'CommonStock'
+        ]
+        
+        for field in share_field_names:
+            if field in quarters.index:
+                shares = quarters[quarter_date].get(field)
+                if shares and shares > 0:
+                    if verbose_data:
+                        logger.debug(f"Found shares ({shares:,.0f}) using field '{field}' for quarter ending {quarter_date.strftime('%Y-%m-%d')}",
+                                   module="get_outstanding_shares", ticker=ticker)
+                    break
+        
+        if not shares or shares <= 0:
+            logger.warning(f"No valid shares data in quarter ending {quarter_date.strftime('%Y-%m-%d')} for {ticker}",
+                          module="get_outstanding_shares", ticker=ticker)
+            return None
+        
+        # Adjust for splits between quarterly data date and specified date
+        splits = ticker_obj.splits
+        if not splits.empty:
+            # Convert quarter_date to string for comparison
+            q_date_str = quarter_date.strftime('%Y-%m-%d')
+            
+            # Find and apply relevant splits
+            relevant_splits = []
+            for split_date, ratio in zip(splits.index, splits.values):
+                split_date_str = split_date.strftime('%Y-%m-%d')
+                if q_date_str < split_date_str <= date:
+                    relevant_splits.append((split_date, ratio))
+            
+            # Apply the splits to our share count
+            for split_date, split_ratio in relevant_splits:
+                original_shares = shares
+                shares *= split_ratio
+                if verbose_data:
+                    logger.debug(f"Adjusted shares from {original_shares} to {shares} due to {split_ratio}:1 split on {split_date.strftime('%Y-%m-%d')}",
+                            module="get_outstanding_shares", ticker=ticker)
+        
+        # Cache the result
+        _cache.set_outstanding_shares(ticker, date, float(shares))
+            
+        logger.debug(f"Final outstanding shares for {ticker} at {date}: {shares}", 
+                    module="get_outstanding_shares", ticker=ticker)
+        
+        if verbose_data:
+            logger.debug("=== OUTSTANDING SHARES DETAILS ===", module="get_outstanding_shares", ticker=ticker)
+            logger.debug(f"Date requested: {date}", module="get_outstanding_shares", ticker=ticker)
+            logger.debug(f"Quarter date used: {quarter_date.strftime('%Y-%m-%d')}", module="get_outstanding_shares", ticker=ticker)
+            if relevant_splits:
+                logger.debug(f"Applied {len(relevant_splits)} stock splits between {q_date_str} and {date}", 
+                           module="get_outstanding_shares", ticker=ticker)
+
+            
+        return float(shares)
+    
+    except Exception as e:
+        logger.error(f"Error calculating outstanding shares for {ticker} at {date}: {e}", 
+                    module="get_outstanding_shares", ticker=ticker)
+        return None
+
 
 # ===== MARKET CAP FUNTIONS =====
 def get_market_cap(
     ticker: str,
     end_date: str,
+    verbose_data: bool = False
 ) -> float:
     """
     Fetch market cap for a ticker at a specific date.
@@ -494,7 +624,7 @@ def get_market_cap(
         
         # If we need a historical market cap, calculate it
         if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
-            market_cap = get_historical_market_cap(ticker, end_date)
+            market_cap = get_historical_market_cap(ticker, end_date, verbose_data=verbose_data)
             logger.info(f"Market cap for{[ticker]} is either None or the end_date isn't the current date.",
                          module="get_market_cap")
         
@@ -505,7 +635,7 @@ def get_market_cap(
         return None
 
 
-def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
+def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False) -> Optional[float]:
     """
     Get historical market cap for a ticker at a specific date by retrieving shares outstanding 
     from the most recent quarterly balance sheet and adjusting for any stock splits that 
@@ -516,95 +646,44 @@ def get_historical_market_cap(ticker: str, date: str) -> Optional[float]:
                 module="get_historical_market_cap", ticker=ticker)
 
     try:
-        # Get historical data
+        
         end_date = datetime.datetime.strptime(date, '%Y-%m-%d') + datetime.timedelta(days=1) # Since end_date in yfinance is exclusive
         end_date_str = end_date.strftime('%Y-%m-%d')
 
         ticker_obj = yf.Ticker(ticker)
 
-        # Get splits data
-        splits = ticker_obj.splits
+        # Get outstanding shares
+        shares = get_outstanding_shares(ticker, date, verbose_data=verbose_data)
         
-        # Get quarterly balance sheets
-        quarters = ticker_obj.quarterly_balance_sheet
-        if quarters.empty:
-            logger.warning(f"No quarterly data available for {ticker}", 
+        if not shares:
+            logger.warning(f"Could not determine shares outstanding for {ticker} at {date}", 
                           module="get_historical_market_cap", ticker=ticker)
             return None
-        
-        # Convert all quarter dates to strings for easier comparison
-        quarter_dates = [(q_date, q_date.strftime('%Y-%m-%d')) for q_date in quarters.columns]
-        # Sort by date string (newer dates first)
-        quarter_dates.sort(key=lambda x: x[1], reverse=True)
+            
 
-        # Find the most recent quarter before end_date
-        quarter_date = None
-        for q_date, q_date_str in quarter_dates:
-            if q_date_str <= end_date_str:  # Compare date strings directly
-                quarter_date = q_date
-                break
-
-        if not quarter_date:
-            logger.warning(f"No quarterly data before {date} for {ticker}", 
-                          module="get_historical_market_cap", ticker=ticker)
-            return None
-        
-        # Get shares from that quarter and check for multiple potential field names
-        shares = None
-        share_field_names = [
-            'Share Issued',
-            'Shares Isseud', 
-            'Common Stock Shares Outstanding',
-            'ShareIssued',
-            'SharesIssued',
-            'CommonStockSharesOutstanding',
-            'Common Stock',
-            'CommonStock'
-        ]
-        
-        for field in share_field_names:
-            if field in quarters.index:
-                shares = quarters[quarter_date].get(field)
-                if shares and shares > 0:
-                    logger.debug(f"Found shares ({shares:,.0f}) using field '{field}' for quarter ending {quarter_date.strftime('%Y-%m-%d')}",
-                               module="get_historical_market_cap", ticker=ticker)
-                    break
-                    
-        if not shares or shares <= 0:
-            logger.warning(f"No valid shares data in quarter ending {quarter_date.strftime('%Y-%m-%d')} for {ticker}",
-                          module="get_historical_market_cap", ticker=ticker)
-            return None
-        
-        # Adjust for splits between quarterly data date and end_date
-        if not splits.empty:
-            # Convert quarter_date to string for comparison
-            q_date_str = quarter_date.strftime('%Y-%m-%d')
-            
-            # Find and apply relevant splits
-            relevant_splits = []
-            for split_date, ratio in zip(splits.index, splits.values):
-                split_date_str = split_date.strftime('%Y-%m-%d')
-                if q_date_str < split_date_str <= end_date_str:
-                    relevant_splits.append((split_date, ratio))
-            
-            # Apply the splits to our share count
-            for split_date, split_ratio in relevant_splits:
-                shares *= split_ratio
-                logger.debug(f"Adjusted shares for split on {split_date.strftime('%Y-%m-%d')} ({split_ratio}:1)",
-                        module="get_historical_market_cap", ticker=ticker)
-            
-            
         # Get historical price
         hist = ticker_obj.history(start=date, end=end_date_str)
         logger.debug(f"Historical price for {[ticker]}: {hist} (1d {date} -> {end_date_str})", 
                      module="get_historical_market_cap", ticker=ticker)
+        
         if hist.empty:
             logger.warning(f"${ticker}: possibly delisted; no price data found  (1d {date} -> {end_date_str})", 
                           module="get_historical_market_cap", ticker=ticker)
             return None
         
         close_price = hist['Close'].iloc[0]
-        return close_price * shares
+        market_cap = close_price * shares
+
+        # Add detailed logging for verbose_data mode
+        if verbose_data:
+            logger.debug("=== MARKET CAP CALCULATION DETAILS ===", module="get_historical_market_cap", ticker=ticker)
+            logger.debug(f"Date requested: {date}", module="get_historical_market_cap", ticker=ticker)
+            logger.debug(f"Shares outstanding: {shares}", module="get_historical_market_cap", ticker=ticker)
+            logger.debug(f"Share price on {date}: ${close_price}", module="get_historical_market_cap", ticker=ticker)
+            logger.debug(f"Calculated market cap: ${market_cap}", module="get_historical_market_cap", ticker=ticker)
+            
+
+        return market_cap
     
     except Exception as e:
         logger.error(f"Error calculating historical market cap for {ticker} at {date}: {e}", 
@@ -1082,7 +1161,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
         for batch in ticker_batches:
             # Get price data, financial metrics, insider trades, and news in a batch
             price_task = fetch_prices_batch(batch, start_date, end_date, verbose_data=verbose_data)
-            metrics_task = fetch_financial_metrics_async(batch, end_date)
+            metrics_task = fetch_financial_metrics_async(batch, end_date, verbose_data=verbose_data)
             insider_task = get_insider_trades_async(batch, end_date, start_date)
             news_task = get_company_news_async(batch, end_date, start_date)
             

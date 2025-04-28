@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 import json
 from typing_extensions import Literal
-from tools.api import get_financial_metrics, get_market_cap, search_line_items
+from tools.api import get_financial_metrics, get_market_cap, search_line_items, get_outstanding_shares
 from utils.llm import call_llm
 from utils.progress import progress
 from utils.logger import logger
@@ -24,6 +24,9 @@ def warren_buffett_agent(state: AgentState):
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
 
     # Collect all analysis for LLM reasoning
     analysis_data = {}
@@ -62,7 +65,7 @@ def warren_buffett_agent(state: AgentState):
         consistency_analysis = analyze_consistency(financial_line_items)
 
         progress.update_status("warren_buffett_agent", ticker, "Calculating intrinsic value")
-        intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items)
+        intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items, verbose_data=verbose_data)
 
         # Calculate total score
         total_score = fundamental_analysis["score"] + consistency_analysis["score"]
@@ -236,7 +239,7 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     }
 
 
-def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
+def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = False) -> dict[str, any]:
     """Calculate intrinsic value using DCF with owner earnings."""
 
     if not financial_line_items:
@@ -255,7 +258,7 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
     latest_financial_line_items = financial_line_items[0]
     ticker = latest_financial_line_items.ticker
 
-    shares_outstanding = getattr(latest_financial_line_items, 'outstanding_shares', None)
+    shares_outstanding = get_outstanding_shares(ticker, latest_financial_line_items.report_period, verbose_data=verbose_data)
 
     if not shares_outstanding:
         logger.warning(f"Missing outstanding_shares data for {ticker}. Using fallback valuation method.",
