@@ -288,7 +288,7 @@ class Backtester:
 
         """Pre-fetch all data needed for the backtest period."""
 
-        logger.info("\nPre-fetching data for the entire backtest period...", module="prefetch_data")
+        logger.info("Pre-fetching data for the entire backtest period...", module="prefetch_data")
 
         # Convert string dates to datetime objects
         start_date_dt = datetime.strptime(self.start_date, "%Y-%m-%d")
@@ -327,7 +327,7 @@ class Backtester:
         data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
 
         # Log a summary of fetched data
-        if self.debug_mode:
+        if self.verbose_data:
             logger.debug("=== DATA FETCHED SUMMARY from prefetch_data ===", module="prefetch_data")
             logger.debug(f"Tickers: {self.tickers}", module="prefetch_data")
             logger.debug(f"Period: {self.start_date} to {self.end_date}", module="prefetch_data")
@@ -345,13 +345,12 @@ class Backtester:
                 logger.debug(f"  - insider_trades: List with {len(insider_trades)} items", module="prefetch_data")
                 logger.debug(f"  - news: List with {len(news)} items", module="prefetch_data")
                 
-                # If verbose_data is enabled, show sample data
-                if self.verbose_data:
-                    if hasattr(prices, 'head'):
-                        logger.debug(f"\nPrices sample:\n{prices.head()}", module="prefetch_data", ticker=ticker)
-                    
-                    if metrics and len(metrics) > 0:
-                        logger.debug(f"\nMetrics sample:\n {metrics[0].model_dump()}", module="prefetch_data", ticker=ticker)
+                
+                if hasattr(prices, 'head'):
+                    logger.debug(f"\nPrices sample:\n{prices.head()}", module="prefetch_data", ticker=ticker)
+                
+                if metrics and len(metrics) > 0:
+                    logger.debug(f"\nMetrics sample:\n {metrics[0].model_dump()}", module="prefetch_data", ticker=ticker)
 
         logger.info("Data pre-fetch complete.", module="prefetch_data")
 
@@ -419,9 +418,9 @@ class Backtester:
             # ---------------------------------------------------------------
             # 1) Execute the agent's trades
             # ---------------------------------------------------------------
-            logger.debug(f"Running hedge fund agent for {current_date_str}", module="run_backtest")
+            logger.debug(f"Running hedge fund for {current_date_str}", module="run_backtest")
 
-            output = self.agent(
+            output = self.agent( # Review: Can you explain what self.agent does?
                 tickers=self.tickers,
                 start_date=lookback_start,
                 end_date=current_date_str,
@@ -429,11 +428,12 @@ class Backtester:
                 model_name=self.model_name,
                 model_provider=self.model_provider,
                 selected_analysts=self.selected_analysts,
+                verbose_data=self.verbose_data # Review what does this line do? Why do I need it? Do I also need a line for debug_mode?
             )
             decisions = output["decisions"]
             analyst_signals = output["analyst_signals"]
 
-            if self.debug_mode:
+            if self.debug_mode: # Review: Do I need this if clause or would the debug show up anyway with --debug command line item?
                 logger.debug(f"Agent decisions for {current_date_str}:", module="run_backtest")
                 for ticker, decision in decisions.items():
                     logger.debug(f"  {ticker}: {decision.get('action', 'hold')} {decision.get('quantity', 0)} shares", 
@@ -758,8 +758,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set up the logger with command line arguments
-    setup_logger(
-        debug_mode=args.debug and not args.quiet,
+    setup_logger( # Review: What happens if I would delete this setup_logger? What does it do?
+        debug_mode=args.debug and not args.quiet, # Review: explain this line
         log_to_file=args.log_to_file,
         log_file=args.log_file
     )

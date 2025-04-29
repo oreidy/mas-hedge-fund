@@ -21,12 +21,16 @@ def bill_ackman_agent(state: AgentState):
     Analyzes stocks using Bill Ackman's investing principles and LLM reasoning.
     Fetches multiple periods of data so we can analyze long-term trends.
     """
-    logger.debug("Accessing Bill Ackman Agent")
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
+
+    logger.debug("Accessing Bill Ackman Agent", module="bill_ackman_agent")
     
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
-    
+
     analysis_data = {}
     ackman_analysis = {}
     
@@ -34,6 +38,15 @@ def bill_ackman_agent(state: AgentState):
         progress.update_status("bill_ackman_agent", ticker, "Fetching financial metrics")
         # You can adjust these parameters (period="annual"/"ttm", limit=5/10, etc.)
         metrics = get_financial_metrics(ticker, end_date, period="annual", limit=5)
+
+        # Debug:
+        if verbose_data:
+            if metrics:
+                logger.debug(f"Retrieved {len(metrics)} financial metrics {metrics}", 
+                           module="bill_ackman_agent", ticker=ticker)
+            else:
+                logger.error(f"No financial metrics retrieved for {ticker}", 
+                           module="bill_ackman_agent", ticker=ticker)
         
         progress.update_status("bill_ackman_agent", ticker, "Gathering financial line items")
         # Request multiple periods of data (annual or TTM) for a more robust long-term view.
@@ -86,6 +99,13 @@ def bill_ackman_agent(state: AgentState):
             "balance_sheet_analysis": balance_sheet_analysis,
             "valuation_analysis": valuation_analysis
         }
+
+        # Debug:
+        if verbose_data:
+            logger.debug(f"Analysis results: signal={signal}, score={total_score}/{max_possible_score}", module="bill_ackman_agent", ticker=ticker)
+            logger.debug(f"- Quality score: {quality_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
+            logger.debug(f"- Financial discipline score: {balance_sheet_analysis['score']}", module="bill_ackman_agent", ticker=ticker) 
+            logger.debug(f"- Valuation score: {valuation_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
         
         progress.update_status("bill_ackman_agent", ticker, "Generating Ackman analysis")
         ackman_output = generate_ackman_output(
@@ -122,22 +142,30 @@ def bill_ackman_agent(state: AgentState):
     }
 
 
-def analyze_business_quality(metrics: list, financial_line_items: list) -> dict:
+def analyze_business_quality(metrics: list, financial_line_items: list, verbose_data: bool = False) -> dict:
     """
     Analyze whether the company has a high-quality business with stable or growing cash flows,
     durable competitive advantages, and potential for long-term growth.
     """
     score = 0
     details = []
+    ticker = financial_line_items[0].ticker if financial_line_items else "unknown"
+
     
     if not metrics or not financial_line_items:
+        logger.error(f"Insufficient data to analyze business quality for {ticker}", 
+                   module="bill_ackman_agent", ticker=ticker)
         return {
             "score": 0,
             "details": "Insufficient data to analyze business quality"
         }
     
+    if verbose_data:
+        logger.debug(f"metrics: {metrics}, financial line items: {financial_line_items}", module="analyze_business_quality", ticker=ticker)
+    
     # 1. Multi-period revenue growth analysis
     revenues = [item.revenue for item in financial_line_items if item.revenue is not None]
+
     if len(revenues) >= 2:
         # Check if overall revenue grew from first to last
         initial, final = revenues[0], revenues[-1]
@@ -153,7 +181,14 @@ def analyze_business_quality(metrics: list, financial_line_items: list) -> dict:
         else:
             details.append("Revenue did not grow significantly or data insufficient.")
     else:
+        logger.warning(f"Not enough revenue data points ({len(revenues)}) to establish multi-period trend", 
+                  module="bill_ackman_agent", ticker=ticker)
         details.append("Not enough revenue data for multi-period trend.")
+
+    # Debug
+    if verbose_data:
+        logger.debug(f"revenues: {revenues}", module="analyze_business_quality", ticker=ticker)
+        logger.debug(f"growth rate: {growth_rate}", module="analyze_business_quality", ticker=ticker)
     
     # 2. Operating margin and free cash flow consistency
     # We'll check if operating_margin or free_cash_flow are consistently positive/improving
@@ -169,6 +204,8 @@ def analyze_business_quality(metrics: list, financial_line_items: list) -> dict:
         else:
             details.append("Operating margin not consistently above 15%.")
     else:
+        logger.warning(f"No operating margin data available", 
+                  module="bill_ackman_agent", ticker=ticker)
         details.append("No operating margin data across periods.")
     
     if fcf_vals:
@@ -180,18 +217,33 @@ def analyze_business_quality(metrics: list, financial_line_items: list) -> dict:
         else:
             details.append("Free cash flow not consistently positive.")
     else:
+        logger.warning(f"No free cash flow data available", 
+                  module="bill_ackman_agent", ticker=ticker)
         details.append("No free cash flow data across periods.")
+
+    # Debug
+    if verbose_data:
+        logger.debug(f"fcf_vals: {fcf_vals}", module="analyze_business_quality", ticker=ticker)
+        logger.debug(f"op_margin_vals: {op_margin_vals}", module="analyze_business_quality", ticker=ticker)
+        logger.debug(f"score from fcf and op margin: {score}", module="analyze_business_quality", ticker=ticker)
     
     # 3. Return on Equity (ROE) check from the latest metrics
     # (If you want multi-period ROE, you'd need that in financial_line_items as well.)
     latest_metrics = metrics[0]
-    if latest_metrics.return_on_equity and latest_metrics.return_on_equity > 0.15:
+    if latest_metrics.return_on_equity is None:
+        logger.warning(f"ROE data not available in metrics", 
+                   module="bill_ackman_agent", ticker=ticker)
+    elif latest_metrics.return_on_equity > 0.15:
         score += 2
         details.append(f"High ROE of {latest_metrics.return_on_equity:.1%}, indicating potential moat.")
     elif latest_metrics.return_on_equity:
         details.append(f"ROE of {latest_metrics.return_on_equity:.1%} is not indicative of a strong moat.")
     else:
         details.append("ROE data not available in metrics.")
+
+    # Debug: 
+    if verbose_data:
+        logger.debug(f"latest metrics RoE: {latest_metrics.return_on_equity}", module="analyze_business_quality", ticker=ticker)
     
     return {
         "score": score,
@@ -199,7 +251,7 @@ def analyze_business_quality(metrics: list, financial_line_items: list) -> dict:
     }
 
 
-def analyze_financial_discipline(metrics: list, financial_line_items: list) -> dict:
+def analyze_financial_discipline(metrics: list, financial_line_items: list, verbose_data: bool = False) -> dict:
     """
     Evaluate the company's balance sheet over multiple periods:
     - Debt ratio trends
@@ -207,8 +259,11 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list) -> d
     """
     score = 0
     details = []
+    ticker = financial_line_items[0].ticker if financial_line_items else "unknown"
     
     if not metrics or not financial_line_items:
+        logger.error(f"Insufficient data to analyze financial discipline", 
+                   module="analyze_financial_discipline", ticker=ticker)
         return {
             "score": 0,
             "details": "Insufficient data to analyze financial discipline"
@@ -228,10 +283,15 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list) -> d
             details.append("Debt-to-equity >= 1.0 in many periods.")
     else:
         # Fallback to total_liabilities/total_assets if D/E not available
+        logger.debug(f"No debt_to_equity data, falling back to liabilities/assets ratio", 
+                      module="analyze_financial_discipline", ticker=ticker)
         liab_to_assets = []
         for item in financial_line_items:
             if item.total_liabilities and item.total_assets and item.total_assets > 0:
                 liab_to_assets.append(item.total_liabilities / item.total_assets)
+            else:
+                logger.warning(f"Missing total liabilities: {item.total_liabilities} or total assets: {item.total_assets}",
+                               module="analyze_financial_discipline", ticker=ticker)
         
         if liab_to_assets:
             below_50pct_count = sum(1 for ratio in liab_to_assets if ratio < 0.5)
@@ -255,6 +315,8 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list) -> d
         else:
             details.append("Dividends not consistently paid or no data.")
     else:
+        logger.warning(f"No dividend data found", 
+                   module="analyze_financial_discipline", ticker=ticker)
         details.append("No dividend data found across periods.")
     
     # Check for decreasing share count (simple approach):
@@ -268,21 +330,34 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list) -> d
             details.append("Outstanding shares have not decreased over the available periods.")
     else:
         details.append("No multi-period share count data to assess buybacks.")
+        logger.warning(f"Not enough share count data for to analyze buyback trends", 
+                   module="analyze_financial_discipline", ticker=ticker)
     
+    # Debug:
+    if verbose_data:
+        logger.debug(f"debt_to_equity_vals: {debt_to_equity_vals}", module="analyze_financial_discipline", ticker=ticker)
+        logger.debug(f"dividends_list: {dividends_list}", module="analyze_financial_discipline", ticker=ticker)
+        logger.debug(f"shares: {shares}", module="analyze_financial_discipline", ticker=ticker)
+        logger.debug(f"score: {score}", module="analyze_financial_discipline", ticker=ticker)
+
     return {
         "score": score,
         "details": "; ".join(details)
     }
 
 
-def analyze_valuation(financial_line_items: list, market_cap: float) -> dict:
+def analyze_valuation(financial_line_items: list, market_cap: float, verbose_data: bool = False) -> dict:
     """
     Ackman invests in companies trading at a discount to intrinsic value.
     We can do a simplified DCF or an FCF-based approach.
     This function currently uses the latest free cash flow only, 
     but you could expand it to use an average or multi-year FCF approach.
     """
+    ticker = financial_line_items[0].ticker if financial_line_items else "unknown"
+
     if not financial_line_items or market_cap is None:
+        logger.error(f"No financial line items or market_cap available", 
+                   module="analyze_valuation", ticker=ticker)
         return {
             "score": 0,
             "details": "Insufficient data to perform valuation"
@@ -299,6 +374,8 @@ def analyze_valuation(financial_line_items: list, market_cap: float) -> dict:
     projection_years = 5
     
     if fcf <= 0:
+        logger.warning(f"No free cash flow data available for {ticker} at {latest.report_period}", 
+                   module="bill_ackman_agent", ticker=ticker)
         return {
             "score": 0,
             "details": f"No positive FCF for valuation; FCF = {fcf}",
@@ -330,6 +407,12 @@ def analyze_valuation(financial_line_items: list, market_cap: float) -> dict:
         f"Market cap: ~{market_cap:,.2f}",
         f"Margin of safety: {margin_of_safety:.2%}"
     ]
+
+    if verbose_data:
+        logger.debug(f"score: {score}", module="analyze_valuation", ticker=ticker)
+        logger.debug(f"details: {details}", module="analyze_valuation", ticker=ticker)
+        logger.debug(f"intrinsic_value: {intrinsic_value}", module="analyze_valuation", ticker=ticker)
+        logger.debug(f"margin_of_safety: {margin_of_safety}", module="analyze_valuation", ticker=ticker)
     
     return {
         "score": score,

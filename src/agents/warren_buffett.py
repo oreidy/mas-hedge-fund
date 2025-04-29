@@ -19,7 +19,7 @@ class WarrenBuffettSignal(BaseModel):
 def warren_buffett_agent(state: AgentState):
     """Analyzes stocks using Buffett's principles and LLM reasoning."""
 
-    logger.debug("Accessing Warren Buffet Agent")
+    logger.debug("Accessing Warren Buffet Agent", module="warren_buffet_agent")
 
     data = state["data"]
     end_date = data["end_date"]
