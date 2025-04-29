@@ -104,6 +104,19 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
     cache_hits = 0
     total_tickers = len(tickers)
 
+    # Debug: cache structure
+    if verbose_data:
+        for ticker in tickers[:3]:  # Just check a few tickers to understand cache behavior
+            cache_data = _cache.get_prices(ticker)
+            if cache_data:
+                # Check if the cache contains data within our date range
+                date_filtered = [p for p in cache_data if start_date <= p["time"] <= end_date]
+                logger.debug(f"Cache check for {ticker}: total cached items={len(cache_data)}, within date range={len(date_filtered)}", 
+                           module="fetch_prices_batch", ticker=ticker)
+            else:
+                logger.debug(f"No cache data found for {ticker}", module="fetch_prices_batch", ticker=ticker)
+
+    # Fetch data from cache first
     for ticker in tickers:
         cached_data = _cache.get_prices(ticker, start_date, end_date)
         if cached_data:
@@ -116,16 +129,19 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
         else:
             tickers_to_fetch.append(ticker)
 
-    # Log cache statistics
-    cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
-    download_percentage = 100 - cache_percentage
-    logger.debug(f"PRICE DATA CACHE STATS:", module="fetch_prices_batch")
-    logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="fetch_prices_batch")
-    logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="fetch_prices_batch")
+    # Debug: Log cache statistics
+    if verbose_data:
+        cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
+        download_percentage = 100 - cache_percentage
+        logger.debug(f"PRICE DATA CACHE STATS:", module="fetch_prices_batch")
+        logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="fetch_prices_batch")
+        logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="fetch_prices_batch")
     
-    if not tickers_to_fetch and verbose_data:
-        # Debug: Preview data when everything comes from cache
-        if cached_results and len(cached_results) > 0:
+
+
+    # Debug: Preview data when everything comes from cache
+    if not tickers_to_fetch:
+        if verbose_data and cached_results:
             example_ticker = list(cached_results.keys())[0]
             df_sample = cached_results[example_ticker]
             logger.debug(f"Debug from fetch_prices_batch if all data is in cache.",
@@ -1038,26 +1054,15 @@ def search_line_items(
                     "dividends_and_other_cash_distributions": ("Dividends Paid", cash_flow),
                 }
                 
-                # Handle special calculations
                 if item == "outstanding_shares":
-                    # Approximate shares outstanding from market cap / price
-                    market_cap = get_historical_market_cap(ticker, report_date)
-                    if market_cap:
-                        hist = ticker_obj.history(start=report_date, end=(datetime.datetime.strptime(report_date, '%Y-%m-%d') + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
-                        if not hist.empty:
-                            price = hist['Close'].iloc[0]
-                            if price > 0:
-                                setattr(line_item, item, market_cap / price)
-                                logger.debug(f"Successfully set outstanding_shares={market_cap/price} for {ticker}", 
-                                             module="search_line_items", ticker=ticker)
-                            else:
-                                logger.debug(f"Cannot set outstanding_shares: price is zero for {ticker}", 
-                                             module="search_line_items", ticker=ticker)
-                        else:
-                            logger.debug(f"Cannot set outstanding_shares: no price history for {ticker} on {report_date}", 
-                                        module="search_line_items", ticker=ticker)
+                    # Use the centralized get_outstanding_shares function
+                    shares = get_outstanding_shares(ticker, report_date)
+                    if shares:
+                        setattr(line_item, item, shares)
+                        logger.debug(f"Successfully set outstanding_shares={shares} for {ticker}", 
+                                    module="search_line_items", ticker=ticker)
                     else:
-                        logger.debug(f"Cannot set outstanding_shares: no market cap for {ticker} on {report_date}", 
+                        logger.debug(f"Cannot set outstanding_shares: no data available for {ticker} on {report_date}", 
                                     module="search_line_items", ticker=ticker)
                 
                 elif item == "working_capital":
