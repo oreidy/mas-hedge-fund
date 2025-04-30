@@ -19,14 +19,13 @@ class WarrenBuffettSignal(BaseModel):
 def warren_buffett_agent(state: AgentState):
     """Analyzes stocks using Buffett's principles and LLM reasoning."""
 
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
     logger.debug("Accessing Warren Buffet Agent", module="warren_buffet_agent")
 
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
-
-    # Get verbose_data from metadata or default to False
-    verbose_data = state["metadata"].get("verbose_data", False)
 
     # Collect all analysis for LLM reasoning
     analysis_data = {}
@@ -35,7 +34,7 @@ def warren_buffett_agent(state: AgentState):
     for ticker in tickers:
         progress.update_status("warren_buffett_agent", ticker, "Fetching financial metrics")
         # Fetch required data
-        metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5)
+        metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5, verbose_data=verbose_data)
 
         progress.update_status("warren_buffett_agent", ticker, "Gathering financial line items")
         financial_line_items = search_line_items(
@@ -51,11 +50,12 @@ def warren_buffett_agent(state: AgentState):
             end_date,
             period="ttm",
             limit=5,
+            verbose_data=verbose_data
         )
 
         progress.update_status("warren_buffett_agent", ticker, "Getting market cap")
         # Get current market cap
-        market_cap = get_market_cap(ticker, end_date)
+        market_cap = get_market_cap(ticker, end_date, verbose_data)
 
         progress.update_status("warren_buffett_agent", ticker, "Analyzing fundamentals")
         # Analyze fundamentals

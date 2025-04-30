@@ -644,7 +644,7 @@ def get_market_cap(
         # If we need a historical market cap, calculate it
         if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
             market_cap = get_historical_market_cap(ticker, end_date, verbose_data)
-            logger.info(f"Market cap for{[ticker]} is either None or the end_date isn't the current date.",
+            logger.debug(f"Market cap for{[ticker]} is either None or the end_date isn't the current date.",
                          module="get_market_cap")
         
         return market_cap

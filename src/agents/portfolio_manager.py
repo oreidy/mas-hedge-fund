@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from typing_extensions import Literal
 from utils.progress import progress
 from utils.llm import call_llm
+from utils.logger import logger
+
 
 
 class PortfolioDecision(BaseModel):
@@ -23,6 +25,10 @@ class PortfolioManagerOutput(BaseModel):
 ##### Portfolio Management Agent #####
 def portfolio_management_agent(state: AgentState):
     """Makes final trading decisions and generates orders for multiple tickers"""
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
+    logger.debug("Accessing Portfolio Management Agent", module="portfolio_management_agent")
 
     # Get the portfolio and analyst signals
     portfolio = state["data"]["portfolio"]

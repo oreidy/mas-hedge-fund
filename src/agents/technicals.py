@@ -10,6 +10,7 @@ import numpy as np
 
 from tools.api import get_prices, prices_to_df
 from utils.progress import progress
+from utils.logger import logger
 
 
 ##### Technical Analyst #####
@@ -22,6 +23,11 @@ def technical_analyst_agent(state: AgentState):
     4. Volatility Analysis
     5. Statistical Arbitrage Signals
     """
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
+    logger.debug("Accessing Technicals Agent", module="technicals_agent")
+
     data = state["data"]
     start_date = data["start_date"]
     end_date = data["end_date"]
@@ -38,6 +44,7 @@ def technical_analyst_agent(state: AgentState):
             ticker=ticker,
             start_date=start_date,
             end_date=end_date,
+            verbose_data=verbose_data
         )
 
         if not prices:

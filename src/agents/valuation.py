@@ -4,11 +4,17 @@ from utils.progress import progress
 import json
 
 from tools.api import get_financial_metrics, get_market_cap, search_line_items
+from utils.logger import logger
 
 
 ##### Valuation Agent #####
 def valuation_agent(state: AgentState):
     """Performs detailed valuation analysis using multiple methodologies for multiple tickers."""
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
+    logger.debug("Accessing Technicals Agent", module="technicals_agent")
+
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
@@ -24,6 +30,7 @@ def valuation_agent(state: AgentState):
             ticker=ticker,
             end_date=end_date,
             period="ttm",
+            verbose_data=verbose_data
         )
 
         # Add safety check for financial metrics
@@ -47,6 +54,7 @@ def valuation_agent(state: AgentState):
             end_date=end_date,
             period="ttm",
             limit=2,
+            verbose_data=verbose_data
         )
 
         # Add safety check for financial line items
@@ -85,7 +93,7 @@ def valuation_agent(state: AgentState):
 
         progress.update_status("valuation_agent", ticker, "Comparing to market value")
         # Get the market cap
-        market_cap = get_market_cap(ticker=ticker, end_date=end_date)
+        market_cap = get_market_cap(ticker=ticker, end_date=end_date, verbose_data=verbose_data)
 
         # Calculate combined valuation gap (average of both methods)
         dcf_gap = (dcf_value - market_cap) / market_cap

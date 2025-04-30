@@ -6,11 +6,17 @@ import numpy as np
 import json
 
 from tools.api import get_insider_trades, get_company_news
+from utils.logger import logger
 
 
 ##### Sentiment Agent #####
 def sentiment_agent(state: AgentState):
     """Analyzes market sentiment and generates trading signals for multiple tickers."""
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
+    logger.debug("Accessing Fundamentals Agent", module="fundamentals_agent")
+
     data = state.get("data", {})
     end_date = data.get("end_date")
     tickers = data.get("tickers")
@@ -26,6 +32,7 @@ def sentiment_agent(state: AgentState):
             ticker=ticker,
             end_date=end_date,
             limit=1000,
+            verbose_data=verbose_data
         )
 
         progress.update_status("sentiment_agent", ticker, "Analyzing trading patterns")
@@ -37,7 +44,7 @@ def sentiment_agent(state: AgentState):
         progress.update_status("sentiment_agent", ticker, "Fetching company news")
 
         # Get the company news
-        company_news = get_company_news(ticker, end_date, limit=100)
+        company_news = get_company_news(ticker, end_date, limit=100, verbose_data = verbose_data)
 
         # Get the sentiment from the company news
         sentiment = pd.Series([n.sentiment for n in company_news]).dropna()

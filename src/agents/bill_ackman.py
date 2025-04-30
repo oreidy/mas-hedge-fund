@@ -24,7 +24,6 @@ def bill_ackman_agent(state: AgentState):
 
     # Get verbose_data from metadata or default to False
     verbose_data = state["metadata"].get("verbose_data", False)
-
     logger.debug("Accessing Bill Ackman Agent", module="bill_ackman_agent")
     
     data = state["data"]
@@ -37,8 +36,8 @@ def bill_ackman_agent(state: AgentState):
     for ticker in tickers:
         progress.update_status("bill_ackman_agent", ticker, "Fetching financial metrics")
         # You can adjust these parameters (period="annual"/"ttm", limit=5/10, etc.)
-        metrics = get_financial_metrics(ticker, end_date, period="annual", limit=5)
-
+        metrics = get_financial_metrics(ticker, end_date, period="annual", limit=5, verbose_data = verbose_data)
+ 
         # Debug:
         if verbose_data:
             if metrics:
@@ -64,20 +63,21 @@ def bill_ackman_agent(state: AgentState):
             ],
             end_date,
             period="annual",  # or "ttm" if you prefer trailing 12 months
-            limit=5           # fetch up to 5 annual periods (or more if needed)
+            limit=5,           # fetch up to 5 annual periods (or more if needed)
+            verbose_data = verbose_data
         )
         
         progress.update_status("bill_ackman_agent", ticker, "Getting market cap")
-        market_cap = get_market_cap(ticker, end_date)
+        market_cap = get_market_cap(ticker, end_date, verbose_data)
         
         progress.update_status("bill_ackman_agent", ticker, "Analyzing business quality")
-        quality_analysis = analyze_business_quality(metrics, financial_line_items)
+        quality_analysis = analyze_business_quality(metrics, financial_line_items, verbose_data)
         
         progress.update_status("bill_ackman_agent", ticker, "Analyzing balance sheet and capital structure")
-        balance_sheet_analysis = analyze_financial_discipline(metrics, financial_line_items)
+        balance_sheet_analysis = analyze_financial_discipline(metrics, financial_line_items, verbose_data)
         
         progress.update_status("bill_ackman_agent", ticker, "Calculating intrinsic value & margin of safety")
-        valuation_analysis = analyze_valuation(financial_line_items, market_cap)
+        valuation_analysis = analyze_valuation(financial_line_items, market_cap, verbose_data)
         
         # Combine partial scores or signals
         total_score = quality_analysis["score"] + balance_sheet_analysis["score"] + valuation_analysis["score"]

@@ -4,11 +4,17 @@ from utils.progress import progress
 import json
 
 from tools.api import get_financial_metrics
+from utils.logger import logger
 
 
 ##### Fundamental Agent #####
 def fundamentals_agent(state: AgentState):
     """Analyzes fundamental data and generates trading signals for multiple tickers."""
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
+    logger.debug("Accessing Fundamentals Agent", module="fundamentals_agent")
+
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
@@ -25,6 +31,7 @@ def fundamentals_agent(state: AgentState):
             end_date=end_date,
             period="ttm",
             limit=10,
+            verbose_data = verbose_data
         )
 
         if not financial_metrics:

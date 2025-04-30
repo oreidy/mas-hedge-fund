@@ -3,11 +3,18 @@ from graph.state import AgentState, show_agent_reasoning
 from utils.progress import progress
 from tools.api import get_prices, prices_to_df
 import json
+from utils.logger import logger
+
 
 
 ##### Risk Management Agent #####
 def risk_management_agent(state: AgentState):
     """Controls position sizing based on real-world risk factors for multiple tickers."""
+
+    # Get verbose_data from metadata or default to False
+    verbose_data = state["metadata"].get("verbose_data", False)
+    logger.debug("Accessing Risk Management Agent", module="risk_management_agent")
+
     portfolio = state["data"]["portfolio"]
     data = state["data"]
     tickers = data["tickers"]
@@ -23,6 +30,7 @@ def risk_management_agent(state: AgentState):
             ticker=ticker,
             start_date=data["start_date"],
             end_date=data["end_date"],
+            verbose_data=verbose_data
         )
 
         if not prices:
