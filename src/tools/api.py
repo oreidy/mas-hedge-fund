@@ -1026,6 +1026,20 @@ def search_line_items(
             cash_flow = ticker_obj.cashflow
         
         results = []
+
+        # Check if we have data
+        if income_stmt.empty and balance_sheet.empty and cash_flow.empty:
+            logger.warning(f"No financial data found for {ticker}", 
+                          module="search_line_items", ticker=ticker)
+            
+        if verbose_data:
+            logger.debug(f"Financial statement shapes:", module="search_line_items", ticker=ticker)
+            logger.debug(f"  - Income Statement: {income_stmt.shape if not income_stmt.empty else 'Empty'}", 
+                        module="search_line_items", ticker=ticker)
+            logger.debug(f"  - Balance Sheet: {balance_sheet.shape if not balance_sheet.empty else 'Empty'}", 
+                        module="search_line_items", ticker=ticker)
+            logger.debug(f"  - Cash Flow: {cash_flow.shape if not cash_flow.empty else 'Empty'}", 
+                        module="search_line_items", ticker=ticker)
         
         # Process each date column in the statements
         for i, col in enumerate(income_stmt.columns):
@@ -1045,10 +1059,16 @@ def search_line_items(
             )
 
             if verbose_data:
-                logger.debug(f"report date: {report_date}, end_date: {end_date}", module="search_line_items", ticker=ticker)
+                logger.info(f"report date: {report_date}, end_date: {end_date}", module="search_line_items", ticker=ticker)
+                logger.debug(f"OUTER LOOP: Created line_item on {report_date}", 
+                       module="search_line_items", ticker=ticker)
             
             # Add requested line items
             for item in line_items:
+
+                logger.debug(f"  INNER LOOP: Processing item '{item}' for {ticker} on {report_date}", 
+                           module="search_line_items", ticker=ticker)
+                
                 # Map line_items to yfinance fields
                 item_mapping = {
                     "revenue": ("Total Revenue", income_stmt),
@@ -1066,14 +1086,14 @@ def search_line_items(
                 }
                 
                 if item == "outstanding_shares":
-                    # Use the centralized get_outstanding_shares function
+                    # Use the get_outstanding_shares function
                     shares = get_outstanding_shares(ticker, end_date, verbose_data=verbose_data) 
                     if shares:
                         setattr(line_item, item, float(shares))
-                        logger.debug(f"Successfully set outstanding_shares={shares} for {ticker}", 
+                        logger.info(f"Successfully set outstanding_shares={shares}", 
                                     module="search_line_items", ticker=ticker)
                     else:
-                        logger.warning(f"Cannot set outstanding_shares: no data available for {ticker} on {report_date}", 
+                        logger.warning(f"Cannot set outstanding_shares: no data available on {report_date}", 
                                     module="search_line_items", ticker=ticker)
                 
                 elif item == "working_capital":
@@ -1121,11 +1141,18 @@ def search_line_items(
                     if field in df.index:
                         value = df.loc[field, col]
                         setattr(line_item, item, float(value))
-
-            logger.debug(f"Retrieved {len(results)} line items for {ticker}", 
-                    module="search_line_items", ticker=ticker)
             
             results.append(line_item)
+
+            if verbose_data:
+                logger.debug(f"line_item: {line_item}", module="search_line_items", ticker=ticker)
+
+        logger.debug(f"Retrieved {len(results)} line items for {ticker}", 
+                    module="search_line_items", ticker=ticker)
+
+        if verbose_data or len(results) == 0:
+            logger.debug(f"Found {len(results)} items", module="search_line_items", ticker=ticker)
+            logger.debug(f"Results {results}", module="search_line_items", ticker=ticker)
         
         return results
     

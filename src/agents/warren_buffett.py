@@ -48,7 +48,7 @@ def warren_buffett_agent(state: AgentState):
                 "total_liabilities",
             ],
             end_date,
-            period="ttm",
+            period="annual",
             limit=5,
             verbose_data=verbose_data
         )
@@ -215,6 +215,7 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     """Calculate owner earnings (Buffett's preferred measure of true earnings power).
     Owner Earnings = Net Income + Depreciation - Maintenance CapEx"""
     if not financial_line_items or len(financial_line_items) < 1:
+        logger.warning("Insufficient data for owner earnings calculation", module="calculate_owner_earnings")
         return {"owner_earnings": None, "details": ["Insufficient data for owner earnings calculation"]}
 
     latest = financial_line_items[0]
@@ -225,6 +226,7 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     capex = latest.capital_expenditure
 
     if not all([net_income, depreciation, capex]):
+        logger.warning("Missing components for owner earnings calculation", module="calculate_owner_earnings")
         return {"owner_earnings": None, "details": ["Missing components for owner earnings calculation"]}
 
     # Estimate maintenance capex (typically 70-80% of total capex)
@@ -244,13 +246,35 @@ def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = 
 
     if not financial_line_items:
         logger.warning("Insufficient financial line items for valuation", 
-                       module="warren_buffett_agent")
+                       module="calculate_intrinsic_value")
+        return {
+            "intrinsic_value": None,
+            "owner_earnings": None,
+            "assumptions": {
+                "growth_rate": 0.05,
+                "discount_rate": 0.09,
+                "terminal_multiple": 12,
+                "projection_years": 10,
+            },
+            "details": ["Insufficient data for intrinsic value calculation"],
+        }
         
     # Calculate owner earnings
     earnings_data = calculate_owner_earnings(financial_line_items)
     if not earnings_data["owner_earnings"]:
         logger.warning("Owner earnings calculation failed", 
-                       module="warren_buffett_agent")
+                       module="calculate_intrinsic_value")
+        return {
+            "intrinsic_value": None,
+            "owner_earnings": None,
+            "assumptions": {
+                "growth_rate": 0.05,
+                "discount_rate": 0.09,
+                "terminal_multiple": 12,
+                "projection_years": 10,
+            },
+            "details": ["Insufficient data for owner earnings calculation"],
+        }
 
     owner_earnings = earnings_data["owner_earnings"]
 
@@ -262,7 +286,7 @@ def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = 
 
     if not shares_outstanding:
         logger.warning(f"Missing outstanding_shares data for {ticker}. Using fallback valuation method.",
-                      module="warren_buffett_agent", ticker=ticker)
+                      module="calculate_intrinsic_value", ticker=ticker)
         
         # Simplified estimation of business value as fallback
         intrinsic_value = owner_earnings * 15

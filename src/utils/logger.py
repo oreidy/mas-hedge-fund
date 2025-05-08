@@ -101,7 +101,7 @@ class Logger:
         file_message += f": {message}"
         
         # Output to console
-        print(console_message)
+        print(console_message, flush=True)
         
         # Output to file if enabled
         if self.log_to_file:

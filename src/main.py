@@ -55,6 +55,7 @@ def run_hedge_fund(
     selected_analysts: list[str] = [],
     model_name: str = "gpt-4o",
     model_provider: str = "OpenAI",
+    verbose_data: bool = False,
 ):
     # Start progress tracking
     progress.start()
@@ -85,6 +86,7 @@ def run_hedge_fund(
                     "show_reasoning": show_reasoning,
                     "model_name": model_name,
                     "model_provider": model_provider,
+                    "verbose_data": verbose_data,
                 },
             },
         )
@@ -326,7 +328,7 @@ if __name__ == "__main__":
         selected_analysts=selected_analysts,
         model_name=model_choice,
         model_provider=model_provider,
-        debug_mode=args.debug,
+        verbose_data=args.verbose_data and args.debug and not args.quiet,
     )
 
     # Stop timer after execution

@@ -428,8 +428,9 @@ class Backtester:
                 model_name=self.model_name,
                 model_provider=self.model_provider,
                 selected_analysts=self.selected_analysts,
+                verbose_data=self.verbose_data
             )
-            
+
             decisions = output["decisions"]
             analyst_signals = output["analyst_signals"]
 
