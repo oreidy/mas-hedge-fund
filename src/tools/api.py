@@ -497,13 +497,12 @@ def get_outstanding_shares(
     verbose_data: bool = False
 ) -> Optional[float]:
     """
-    Get historical outstanding shares count for a company.
+    Get historical outstanding shares count for a company. 
+    Companies already adjust their balance sheets to stock splits.
     
     Args:
         ticker: Stock ticker symbol
         date: Date to get shares for (YYYY-MM-DD), defaults to current date
-        use_cache: Whether to use the cache
-        debug_mode: Whether to print debugging information
         verbose_data: Whether to print detailed data information
         
     Returns:
@@ -519,20 +518,27 @@ def get_outstanding_shares(
         logger.debug(f"Retrieved outstanding shares from cache: {cached_shares:}", 
                     module="get_outstanding_shares", ticker=ticker)
         return cached_shares
+    else:
+        logger.debug(f"Computing outstanding shares", module="get_outstanding_shares", ticker=ticker)
 
     try:
-        # Get ticker object from yfinance
         ticker_obj = yf.Ticker(ticker)
         
         # Get quarterly balance sheets
-        quarters = ticker_obj.quarterly_balance_sheet
+        quarters = ticker_obj.balance_sheet
         if quarters.empty:
-            logger.warning(f"No quarterly data available for {ticker}", 
+            logger.warning(f"No quarterly data available", 
                           module="get_outstanding_shares", ticker=ticker)
             return None
+        else:
+            if verbose_data:
+                logger.debug(f"Available fields in balance sheet: {quarters.index.tolist()}", module="get_outstanding_shares", ticker=ticker)
+                logger.debug(f"We got quaterly data: {quarters}", module="get_outstanding_shares", ticker=ticker)
         
+
         # Convert all quarter dates to strings for easier comparison
         quarter_dates = [(q_date, q_date.strftime('%Y-%m-%d')) for q_date in quarters.columns]
+
         # Sort by date string (newer dates first)
         quarter_dates.sort(key=lambda x: x[1], reverse=True)
 
@@ -547,18 +553,15 @@ def get_outstanding_shares(
             logger.warning(f"No quarterly data before {date} for {ticker}", 
                           module="get_outstanding_shares", ticker=ticker)
             return None
+        else:
+            if verbose_data:
+                logger.debug(f"Selected quarter date: {quarter_date} for target date: {date}",
+                module="get_outstanding_shares", ticker=ticker)
         
         # Get shares from that quarter by checking multiple potential field names
         shares = None
         share_field_names = [
-            'Share Issued',
-            'Shares Issued', 
-            'Common Stock Shares Outstanding',
-            'ShareIssued',
-            'SharesIssued',
-            'CommonStockSharesOutstanding',
-            'Common Stock',
-            'CommonStock'
+            'Ordinary Shares Number',
         ]
         
         for field in share_field_names:
@@ -578,23 +581,13 @@ def get_outstanding_shares(
         # Adjust for splits between quarterly data date and specified date
         splits = ticker_obj.splits
         if not splits.empty:
+            logger.debug(f"Found {len(splits)} potential stock splits to check", 
+                        module="get_outstanding_shares", ticker=ticker)
+            logger.debug(f"Split data: {splits}", 
+                        module="get_outstanding_shares", ticker=ticker)
+            
             # Convert quarter_date to string for comparison
             q_date_str = quarter_date.strftime('%Y-%m-%d')
-            
-            # Find and apply relevant splits
-            relevant_splits = []
-            for split_date, ratio in zip(splits.index, splits.values):
-                split_date_str = split_date.strftime('%Y-%m-%d')
-                if q_date_str < split_date_str <= date:
-                    relevant_splits.append((split_date, ratio))
-            
-            # Apply the splits to our share count
-            for split_date, split_ratio in relevant_splits:
-                original_shares = shares
-                shares *= split_ratio
-                if verbose_data:
-                    logger.debug(f"Adjusted shares from {original_shares} to {shares} due to {split_ratio}:1 split on {split_date.strftime('%Y-%m-%d')}",
-                            module="get_outstanding_shares", ticker=ticker)
         
         # Cache the result
         _cache.set_outstanding_shares(ticker, date, float(shares))
@@ -606,10 +599,6 @@ def get_outstanding_shares(
             logger.debug("=== OUTSTANDING SHARES DETAILS ===", module="get_outstanding_shares", ticker=ticker)
             logger.debug(f"Date requested: {date}", module="get_outstanding_shares", ticker=ticker)
             logger.debug(f"Quarter date used: {quarter_date.strftime('%Y-%m-%d')}", module="get_outstanding_shares", ticker=ticker)
-            if relevant_splits:
-                logger.debug(f"Applied {len(relevant_splits)} stock splits between {q_date_str} and {date}", 
-                           module="get_outstanding_shares", ticker=ticker)
-
             
         return float(shares)
     
@@ -1066,8 +1055,9 @@ def search_line_items(
             # Add requested line items
             for item in line_items:
 
-                logger.debug(f"  INNER LOOP: Processing item '{item}' for {ticker} on {report_date}", 
-                           module="search_line_items", ticker=ticker)
+                if verbose_data:
+                    logger.debug(f"  INNER LOOP: Processing item '{item}' for {ticker} on {report_date}", 
+                                 module="search_line_items", ticker=ticker)
                 
                 # Map line_items to yfinance fields
                 item_mapping = {
