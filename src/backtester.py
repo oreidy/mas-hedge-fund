@@ -304,20 +304,22 @@ class Backtester:
         if not start_valid:
             next_day = get_next_trading_day(start_date_dt)
             prev_day = get_previous_trading_day(start_date_dt)
-            print(f"Start date {start_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.")
+            logger.info(f"Start date {start_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.", module="prefetch_data")
             
             # Automatically adjust to next trading day instead of exiting
             self.start_date = next_day
-            print(f"Automatically adjusted start date to next trading day: {self.start_date}")
+            logger.info(f"Automatically adjusted start date to next trading day: {self.start_date}", module="prefetch_data")
+
     
         if not end_valid:
             next_day = get_next_trading_day(end_date_dt)
             prev_day = get_previous_trading_day(end_date_dt)
-            print(f"End date {end_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.")
+            logger.info(f"End date {end_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.", module="prefetch_data")
             
             # Automatically adjust to previous trading day instead of exiting
             self.end_date = prev_day
-            print(f"Automatically adjusted end date to previous trading day: {self.end_date}")
+            logger.info(f"Automatically adjusted end date to previous trading day: {self.end_date}", module="prefetch_data")
+            
     
 
         logger.info(f"Fetching historical data from {historical_start_str} to {self.end_date}", module="prefetch_data")

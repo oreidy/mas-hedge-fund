@@ -995,6 +995,8 @@ def search_line_items(
         List of LineItem objects
     """
 
+    verbose_data = False
+
 
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)
@@ -1102,7 +1104,7 @@ def search_line_items(
                     shares = get_outstanding_shares(ticker, end_date, verbose_data=verbose_data) 
                     if shares:
                         setattr(line_item, item, float(shares))
-                        logger.info(f"Successfully set outstanding_shares={shares}", 
+                        logger.debug(f"Successfully set outstanding_shares={shares}", 
                                     module="search_line_items", ticker=ticker)
                     else:
                         logger.warning(f"Cannot set outstanding_shares: no data available on {report_date}", 
