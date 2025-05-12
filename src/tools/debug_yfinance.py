@@ -48,7 +48,7 @@ def debug_yfinance_data(ticker_symbol):
         info_keys = list(ticker.info.keys())
         print(f"Info available fields: {info_keys}")
         print("\nSample values:")
-        for key in ['longBusinessSummary', 'sector', 'industry', 
+        for key in ['sector', 'industry', 
                     'marketCap', 'sharesOutstanding']:
             if key in ticker.info:
                 print(f"{key}: {ticker.info[key]}")

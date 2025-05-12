@@ -41,7 +41,7 @@ def bill_ackman_agent(state: AgentState):
         # Debug:
         if verbose_data:
             if metrics:
-                logger.debug(f"Retrieved {len(metrics)} financial metrics {metrics}", 
+                logger.debug(f"Retrieved {len(metrics)} financial metrics", 
                            module="bill_ackman_agent", ticker=ticker)
             else:
                 logger.error(f"No financial metrics retrieved for {ticker}", 
@@ -160,8 +160,9 @@ def analyze_business_quality(metrics: list, financial_line_items: list, verbose_
             "details": "Insufficient data to analyze business quality"
         }
     
-    if verbose_data:
-        logger.debug(f"metrics: {metrics}, financial line items: {financial_line_items}", module="analyze_business_quality", ticker=ticker)
+    # overwritten to False for the sake of clarity
+    # if verbose_data:
+        # logger.debug(f"metrics: {metrics}, financial line items: {financial_line_items}", module="analyze_business_quality", ticker=ticker)
     
     # 1. Multi-period revenue growth analysis
     revenue_data = [(item.report_period, item.revenue) for item in financial_line_items if item.revenue is not None]
@@ -172,8 +173,8 @@ def analyze_business_quality(metrics: list, financial_line_items: list, verbose_
     if len(revenues) >= 2:
         # Check if overall revenue grew from first to last
         final, initial = revenues[0], revenues[-1]
-        initial_date = revenue_data[0][0] if revenue_data else "unknown"
-        final_date = revenue_data[-1][0] if revenue_data else "unknown"
+        initial_date = revenue_data[-1][0] if revenue_data else "unknown"
+        final_date = revenue_data[0][0] if revenue_data else "unknown"
 
         if verbose_data:
             logger.debug(f"Initial revenue ({initial_date}): {initial}", module="analyze_business_quality", ticker=ticker)
@@ -202,8 +203,8 @@ def analyze_business_quality(metrics: list, financial_line_items: list, verbose_
     
     # 2. Operating margin and free cash flow consistency
     # We'll check if operating_margin or free_cash_flow are consistently positive/improving
-    fcf_vals = [item.free_cash_flow for item in financial_line_items if item.free_cash_flow is not None]
-    op_margin_vals = [item.operating_margin for item in financial_line_items if item.operating_margin is not None]
+    fcf_vals = [item.free_cash_flow for item in financial_line_items if hasattr(item, 'free_cash_flow') and item.free_cash_flow is not None]
+    op_margin_vals = [item.operating_margin for item in financial_line_items if hasattr(item, 'operating_margin') and item.operating_margin is not None]
     
     if op_margin_vals:
         # Check if the majority of operating margins are > 15%
@@ -281,7 +282,7 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list, verb
     
     # 1. Multi-period debt ratio or debt_to_equity
     # Check if the company’s leverage is stable or improving
-    debt_to_equity_vals = [item.debt_to_equity for item in financial_line_items if item.debt_to_equity is not None]
+    debt_to_equity_vals = [item.debt_to_equity for item in financial_line_items if hasattr(item, 'debt_to_equity') and item.debt_to_equity is not None]
     
     # If we have multi-year data, see if D/E ratio has gone down or stayed <1 across most periods
     if debt_to_equity_vals:

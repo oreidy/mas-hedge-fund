@@ -970,8 +970,7 @@ def search_line_items(
     verbose_data: bool = False,
 ) -> List[LineItem]:
     """
-    Fetch specific line items from financial statements.
-    Reimplemented to use yfinance.
+    Fetch specific line items from financial statements using caching and yfinance.
     
     Args:
         ticker: Stock ticker symbol
@@ -985,10 +984,31 @@ def search_line_items(
     """
 
     # overwritten to False for the sake of clarity
-    verbose_data = False
+    # verbose_data = False
 
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)
+    
+    # First check if we have this data in cache
+    cached_line_items = _cache.get_line_items(ticker, end_date, period, line_items)
+    if cached_line_items:
+        logger.debug(f"Retrieved line items for {ticker} from cache", 
+                  module="search_line_items", ticker=ticker)
+
+        if cached_line_items and verbose_data:
+            logger.debug(f"Cash flow statement structure from cache:", module="search_line_items", ticker=ticker)
+            # Check if any cached item has dividends_and_other_cash_distributions
+            has_dividends = any('dividends_and_other_cash_distributions' in item for item in cached_line_items)
+            logger.debug(f"Cached line items have dividends attribute: {has_dividends}", module="search_line_items", ticker=ticker)
+            
+            # Print the first cached item as an example
+            if cached_line_items:
+                logger.debug(f"First cached line item fields: {list(cached_line_items[0].keys())}", module="search_line_items", ticker=ticker)
+                logger.debug(f"First cached line item data: {cached_line_items[0]}", module="search_line_items", ticker=ticker)
+        
+        
+        # Convert dictionary data to LineItem objects
+        return [LineItem(**item) for item in cached_line_items]
 
     try:
         ticker_obj = yf.Ticker(ticker)
@@ -1007,7 +1027,7 @@ def search_line_items(
         
         results = []
 
-        # Check if we have data
+        # Check if we have data from yfinance
         if income_stmt.empty and balance_sheet.empty and cash_flow.empty:
             logger.warning(f"No financial data found for {ticker}", 
                           module="search_line_items", ticker=ticker)
@@ -1040,9 +1060,26 @@ def search_line_items(
         # Sort columns in descending order such that the newest is first
         sorted_columns = sorted(common_columns, reverse=True)
 
-        # Filter columns by end_date and limit the number of columns
+        # Filter columns by end_date 
         valid_columns = [col for col in sorted_columns if col.strftime('%Y-%m-%d') <= end_date]
-        valid_columns = valid_columns[:limit]
+
+        # Filter out columns with too many NaN values
+        filtered_valid_columns = []
+        for col in valid_columns:
+            # Check what percentage of values are NaN in each statement
+            income_nan_count = income_stmt[col].isna().sum() / len(income_stmt)
+            balance_nan_count = balance_sheet[col].isna().sum() / len(balance_sheet)
+            cashflow_nan_count = cash_flow[col].isna().sum() / len(cash_flow)
+            
+            # Only include columns where at least 70% of values are not NaN
+            if income_nan_count < 0.3 and balance_nan_count < 0.3 and cashflow_nan_count < 0.3:
+                filtered_valid_columns.append(col)
+            else:
+                logger.debug(f"Skipping date {col.strftime('%Y-%m-%d')} due to excessive NaN values (I:{income_nan_count:.2f}, B:{balance_nan_count:.2f}, C:{cashflow_nan_count:.2f})",
+                            module="search_line_items", ticker=ticker)
+
+        # Limit the number of columns
+        valid_columns = filtered_valid_columns[:limit]  
 
         if verbose_data:
             logger.debug(f"Valid columns: {[col.strftime('%Y-%m-%d') for col in valid_columns]}", 
@@ -1085,7 +1122,7 @@ def search_line_items(
                     "debt_to_equity": None,  # Special calculation
                     "free_cash_flow": None,  # Special calculation
                     "operating_margin": None,  # Special calculation
-                    "dividends_and_other_cash_distributions": ("Dividends Paid", cash_flow),
+                    "dividends_and_other_cash_distributions": None # Special calculation,
                 }
                 
                 if item == "outstanding_shares":
@@ -1098,6 +1135,17 @@ def search_line_items(
                     else:
                         logger.warning(f"Cannot set outstanding_shares: no data available on {report_date}", 
                                     module="search_line_items", ticker=ticker)
+                        
+                elif item == "dividends_and_other_cash_distributions":
+                    # Try multiple possible field names
+                    dividend_field_names = ["Cash Dividends Paid", "Common Stock Dividend Paid", "Dividends Paid"]
+                    for field_name in dividend_field_names:
+                        if field_name in cash_flow.index:
+                            value = cash_flow.loc[field_name, col]
+                            setattr(line_item, item, float(value))
+                            break
+                        else:
+                            logger.warning(f"Missing data for dividends at {report_date}", module="search_line_items", ticker=ticker)
                 
                 elif item == "working_capital":
                     # Working capital = Current Assets - Current Liabilities
@@ -1106,7 +1154,7 @@ def search_line_items(
                     if current_assets is not None and current_liabilities is not None:
                         setattr(line_item, item, float(current_assets - current_liabilities))
                     else:
-                        logger.warning(f"Missing data for working_capital calculation: current_assets={current_assets}, current_liabilities={current_liabilities}", 
+                        logger.warning(f"Missing data for working_capital calculation at {report_date}: current_assets={current_assets}, current_liabilities={current_liabilities}", 
                         module="search_line_items", ticker=ticker)
                 
                 elif item == "debt_to_equity":
@@ -1116,7 +1164,7 @@ def search_line_items(
                     if total_liabilities is not None and stockholders_equity is not None and float(stockholders_equity) > 0:
                         setattr(line_item, item, float(total_liabilities) / float(stockholders_equity))
                     else:
-                        logger.warning(f"Missing data for debt_to_equity calculation: total_liabilities={total_liabilities}, stockholders_equity={stockholders_equity}", 
+                        logger.warning(f"Missing data for debt_to_equity calculation at {report_date}: total_liabilities={total_liabilities}, stockholders_equity={stockholders_equity}", 
                         module="search_line_items", ticker=ticker)
                 
                 elif item == "free_cash_flow":
@@ -1126,7 +1174,7 @@ def search_line_items(
                     if operating_cash_flow is not None and capital_expenditure is not None:
                         setattr(line_item, item, float(operating_cash_flow + capital_expenditure))
                     else:
-                        logger.warning(f"Missing data for free_cash_flow calculation: operating_cash_flow={operating_cash_flow}, capital_expenditure={capital_expenditure}", 
+                        logger.warning(f"Missing data for free_cash_flow calculation at {report_date}: operating_cash_flow={operating_cash_flow}, capital_expenditure={capital_expenditure}", 
                         module="search_line_items", ticker=ticker)
                 
                 elif item == "operating_margin":
@@ -1136,7 +1184,7 @@ def search_line_items(
                     if operating_income is not None and total_revenue is not None and float(total_revenue) > 0:
                         setattr(line_item, item, float(operating_income) / float(total_revenue))
                     else:
-                        logger.warning(f"Missing data for operating_margin calculation: operating_income={operating_income}, total_revenue={total_revenue}", 
+                        logger.warning(f"Missing data for operating_margin calculation at {report_date}: operating_income={operating_income}, total_revenue={total_revenue}", 
                         module="search_line_items", ticker=ticker)
                 
                 elif item_mapping.get(item):
@@ -1156,6 +1204,11 @@ def search_line_items(
         if verbose_data or len(results) == 0:
             logger.debug(f"Found {len(results)} items", module="search_line_items", ticker=ticker)
             logger.debug(f"Results {results}", module="search_line_items", ticker=ticker)
+
+        # Cache the downloaded data
+        if results:
+            cache_data = [item.model_dump() for item in results]
+            _cache.set_line_items(ticker, end_date, period, line_items, cache_data)
         
         return results
     

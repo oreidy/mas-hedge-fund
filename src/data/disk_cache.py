@@ -69,14 +69,16 @@ class DiskCache:
             expire=self._get_expiration("financial_metrics")
         )
     
-    def get_line_items(self, ticker):
+    def get_line_items(self, ticker, end_date, period, line_items_list):
         """Get cached line items"""
-        cache_key = f"line_items:{ticker}"
+        line_items_str = ":".join(sorted(line_items_list)) 
+        cache_key = f"line_items:{ticker}:{end_date}:{period}:{line_items_str}"
         return self.caches["financial_metrics"].get(cache_key)
     
-    def set_line_items(self, ticker, data):
+    def set_line_items(self, ticker, end_date, period, line_items_list, data):
         """Cache line items with expiration"""
-        cache_key = f"line_items:{ticker}"
+        line_items_str = ":".join(sorted(line_items_list))
+        cache_key = f"line_items:{ticker}:{end_date}:{period}:{line_items_str}"
         self.caches["financial_metrics"].set(
             cache_key, 
             data, 
