@@ -633,7 +633,7 @@ def get_market_cap(
         # If we need a historical market cap, calculate it
         if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
             market_cap = get_historical_market_cap(ticker, end_date, verbose_data)
-            logger.debug(f"Market cap for{[ticker]} is either None or the end_date isn't the current date.",
+            logger.debug(f"Market cap for {ticker} is either None or the end_date isn't the current date.",
                          module="get_market_cap")
         
         return market_cap
@@ -671,8 +671,6 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
 
         # Get historical price
         hist = ticker_obj.history(start=date, end=end_date_str)
-        logger.debug(f"Historical price for {[ticker]}: {hist} (1d {date} -> {end_date_str})", 
-                     module="get_historical_market_cap", ticker=ticker)
         
         if hist.empty:
             logger.warning(f"${ticker}: possibly delisted; no price data found  (1d {date} -> {end_date_str})", 
@@ -686,6 +684,7 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
         if verbose_data:
             logger.debug("=== MARKET CAP CALCULATION DETAILS ===", module="get_historical_market_cap", ticker=ticker)
             logger.debug(f"Date requested: {date}", module="get_historical_market_cap", ticker=ticker)
+            logger.debug(f"Closing price: {close_price}", module="get_historical_market_cap", ticker=ticker)
             logger.debug(f"Shares outstanding: {shares}", module="get_historical_market_cap", ticker=ticker)
             logger.debug(f"Share price on {date}: ${close_price}", module="get_historical_market_cap", ticker=ticker)
             logger.debug(f"Calculated market cap: ${market_cap}", module="get_historical_market_cap", ticker=ticker)
@@ -996,6 +995,7 @@ def search_line_items(
         List of LineItem objects
     """
 
+
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)
 
@@ -1029,15 +1029,37 @@ def search_line_items(
                         module="search_line_items", ticker=ticker)
             logger.debug(f"  - Cash Flow: {cash_flow.shape if not cash_flow.empty else 'Empty'}", 
                         module="search_line_items", ticker=ticker)
+
+            logger.debug(f"Income stmt: {income_stmt}", module="search_line_items", ticker=ticker)
+            logger.debug(f"balance sheet: {balance_sheet}", module="search_line_items", ticker=ticker)
+            logger.debug(f"Cash flow: {cash_flow}", module="search_line_items", ticker=ticker)
+
+        # Get columns (reporting dates) that exist in all financial statements
+        income_cols = set(income_stmt.columns) if not income_stmt.empty else set()
+        balance_cols = set(balance_sheet.columns) if not balance_sheet.empty else set()
+        cashflow_cols = set(cash_flow.columns) if not cash_flow.empty else set()
         
-        # Process each date column in the statements
-        for i, col in enumerate(income_stmt.columns):
-            if i >= limit:
-                break
-                
+        # Find the intersection of columns that exist in all statements that have data
+        common_columns = set()
+        if income_cols and balance_cols and cashflow_cols:
+            common_columns = income_cols.intersection(balance_cols).intersection(cashflow_cols)
+        else:
+            logger.warning("No intersection of columns possible", module="search_line_items", ticker=ticker)
+
+        # Sort columns in descending order such that the newest is first
+        sorted_columns = sorted(common_columns, reverse=True)
+
+        # Filter columns by end_date and limit the number of columns
+        valid_columns = [col for col in sorted_columns if col.strftime('%Y-%m-%d') <= end_date]
+        valid_columns = valid_columns[:limit]
+
+        if verbose_data:
+            logger.debug(f"Valid columns: {[col.strftime('%Y-%m-%d') for col in valid_columns]}", 
+                         module="search_line_items", ticker=ticker)
+        
+        # Process each valid column (date)
+        for col in valid_columns:
             report_date = col.strftime('%Y-%m-%d')
-            if report_date > end_date:
-                continue
                 
             # Create a line item for this date
             line_item = LineItem(
@@ -1048,7 +1070,7 @@ def search_line_items(
             )
 
             if verbose_data:
-                logger.info(f"report date: {report_date}, end_date: {end_date}", module="search_line_items", ticker=ticker)
+                logger.debug(f"report date: {report_date}, end_date: {end_date}", module="search_line_items", ticker=ticker)
                 logger.debug(f"OUTER LOOP: Created line_item on {report_date}", 
                        module="search_line_items", ticker=ticker)
             

@@ -53,19 +53,21 @@ def warren_buffett_agent(state: AgentState):
             verbose_data=verbose_data
         )
 
-        progress.update_status("warren_buffett_agent", ticker, "Getting market cap")
         # Get current market cap
+        progress.update_status("warren_buffett_agent", ticker, "Getting market cap")
         market_cap = get_market_cap(ticker, end_date, verbose_data)
 
-        progress.update_status("warren_buffett_agent", ticker, "Analyzing fundamentals")
         # Analyze fundamentals
-        fundamental_analysis = analyze_fundamentals(metrics)
+        progress.update_status("warren_buffett_agent", ticker, "Analyzing fundamentals")
+        fundamental_analysis = analyze_fundamentals(metrics, verbose_data)
 
+        # Analyze consistency
         progress.update_status("warren_buffett_agent", ticker, "Analyzing consistency")
-        consistency_analysis = analyze_consistency(financial_line_items)
+        consistency_analysis = analyze_consistency(financial_line_items, verbose_data)
 
+        #Calculating intrinsic value
         progress.update_status("warren_buffett_agent", ticker, "Calculating intrinsic value")
-        intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items, verbose_data=verbose_data)
+        intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items, verbose_data)
 
         # Calculate total score
         total_score = fundamental_analysis["score"] + consistency_analysis["score"]
@@ -129,8 +131,9 @@ def warren_buffett_agent(state: AgentState):
     return {"messages": [message], "data": state["data"]}
 
 
-def analyze_fundamentals(metrics: list) -> dict[str, any]:
+def analyze_fundamentals(metrics: list, verbose_data: bool = False) -> dict[str, any]:
     """Analyze company fundamentals based on Buffett's criteria."""
+
     if not metrics:
         return {"score": 0, "details": "Insufficient fundamental data"}
 
@@ -175,17 +178,26 @@ def analyze_fundamentals(metrics: list) -> dict[str, any]:
         reasoning.append(f"Weak liquidity with current ratio of {latest_metrics.current_ratio:.1f}")
     else:
         reasoning.append("Current ratio data not available")
+        
+    if verbose_data:
+        logger.debug(f"Final score: {score}", module="analyze_fundamentals")
+        logger.debug(f"Final reasoning: {'; '.join(reasoning)}", module="analyze_fundamentals")
 
     return {"score": score, "details": "; ".join(reasoning), "metrics": latest_metrics.model_dump()}
 
 
-def analyze_consistency(financial_line_items: list) -> dict[str, any]:
+def analyze_consistency(financial_line_items: list, verbose_data: bool = False) -> dict[str, any]:
     """Analyze earnings consistency and growth."""
     if len(financial_line_items) < 4:  # Need at least 4 periods for trend analysis
+        logger.debug("Insufficient historical data for consistency analysis", module="analyze_consistency")
         return {"score": 0, "details": "Insufficient historical data"}
 
     score = 0
     reasoning = []
+
+    if verbose_data:
+        for i, item in enumerate(financial_line_items):
+            logger.debug(f"Period {i+1}: {item.report_period}, Net income: {item.net_income}", module="analyze_consistency")
 
     # Check earnings growth trend
     earnings_values = [item.net_income for item in financial_line_items if item.net_income]
@@ -205,13 +217,17 @@ def analyze_consistency(financial_line_items: list) -> dict[str, any]:
     else:
         reasoning.append("Insufficient earnings data for trend analysis")
 
+    if verbose_data:
+        logger.debug(f"Final score: {score}", module="analyze_consistency")
+        logger.debug(f"Final reasoning: {'; '.join(reasoning)}", module="analyze_consistency")
+
     return {
         "score": score,
         "details": "; ".join(reasoning),
     }
 
 
-def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
+def calculate_owner_earnings(financial_line_items: list, verbose_data: bool = False) -> dict[str, any]:
     """Calculate owner earnings (Buffett's preferred measure of true earnings power).
     Owner Earnings = Net Income + Depreciation - Maintenance CapEx"""
     if not financial_line_items or len(financial_line_items) < 1:
@@ -225,6 +241,12 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     depreciation = latest.depreciation_and_amortization
     capex = latest.capital_expenditure
 
+    if verbose_data:
+        logger.debug(f"Net Income: {net_income}", module="calculate_owner_earnings")
+        logger.debug(f"Depreciation: {depreciation}", module="calculate_owner_earnings")
+        logger.debug(f"Capital Expenditure: {capex}", module="calculate_owner_earnings")
+
+
     if not all([net_income, depreciation, capex]):
         logger.warning("Missing components for owner earnings calculation", module="calculate_owner_earnings")
         return {"owner_earnings": None, "details": ["Missing components for owner earnings calculation"]}
@@ -233,6 +255,9 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     maintenance_capex = capex * 0.75
 
     owner_earnings = net_income + depreciation - maintenance_capex
+
+    if verbose_data:
+        logger.debug(f"Calculated Owner Earnings: {owner_earnings}", module="calculate_owner_earnings")
 
     return {
         "owner_earnings": owner_earnings,

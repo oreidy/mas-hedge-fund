@@ -28,6 +28,7 @@ from utils.market_calendar import is_trading_day, get_next_trading_day, get_prev
 from utils.display import print_backtest_results, format_backtest_row
 from typing_extensions import Callable
 import time
+from utils.logger import logger
 
 init(autoreset=True)
 
@@ -283,9 +284,6 @@ class Backtester:
         return total_value
 
     def prefetch_data(self):
-
-        from utils.logger import logger
-
         """Pre-fetch all data needed for the backtest period."""
 
         logger.info("Pre-fetching data for the entire backtest period...", module="prefetch_data")
