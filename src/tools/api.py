@@ -78,7 +78,7 @@ async def get_prices_async(tickers: List[str], start_date: str, end_date: str, v
 
     if not is_trading_day(start_date) or not is_trading_day(end_date):
         try:
-            logger.debug(f"Either stard_date {start_date} or end_date {end_date} isn't a trading day.")
+            logger.debug(f"Either start_date {start_date} or end_date {end_date} isn't a trading day.", module="get_prices_async")
             start_date, end_date = adjust_date_range(start_date, end_date)
         except ValueError as e:
             logger.warning(f"Warning: {e} - continuing with original dates", module="get_prices_async")
@@ -533,7 +533,7 @@ def get_outstanding_shares(
         else:
             if verbose_data:
                 logger.debug(f"Available fields in balance sheet: {quarters.index.tolist()}", module="get_outstanding_shares", ticker=ticker)
-                logger.debug(f"We got quaterly data: {quarters}", module="get_outstanding_shares", ticker=ticker)
+                logger.debug(f"We got data: {quarters}", module="get_outstanding_shares", ticker=ticker)
         
 
         # Convert all quarter dates to strings for easier comparison
@@ -577,17 +577,6 @@ def get_outstanding_shares(
             logger.warning(f"No valid shares data in quarter ending {quarter_date.strftime('%Y-%m-%d')} for {ticker}",
                           module="get_outstanding_shares", ticker=ticker)
             return None
-        
-        # Adjust for splits between quarterly data date and specified date
-        splits = ticker_obj.splits
-        if not splits.empty:
-            logger.debug(f"Found {len(splits)} potential stock splits to check", 
-                        module="get_outstanding_shares", ticker=ticker)
-            logger.debug(f"Split data: {splits}", 
-                        module="get_outstanding_shares", ticker=ticker)
-            
-            # Convert quarter_date to string for comparison
-            q_date_str = quarter_date.strftime('%Y-%m-%d')
         
         # Cache the result
         _cache.set_outstanding_shares(ticker, date, float(shares))
@@ -995,8 +984,8 @@ def search_line_items(
         List of LineItem objects
     """
 
+    # overwritten to False for the sake of clarity
     verbose_data = False
-
 
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)

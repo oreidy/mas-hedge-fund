@@ -164,11 +164,21 @@ def analyze_business_quality(metrics: list, financial_line_items: list, verbose_
         logger.debug(f"metrics: {metrics}, financial line items: {financial_line_items}", module="analyze_business_quality", ticker=ticker)
     
     # 1. Multi-period revenue growth analysis
-    revenues = [item.revenue for item in financial_line_items if item.revenue is not None]
+    revenue_data = [(item.report_period, item.revenue) for item in financial_line_items if item.revenue is not None]
+    revenues = [r[1] for r in revenue_data]
+
+    growth_rate = None
 
     if len(revenues) >= 2:
         # Check if overall revenue grew from first to last
-        initial, final = revenues[0], revenues[-1]
+        final, initial = revenues[0], revenues[-1]
+        initial_date = revenue_data[0][0] if revenue_data else "unknown"
+        final_date = revenue_data[-1][0] if revenue_data else "unknown"
+
+        if verbose_data:
+            logger.debug(f"Initial revenue ({initial_date}): {initial}", module="analyze_business_quality", ticker=ticker)
+            logger.debug(f"Final revenue ({final_date}): {final}", module="analyze_business_quality", ticker=ticker)
+
         if initial and final and final > initial:
             # Simple growth rate
             growth_rate = (final - initial) / abs(initial)
@@ -305,17 +315,24 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list, verb
     
     # 2. Capital allocation approach (dividends + share counts)
     # If the company paid dividends or reduced share count over time, it may reflect discipline
-    dividends_list = [item.dividends_and_other_cash_distributions for item in financial_line_items if item.dividends_and_other_cash_distributions is not None]
-    if dividends_list:
-        # Check if dividends were paid (i.e., negative outflows to shareholders) in most periods
-        paying_dividends_count = sum(1 for d in dividends_list if d < 0)
-        if paying_dividends_count >= (len(dividends_list) // 2 + 1):
-            score += 1
-            details.append("Company has a history of returning capital to shareholders (dividends).")
+    # Only try to access the dividends list if it exists but initialize dividends_list first
+    dividends_list = []
+    if any(hasattr(item, 'dividends_and_other_cash_distributions') for item in financial_line_items):
+
+        dividends_list = [item.dividends_and_other_cash_distributions for item in financial_line_items if item.dividends_and_other_cash_distributions is not None]
+        
+        if dividends_list:
+            # Check if dividends were paid (i.e., negative outflows to shareholders) in most periods
+            paying_dividends_count = sum(1 for d in dividends_list if d < 0)
+            if paying_dividends_count >= (len(dividends_list) // 2 + 1):
+                score += 1
+                details.append("Company has a history of returning capital to shareholders (dividends).")
+            else:
+                details.append("Dividends not consistently paid or no data.")
         else:
-            details.append("Dividends not consistently paid or no data.")
+            details.append("No dividend data found across periods.")
     else:
-        logger.warning(f"No dividend data found", 
+        logger.warning(f"No dividend attribute found in line items", 
                    module="analyze_financial_discipline", ticker=ticker)
         details.append("No dividend data found across periods.")
     
@@ -363,8 +380,8 @@ def analyze_valuation(financial_line_items: list, market_cap: float, verbose_dat
             "details": "Insufficient data to perform valuation"
         }
     
-    # Example: use the most recent item for FCF
-    latest = financial_line_items[-1]  # the last one is presumably the most recent
+    # Use the most recent item for FCF
+    latest = financial_line_items[0]  
     fcf = latest.free_cash_flow if latest.free_cash_flow else 0
     
     # For demonstration, let's do a naive approach:
@@ -374,8 +391,8 @@ def analyze_valuation(financial_line_items: list, market_cap: float, verbose_dat
     projection_years = 5
     
     if fcf <= 0:
-        logger.warning(f"No free cash flow data available for {ticker} at {latest.report_period}", 
-                   module="bill_ackman_agent", ticker=ticker)
+        logger.debug(f"Negative free cash flow detected for {ticker} at {latest.report_period}: {fcf}",
+                module="analyze_valuation", ticker=ticker)
         return {
             "score": 0,
             "details": f"No positive FCF for valuation; FCF = {fcf}",
