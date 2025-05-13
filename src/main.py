@@ -159,18 +159,32 @@ if __name__ == "__main__":
         default=0.0,
         help="Initial margin requirement. Defaults to 0.0"
     )
-    parser.add_argument("--tickers", type=str, required=True, help="Comma-separated list of stock ticker symbols")
+    parser.add_argument(
+        "--tickers",
+        type=str,
+        required=True,
+        help="Comma-separated list of stock ticker symbols"
+    )
     parser.add_argument(
         "--start-date",
         type=str,
         help="Start date (YYYY-MM-DD). Defaults to 3 months before end date",
     )
-    parser.add_argument("--end-date", type=str, help="End date (YYYY-MM-DD). Defaults to today")
-    parser.add_argument("--show-reasoning", action="store_true", help="Show reasoning from each agent")
     parser.add_argument(
-        "--show-agent-graph", action="store_true", help="Show the agent graph"
+        "--end-date",
+        type=str, 
+        help="End date (YYYY-MM-DD). Defaults to today"
     )
-
+    parser.add_argument(
+        "--show-reasoning",
+        action="store_true", 
+        help="Show reasoning from each agent"
+    )
+    parser.add_argument(
+        "--show-agent-graph", 
+        action="store_true", 
+        help="Show the agent graph"
+    )
     # Debugging options
     parser.add_argument(
         "--debug",

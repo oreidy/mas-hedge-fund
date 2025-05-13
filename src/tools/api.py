@@ -1004,7 +1004,7 @@ def search_line_items(
             # Print the first cached item as an example
             if cached_line_items:
                 logger.debug(f"First cached line item fields: {list(cached_line_items[0].keys())}", module="search_line_items", ticker=ticker)
-                logger.debug(f"First cached line item data: {cached_line_items[0]}", module="search_line_items", ticker=ticker)
+                logger.debug(f"Cached line items data: {cached_line_items}", module="search_line_items", ticker=ticker)
         
         
         # Convert dictionary data to LineItem objects
@@ -1115,7 +1115,7 @@ def search_line_items(
                     "net_income": ("Net Income", income_stmt),
                     "capital_expenditure": ("Capital Expenditure", cash_flow),
                     "depreciation_and_amortization": ("Depreciation And Amortization", cash_flow),
-                    "outstanding_shares": None,  # Special handling
+                    "outstanding_shares":  ("Ordinary Shares Number", balance_sheet),
                     "total_assets": ("Total Assets", balance_sheet),
                     "total_liabilities": ("Total Liabilities Net Minority Interest", balance_sheet),
                     "working_capital": None,  # Special calculation 
@@ -1124,19 +1124,9 @@ def search_line_items(
                     "operating_margin": None,  # Special calculation
                     "dividends_and_other_cash_distributions": None # Special calculation,
                 }
-                
-                if item == "outstanding_shares":
-                    # Use the get_outstanding_shares function
-                    shares = get_outstanding_shares(ticker, end_date, verbose_data=verbose_data) 
-                    if shares:
-                        setattr(line_item, item, float(shares))
-                        logger.debug(f"Successfully set outstanding_shares={shares}", 
-                                    module="search_line_items", ticker=ticker)
-                    else:
-                        logger.warning(f"Cannot set outstanding_shares: no data available on {report_date}", 
-                                    module="search_line_items", ticker=ticker)
+
                         
-                elif item == "dividends_and_other_cash_distributions":
+                if item == "dividends_and_other_cash_distributions":
                     # Try multiple possible field names
                     dividend_field_names = ["Cash Dividends Paid", "Common Stock Dividend Paid", "Dividends Paid"]
                     for field_name in dividend_field_names:

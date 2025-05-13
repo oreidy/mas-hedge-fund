@@ -101,6 +101,14 @@ def warren_buffett_agent(state: AgentState):
             "consistency_summary": consistency_analysis["details"],  
         }
 
+        logger.debug(f"===Analysis results: signal={signal}, score={total_score}/{max_possible_score}===", module="warren_buffet_agent", ticker=ticker)
+        logger.debug(f"- Fundamentals score: {fundamental_analysis['score']}", module="warren_buffet_agent", ticker=ticker)
+        logger.debug(f"- Fundamentals details: {fundamental_analysis['details']}", module="warren_buffet_agent", ticker=ticker)
+        logger.debug(f"- Consistency score: {consistency_analysis['score']}", module="warren_buffet_agent", ticker=ticker)
+        logger.debug(f"- Consistency details: {consistency_analysis['details']}", module="warren_buffet_agent", ticker=ticker) 
+        logger.debug(f"- Instrinsic value: {intrinsic_value_analysis['intrinsic_value']}; Owner Earnigns: {intrinsic_value_analysis['owner_earnings']}", module="warren_buffet_agent", ticker=ticker)
+        logger.debug(f"- Instrinsic value details: {intrinsic_value_analysis['details']}", module="warren_buffet_agent", ticker=ticker)
+
         progress.update_status("warren_buffett_agent", ticker, "Generating Buffett analysis")
         buffett_output = generate_buffett_output(
             ticker=ticker,

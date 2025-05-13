@@ -41,7 +41,7 @@ def bill_ackman_agent(state: AgentState):
         # Debug:
         if verbose_data:
             if metrics:
-                logger.debug(f"Retrieved {len(metrics)} financial metrics", 
+                logger.debug(f"Retrieved {len(metrics)} periods of financial metrics", 
                            module="bill_ackman_agent", ticker=ticker)
             else:
                 logger.error(f"No financial metrics retrieved for {ticker}", 
@@ -101,11 +101,13 @@ def bill_ackman_agent(state: AgentState):
         }
 
         # Debug:
-        if verbose_data:
-            logger.debug(f"Analysis results: signal={signal}, score={total_score}/{max_possible_score}", module="bill_ackman_agent", ticker=ticker)
-            logger.debug(f"- Quality score: {quality_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
-            logger.debug(f"- Financial discipline score: {balance_sheet_analysis['score']}", module="bill_ackman_agent", ticker=ticker) 
-            logger.debug(f"- Valuation score: {valuation_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
+        logger.debug(f"===Analysis results: signal={signal}, score={total_score}/{max_possible_score}===", module="bill_ackman_agent", ticker=ticker)
+        logger.debug(f"- Quality score: {quality_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
+        logger.debug(f"- Quality details: {quality_analysis['details']}", module="bill_ackman_agent", ticker=ticker)
+        logger.debug(f"- Financial discipline score: {balance_sheet_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
+        logger.debug(f"- Financial discipline details: {balance_sheet_analysis['details']}", module="bill_ackman_agent", ticker=ticker) 
+        logger.debug(f"- Valuation score: {valuation_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
+        logger.debug(f"- Valuation details: {valuation_analysis['details']}", module="bill_ackman_agent", ticker=ticker)
         
         progress.update_status("bill_ackman_agent", ticker, "Generating Ackman analysis")
         ackman_output = generate_ackman_output(
@@ -337,11 +339,19 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list, verb
                    module="analyze_financial_discipline", ticker=ticker)
         details.append("No dividend data found across periods.")
     
-    # Check for decreasing share count (simple approach):
+    # Check for decreasing share count:
     # We can compare first vs last if we have at least two data points
-    shares = [item.outstanding_shares for item in financial_line_items if item.outstanding_shares is not None]
+    # shares = [item.outstanding_shares for item in financial_line_items if item.outstanding_shares is not None]
+
+    # Check for decreasing share count
+    shares_with_dates = [(item.report_period, item.outstanding_shares) for item in financial_line_items if item.outstanding_shares is not None]
+    shares = [count for _, count in shares_with_dates]
+    
+    if verbose_data:
+        logger.debug(f"Shares with dates (report_period, count): {shares_with_dates}", module="analyze_financial_discipline", ticker=ticker)
+
     if len(shares) >= 2:
-        if shares[-1] < shares[0]:
+        if shares[0] < shares[-1]:
             score += 1
             details.append("Outstanding shares have decreased over time (possible buybacks).")
         else:
