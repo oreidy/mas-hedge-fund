@@ -100,10 +100,10 @@ def get_next_trading_day(date_str):
     
     return current_date.strftime('%Y-%m-%d')
 
-def adjust_date_range(start_date, end_date):
+def adjust_date_range(start_date, end_date): # Review: Do I even need this function in my project?
     """
     Adjust date range to valid trading days.
-    If start_date is not a trading day, use the next trading day.
+    If start_date is not a trading day, use the previous trading day.
     If end_date is not a trading day, use the previous trading day.
     """
     logger.debug(f"Original date range: {start_date} to {end_date}", module="adjust_date_range")
@@ -112,8 +112,8 @@ def adjust_date_range(start_date, end_date):
     original_end = end_date
 
     if not is_trading_day(start_date):
-        start_date = get_next_trading_day(start_date)
-        logger.debug(f"Adjusted start date from {original_start} to {start_date} (next trading day)", module="adjust_date_range")
+        start_date = get_previous_trading_day(start_date)
+        logger.debug(f"Adjusted start date from {original_start} to {start_date} (previous trading day)", module="adjust_date_range")
     
     if not is_trading_day(end_date):
         end_date = get_previous_trading_day(end_date)

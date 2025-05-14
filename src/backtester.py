@@ -307,8 +307,8 @@ class Backtester:
             logger.info(f"Start date {start_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.", module="prefetch_data")
             
             # Automatically adjust to next trading day instead of exiting
-            self.start_date = next_day
-            logger.info(f"Automatically adjusted start date to next trading day: {self.start_date}", module="prefetch_data")
+            self.start_date = prev_day
+            logger.info(f"Automatically adjusted start date to previous trading day: {self.start_date}", module="prefetch_data")
 
     
         if not end_valid:
@@ -401,14 +401,18 @@ class Backtester:
 
             # Get current prices for all tickers
             try:
-                current_prices = {
-                    ticker: get_price_data(ticker, previous_date_str, current_date_str).iloc[-1]["close"]
-                    for ticker in self.tickers
-                }
-                logger.debug(f"Retrieved prices for {current_date_str}", module="run_backtest")
-                if self.verbose_data:
-                    for ticker, price in current_prices.items():
-                        logger.debug(f"Price for {ticker}: {price}", module="run_backtest", ticker=ticker)
+                current_prices = {}
+                for ticker in self.tickers:
+                    price_df = get_price_data(ticker, previous_date_str, current_date_str)
+                    price = price_df.iloc[-1]["close"]
+                    current_prices[ticker] = price
+                    
+                if verbose_data:
+                    logger.debug(f"price_df: {price_df}", module="run_backtest")
+                    logger.debug(f"price: {price}", module="run_backtest")
+                    logger.debug(f"current_price for {current_date_str}: {current_prices}", module="run_backtest")
+                    logger.debug(f"Date range: {previous_date_str} to {current_date_str}", module="run_backtest")
+    
 
             except Exception as e:
                 # If data is missing or there's an API error, skip this day
@@ -434,12 +438,12 @@ class Backtester:
             decisions = output["decisions"]
             analyst_signals = output["analyst_signals"]
 
-            if self.debug_mode: # Review: Do I need this if clause or would the debug show up anyway with --debug command line item?
-                logger.debug(f"Agent decisions for {current_date_str}:", module="run_backtest")
-                for ticker, decision in decisions.items():
-                    logger.debug(f"  {ticker}: {decision.get('action', 'hold')} {decision.get('quantity', 0)} shares", 
-                                module="run_backtest", 
-                                ticker=ticker)
+            
+            logger.debug(f"Agent decisions for {current_date_str}:", module="run_backtest")
+            for ticker, decision in decisions.items():
+                logger.debug(f"  {ticker}: {decision.get('action', 'hold')} {decision.get('quantity', 0)} shares", 
+                            module="run_backtest", 
+                            ticker=ticker)
 
             # Execute trades for each ticker
             executed_trades = {}
