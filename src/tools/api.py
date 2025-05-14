@@ -6,7 +6,7 @@ import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import List, Dict, Optional, Any, Union
-import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from data.disk_cache import DiskCache
@@ -24,7 +24,7 @@ from data.models import (
 )
 
 # Import the market calendar, SEC EDGAR scraper and logger.
-from utils.market_calendar import is_trading_day, adjust_date_range
+from utils.market_calendar import is_trading_day, adjust_date_range, adjust_yfinance_date_range
 from tools.sec_edgar_scraper import fetch_insider_trades_for_ticker, fetch_multiple_insider_trades
 from utils.logger import logger
 
@@ -49,6 +49,9 @@ def get_prices(ticker: str, start_date: str, end_date: str, verbose_data: bool =
         List of Price objects
     """
 
+    # overwritten to False for the sake of clarity
+    verbose_data = False
+
     # Log function call
     logger.debug(f"Fetching prices for {ticker} from {start_date} to {end_date}", module="get_prices", ticker=ticker)
 
@@ -57,6 +60,8 @@ def get_prices(ticker: str, start_date: str, end_date: str, verbose_data: bool =
     try:
         asyncio.set_event_loop(loop)
         results = loop.run_until_complete(get_prices_async([ticker], start_date, end_date, verbose_data))
+        if verbose_data:
+            logger.debug(f"results: {results}", module="get_prices", ticker=ticker)
         return results.get(ticker, []) # Review: why is it not just return results? Why .get()?
     finally:
         loop.close() # Review: Why do I have to close the loop? Why can't I just omit this finally:?
@@ -64,6 +69,9 @@ def get_prices(ticker: str, start_date: str, end_date: str, verbose_data: bool =
 
 async def get_prices_async(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, List[Price]]:
     """Fetch prices for multiple tickers asynchronously"""
+
+    # overwritten to False for the sake of clarity
+    verbose_data = False
 
     logger.debug(f"Running get_prices_async() for {len(tickers)} tickers from {start_date} to {end_date}", 
                 module="get_prices_async")
@@ -78,12 +86,15 @@ async def get_prices_async(tickers: List[str], start_date: str, end_date: str, v
 
     if not is_trading_day(start_date) or not is_trading_day(end_date):
         try:
-            logger.debug(f"Either start_date {start_date} or end_date {end_date} isn't a trading day.", module="get_prices_async")
+            if verbose_data:
+                logger.debug(f"Either start_date {start_date} or end_date {end_date} isn't a trading day.", module="get_prices_async")
             start_date, end_date = adjust_date_range(start_date, end_date)
         except ValueError as e:
             logger.warning(f"Warning: {e} - continuing with original dates", module="get_prices_async")
 
     df_results = await fetch_prices_batch(tickers, start_date, end_date, verbose_data) # Review: Why do I need "await" here?
+    if verbose_data:
+        logger.debug(f"df_results: {df_results}", module="get_prices_async", ticker=tickers)
     return {ticker: df_to_price_objects(df) for ticker, df in df_results.items()}
 
 
@@ -93,8 +104,11 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
     Uses yfinance's batch download capability for efficiency.
     Adjusts dates to trading days to handle market holidays.
     """
+    
+    # overwritten to False for the sake of clarity
+    verbose_data = False
 
-    logger.debug(f"Running fetch_prices_batch() for {len(tickers)} tickers", module="fetch_prices_batch")
+    logger.debug(f"Running fetch_prices_batch() for {len(tickers)} tickers from {start_date} to {end_date}", module="fetch_prices_batch")
 
     # First check cache for all tickers
     cached_results = {}
@@ -106,7 +120,7 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
 
     # Debug: cache structure
     if verbose_data:
-        for ticker in tickers[:3]:  # Just check a few tickers to understand cache behavior
+        for ticker in tickers:  # Just check a few tickers to understand cache behavior
             cache_data = _cache.get_prices(ticker)
             if cache_data:
                 # Check if the cache contains data within our date range
@@ -160,15 +174,18 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
 
         return cached_results
     
-    # Fetch data for tickers not in cache
+    # Fetch data for tickers that aren't in cache
     try:
+        # Adjust the end_date for yfinance (add one day end because in yfinance is exclusive)
+        yf_start_date, yf_end_date = adjust_yfinance_date_range(start_date, end_date)
+
         # yfinance batch download
         logger.debug(f"Downloading price data for {len(tickers_to_fetch)} tickers", 
                          module="fetch_prices_batch")
         data = yf.download(
             tickers_to_fetch, 
-            start=start_date, 
-            end=end_date, 
+            start=yf_start_date, 
+            end=yf_end_date, 
             group_by='ticker',
             auto_adjust=True,
             progress=False
@@ -233,11 +250,21 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
 def get_price_data(ticker: str, start_date: str, end_date: str, verbose_data: bool = False) -> pd.DataFrame:
     """Get price data as DataFrame."""
 
+    # overwritten to False for the sake of clarity
+    verbose_data = False
+
     logger.debug(f"Running get_price_data() for {ticker} from {start_date} to {end_date}", 
                 module="get_price_data", ticker=ticker)
 
     prices = get_prices(ticker, start_date, end_date, verbose_data)
-    return prices_to_df(prices)
+
+    df = prices_to_df(prices)
+    
+    if verbose_data:
+        logger.debug(f"prices: {prices}", module="get_prices_data", ticker=ticker)
+        logger.debug(f"df: {df}", module="get_price_data", ticker=ticker)
+
+    return df
 
 
 # ===== DATA CONVERSION UTILITIES =====
@@ -319,6 +346,12 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
 
     logger.debug(f"Running fetch_financial_metrics_async() for {len(tickers)} tickers", 
                 module="fetch_financial_metrics_async")
+    
+    # Also adjsut this end_date since end_date in yfinance is exclusive
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+    end_dt = end_dt + timedelta(days=1)
+    end_date = end_dt.strftime('%Y-%m-%d')
+    
 
     # Counter for cache tracking
     cache_hits = 0
@@ -620,7 +653,7 @@ def get_market_cap(
         logger.debug(f"Market cap for {[ticker]} is {market_cap}", module="get_market_cap")
         
         # If we need a historical market cap, calculate it
-        if market_cap is None or end_date != datetime.datetime.now().strftime('%Y-%m-%d'):
+        if market_cap is None or end_date != datetime.now().strftime('%Y-%m-%d'):
             market_cap = get_historical_market_cap(ticker, end_date, verbose_data)
             logger.debug(f"Market cap for {ticker} is either None or the end_date isn't the current date.",
                          module="get_market_cap")
@@ -644,7 +677,7 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
 
     try:
         
-        end_date = datetime.datetime.strptime(date, '%Y-%m-%d') + datetime.timedelta(days=1) # Since end_date in yfinance is exclusive
+        end_date = datetime.strptime(date, '%Y-%m-%d') + timedelta(days=1) # Since end_date in yfinance is exclusive
         end_date_str = end_date.strftime('%Y-%m-%d')
 
         ticker_obj = yf.Ticker(ticker)
@@ -746,7 +779,7 @@ async def get_insider_trades_async(tickers: List[str], end_date: str, start_date
             ]
             
             # If we have recent data, use it
-            if filtered_data and (datetime.datetime.now() - datetime.datetime.strptime(cached_data[-1]["filing_date"], "%Y-%m-%d")).days < 7:
+            if filtered_data and (datetime.now() - datetime.strptime(cached_data[-1]["filing_date"], "%Y-%m-%d")).days < 7:
                 results[ticker] = filtered_data
                 cache_hits += 1
                 continue
@@ -881,7 +914,7 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
             ]
             
             # If we have recent data, use it
-            if filtered_data and (datetime.datetime.now() - datetime.datetime.strptime(cached_data[-1]["date"], "%Y-%m-%d")).days < 3:
+            if filtered_data and (datetime.now() - datetime.strptime(cached_data[-1]["date"], "%Y-%m-%d")).days < 3:
                 results[ticker] = filtered_data
                 cache_hits += 1
                 continue
@@ -909,7 +942,7 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
                 for news_item in news_data:
                     # Convert unix timestamp to date
                     timestamp = news_item.get('providerPublishTime', 0)
-                    date = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
+                    date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
                     
                     # Filter by date range
                     if (start_date is None or date >= start_date) and date <= end_date:
@@ -984,7 +1017,7 @@ def search_line_items(
     """
 
     # overwritten to False for the sake of clarity
-    # verbose_data = False
+    verbose_data = False
 
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)

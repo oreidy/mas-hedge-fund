@@ -5,6 +5,8 @@ from functools import lru_cache
 from pathlib import Path
 import pickle
 from utils.logger import logger
+from typing import Tuple, Union
+
 
 @lru_cache(maxsize=1)
 def get_nyse_calendar(start_year=2020, end_year=2025):
@@ -148,3 +150,35 @@ def check_nyse_calendar(start_year=2020, end_year=2025):
         logger.debug(f"Is {date_str} a trading day? {is_trading}", module="check_nyse_calendar")
     
     return calendar
+
+def adjust_yfinance_date_range(start_date: Union[str, datetime], 
+                              end_date: Union[str, datetime]) -> Tuple[str, str]:
+    """
+    Adjust date range for yfinance API calls to handle the exclusive end date.
+    
+    Args:
+        start_date: Start date as string (YYYY-MM-DD) or datetime object
+        end_date: End date as string (YYYY-MM-DD) or datetime object
+        
+    Returns:
+        Tuple of (start_date_str, end_date_str) adjusted for yfinance
+    """
+    # Convert to datetime if string
+    if isinstance(start_date, str):
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    else:
+        start_dt = start_date
+        
+    if isinstance(end_date, str):
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+    else:
+        end_dt = end_date
+    
+    # Add one day to end_date to make it inclusive
+    end_dt = end_dt + timedelta(days=1)
+    
+    # Convert back to strings
+    start_date_str = start_dt.strftime('%Y-%m-%d')
+    end_date_str = end_dt.strftime('%Y-%m-%d')
+    
+    return start_date_str, end_date_str

@@ -97,7 +97,7 @@ class Backtester:
             }
         }
 
-    def execute_trade(self, ticker: str, action: str, quantity: float, current_price: float):
+    def execute_trade(self, ticker: str, action: str, quantity: float, execution_price: float):
         """
         Execute trades with support for both long and short positions.
         `quantity` is the number of shares the agent wants to buy/sell/short/cover.
@@ -110,7 +110,7 @@ class Backtester:
         position = self.portfolio["positions"][ticker]
 
         if action == "buy":
-            cost = quantity * current_price
+            cost = quantity * execution_price
             if cost <= self.portfolio["cash"]:
                 # Weighted average cost basis for the new total
                 old_shares = position["long"]
@@ -128,9 +128,9 @@ class Backtester:
                 return quantity
             else:
                 # Calculate maximum affordable quantity
-                max_quantity = int(self.portfolio["cash"] / current_price)
+                max_quantity = int(self.portfolio["cash"] / execution_price)
                 if max_quantity > 0:
-                    cost = max_quantity * current_price
+                    cost = max_quantity * execution_price
                     old_shares = position["long"]
                     old_cost_basis = position["long_cost_basis"]
                     total_shares = old_shares + max_quantity
@@ -151,11 +151,11 @@ class Backtester:
             if quantity > 0:
                 # Realized gain/loss using average cost basis
                 avg_cost_per_share = position["long_cost_basis"] if position["long"] > 0 else 0
-                realized_gain = (current_price - avg_cost_per_share) * quantity
+                realized_gain = (execution_price - avg_cost_per_share) * quantity
                 self.portfolio["realized_gains"][ticker]["long"] += realized_gain
 
                 position["long"] -= quantity
-                self.portfolio["cash"] += quantity * current_price
+                self.portfolio["cash"] += quantity * execution_price
 
                 if position["long"] == 0:
                     position["long_cost_basis"] = 0.0
@@ -165,11 +165,11 @@ class Backtester:
         elif action == "short":
             """
             Typical short sale flow:
-              1) Receive proceeds = current_price * quantity
+              1) Receive proceeds = execution_price * quantity
               2) Post margin_required = proceeds * margin_ratio
               3) Net effect on cash = +proceeds - margin_required
             """
-            proceeds = current_price * quantity
+            proceeds = execution_price * quantity
             margin_required = proceeds * self.margin_ratio
             if margin_required <= self.portfolio["cash"]:
                 # Weighted average short cost basis
@@ -180,7 +180,7 @@ class Backtester:
 
                 if total_shares > 0:
                     total_old_cost = old_cost_basis * old_short_shares
-                    total_new_cost = current_price * new_shares
+                    total_new_cost = execution_price * new_shares
                     position["short_cost_basis"] = (total_old_cost + total_new_cost) / total_shares
 
                 position["short"] += quantity
@@ -196,12 +196,12 @@ class Backtester:
             else:
                 # Calculate maximum shortable quantity
                 if self.margin_ratio > 0:
-                    max_quantity = int(self.portfolio["cash"] / (current_price * self.margin_ratio))
+                    max_quantity = int(self.portfolio["cash"] / (execution_price * self.margin_ratio))
                 else:
                     max_quantity = 0
 
                 if max_quantity > 0:
-                    proceeds = current_price * max_quantity
+                    proceeds = execution_price * max_quantity
                     margin_required = proceeds * self.margin_ratio
 
                     old_short_shares = position["short"]
@@ -210,7 +210,7 @@ class Backtester:
 
                     if total_shares > 0:
                         total_old_cost = old_cost_basis * old_short_shares
-                        total_new_cost = current_price * max_quantity
+                        total_new_cost = execution_price * max_quantity
                         position["short_cost_basis"] = (total_old_cost + total_new_cost) / total_shares
 
                     position["short"] += max_quantity
@@ -225,15 +225,15 @@ class Backtester:
         elif action == "cover":
             """
             When covering shares:
-              1) Pay cover cost = current_price * quantity
+              1) Pay cover cost = execution_price * quantity
               2) Release a proportional share of the margin
               3) Net effect on cash = -cover_cost + released_margin
             """
             quantity = min(quantity, position["short"])
             if quantity > 0:
-                cover_cost = quantity * current_price
+                cover_cost = quantity * execution_price
                 avg_short_price = position["short_cost_basis"] if position["short"] > 0 else 0
-                realized_gain = (avg_short_price - current_price) * quantity
+                realized_gain = (avg_short_price - execution_price) * quantity
 
                 if position["short"] > 0:
                     portion = quantity / position["short"]
@@ -260,7 +260,7 @@ class Backtester:
 
         return 0
 
-    def calculate_portfolio_value(self, current_prices):
+    def calculate_portfolio_value(self, evaluation_prices):
         """
         Calculate total portfolio value, including:
           - cash
@@ -271,13 +271,13 @@ class Backtester:
 
         for ticker in self.tickers:
             position = self.portfolio["positions"][ticker]
-            price = current_prices[ticker]
+            price = evaluation_prices[ticker]
 
             # Long position value
             long_value = position["long"] * price
             total_value += long_value
 
-            # Short position unrealized PnL = short_shares * (short_cost_basis - current_price)
+            # Short position unrealized PnL = short_shares * (short_cost_basis - evaluation_prices)
             if position["short"] > 0:
                 total_value += position["short"] * (position["short_cost_basis"] - price)
 
@@ -391,28 +391,69 @@ class Backtester:
             self.portfolio_values = []
 
         for current_date in dates:
+
+            logger.info(f"Running hedge fund for {current_date.strftime("%Y-%m-%d")}", module="run_backtest")
+
             lookback_start = (current_date - timedelta(days=30)).strftime("%Y-%m-%d")
             current_date_str = current_date.strftime("%Y-%m-%d")
             previous_date_str = (current_date - timedelta(days=1)).strftime("%Y-%m-%d")
 
             # Skip if there's no prior day to look back (i.e., first date in the range)
             if lookback_start == current_date_str:
+                logger.warning("There is no prior day to look back (i.e., first date in the range)", module="run_backtest")
                 continue
 
             # Get current prices for all tickers
+
+            
+
             try:
-                current_prices = {}
+                analysis_prices = {} # Prices for generating signals
+                execution_prices = {} # Prices for trade execution
+                evaluation_prices = {} # Prices for portfolio value evaluation
+                
                 for ticker in self.tickers:
-                    price_df = get_price_data(ticker, previous_date_str, current_date_str)
-                    price = price_df.iloc[-1]["close"]
-                    current_prices[ticker] = price
-                    
-                if verbose_data:
-                    logger.debug(f"price_df: {price_df}", module="run_backtest")
-                    logger.debug(f"price: {price}", module="run_backtest")
-                    logger.debug(f"current_price for {current_date_str}: {current_prices}", module="run_backtest")
-                    logger.debug(f"Date range: {previous_date_str} to {current_date_str}", module="run_backtest")
-    
+
+                    logger.info(f"previous_date: {previous_date_str}. current_date: {current_date_str}", module="run_backtest")
+
+                    price_df = get_price_data(ticker, previous_date_str, current_date_str, verbose_data)
+                    if verbose_data:
+                        logger.debug(f"price_df: {price_df}", module="run_backtest", ticker=ticker)
+
+                    try:
+                        if len(price_df) < 2:
+                            logger.warning(f"Insufficient price data for {ticker} from {previous_date_str} to {current_date_str}. Need at least 2 trading days.", module="run_backtest")
+                        
+                        
+                        # Use the previous trading day's close to create agent signals 
+                        analysis_price = price_df.iloc[-2]["close"]
+
+                        # Use current trading day's open for trade execution
+                        execution_price = price_df.iloc[-1]["open"]
+
+                        # Use the current trading day's close to evaluate the portfolio value
+                        evaluation_price = price_df.iloc[-1]["close"]
+
+
+                        analysis_prices[ticker] = analysis_price
+                        execution_prices[ticker] = execution_price
+                        evaluation_prices[ticker] = evaluation_price
+
+                        if verbose_data:
+                            logger.info(f"Analysis price (prev close): {analysis_prices[ticker]}", module="run_backtest", ticker=ticker)
+                            logger.info(f"Execution price (current open): {execution_prices[ticker]}", module="run_backtest", ticker=ticker)
+                            logger.info(f"Evaluation price (current close): {evaluation_prices[ticker]}", module="run_backtest", ticker=ticker)
+
+                    except:
+                        logger.warning(f"Using fallback method for prices on prev_date: {previous_date_str} and current date: {current_date_str}", module="run_backtest")
+
+                        price_df = get_price_data(ticker, previous_date_str, current_date_str, verbose_data)
+
+                        evaluation_price = price_df.iloc[-1]["close"]
+
+                        analysis_prices[ticker] = evaluation_price
+                        execution_prices[ticker] = evaluation_price
+                        evaluation_prices[ticker] = evaluation_price   
 
             except Exception as e:
                 # If data is missing or there's an API error, skip this day
@@ -422,9 +463,14 @@ class Backtester:
             # ---------------------------------------------------------------
             # 1) Execute the agent's trades
             # ---------------------------------------------------------------
-            logger.debug(f"Running hedge fund for {current_date_str}", module="run_backtest")
+            print(f"EXECUTING TRADES at {current_date_str}", flush=True)
 
-            output = self.agent( # Review: Can you explain what self.agent does?
+            logger.info(f"Executing trades on {current_date}", module="run_backtest")
+
+            
+            print(f"GETTING AGENTS OUTPUT at {current_date_str}")
+
+            output = self.agent( 
                 tickers=self.tickers,
                 start_date=lookback_start,
                 end_date=current_date_str,
@@ -451,22 +497,24 @@ class Backtester:
                 decision = decisions.get(ticker, {"action": "hold", "quantity": 0})
                 action, quantity = decision.get("action", "hold"), decision.get("quantity", 0)
 
-                executed_quantity = self.execute_trade(ticker, action, quantity, current_prices[ticker])
+                executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
                 executed_trades[ticker] = executed_quantity
 
             # ---------------------------------------------------------------
             # 2) Now that trades have been executed, recalculate the final
             #    portfolio value for this day.
             # ---------------------------------------------------------------
-            total_value = self.calculate_portfolio_value(current_prices)
+            logger.info(f"Calculating portfolio value for {current_date}", module="run_backtest")
+
+            total_value = self.calculate_portfolio_value(evaluation_prices)
 
             # Also compute long/short exposures for final post‐trade state
             long_exposure = sum(
-                self.portfolio["positions"][t]["long"] * current_prices[t]
+                self.portfolio["positions"][t]["long"] * evaluation_prices[t]
                 for t in self.tickers
             )
             short_exposure = sum(
-                self.portfolio["positions"][t]["short"] * current_prices[t]
+                self.portfolio["positions"][t]["short"] * evaluation_prices[t]
                 for t in self.tickers
             )
 
@@ -506,8 +554,8 @@ class Backtester:
 
                 # Calculate net position value
                 pos = self.portfolio["positions"][ticker]
-                long_val = pos["long"] * current_prices[ticker]
-                short_val = pos["short"] * current_prices[ticker]
+                long_val = pos["long"] * evaluation_prices[ticker]
+                short_val = pos["short"] * evaluation_prices[ticker]
                 net_position_value = long_val - short_val
 
                 # Get the action and quantity from the decisions
@@ -521,7 +569,7 @@ class Backtester:
                         ticker=ticker,
                         action=action,
                         quantity=quantity,
-                        price=current_prices[ticker],
+                        price=evaluation_prices[ticker],
                         shares_owned=pos["long"] - pos["short"],  # net shares
                         position_value=net_position_value,
                         bullish_count=bullish_count,
@@ -827,7 +875,7 @@ if __name__ == "__main__":
             print(f"\nSelected model: {Fore.GREEN + Style.BRIGHT}{model_choice}{Style.RESET_ALL}\n")
 
     
-    # Create and run the backtester
+    # Create the backtester
     backtester = Backtester(
         agent=run_hedge_fund,
         tickers=tickers,
@@ -845,6 +893,7 @@ if __name__ == "__main__":
     # Start the timer after LLM and analysts are selected
     start_time = time.time()
 
+    # Run the backtester
     performance_metrics = backtester.run_backtest()
     performance_df = backtester.analyze_performance()
 

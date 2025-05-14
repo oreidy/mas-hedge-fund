@@ -2,6 +2,15 @@ import yfinance as yf
 import pandas as pd
 import json
 from pprint import pprint
+from datetime import datetime, timedelta
+import sys
+import os
+
+# Add the parent directory to sys.path to import from your project
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import the specific functions we want to debug
+from tools.api import get_price_data, get_prices, fetch_prices_batch
 
 def debug_yfinance_data(ticker_symbol):
     """
@@ -208,11 +217,121 @@ def debug_yfinance_shares(ticker_symbol):
         "current_shares": ticker.info.get('sharesOutstanding', None)
     }
 
+def debug_price_data_fetching(ticker_symbol, start_date=None, end_date=None):
+    """
+    Debug function specifically to test the get_price_data function and diagnose issues
+    with fetching multiple days of price data.
+    """
+    print(f"=== DEBUGGING PRICE DATA FETCHING FOR {ticker_symbol} ===")
+    
+    # Use default dates if not provided
+    if not start_date:
+        # Default to 7 days ago
+        start_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    if not end_date:
+        # Default to today
+        end_date = datetime.now().strftime("%Y-%m-%d")
+    
+    print(f"Debugging date range: {start_date} to {end_date}")
+    
+    # Test 1: Direct yfinance download
+    print("\n1. TESTING DIRECT YFINANCE DOWNLOAD:")
+    try:
+        # Download with yfinance directly
+        yf_data = yf.download(ticker_symbol, start=start_date, end=end_date, progress=False)
+        print(f"yfinance direct download result:")
+        print(f"  - Shape: {yf_data.shape}")
+        print(f"  - Date range: {yf_data.index.min()} to {yf_data.index.max()}")
+        print(f"  - Number of trading days: {len(yf_data)}")
+        print(f"  - First few rows:")
+        print(yf_data.head())
+    except Exception as e:
+        print(f"Error with direct yfinance download: {e}")
+    
+    # Test 2: Using your get_price_data function
+    print("\n2. TESTING YOUR get_price_data FUNCTION:")
+    try:
+        price_df = get_price_data(ticker_symbol, start_date, end_date, verbose_data=True)
+        print(f"get_price_data result:")
+        print(f"  - Shape: {price_df.shape}")
+        print(f"  - Date range: {price_df.index.min()} to {price_df.index.max()}")
+        print(f"  - Number of trading days: {len(price_df)}")
+        print(f"  - First few rows:")
+        print(price_df.head())
+        print(f"  - Last few rows:")
+        print(price_df.tail())
+    except Exception as e:
+        print(f"Error with get_price_data: {e}")
+    
+    # Test 3: Try with a single day range to replicate the issue
+    single_day_start = end_date
+    single_day_end = end_date
+    print(f"\n3. TESTING WITH SINGLE DAY RANGE ({single_day_start} to {single_day_end}):")
+    try:
+        # Direct yfinance
+        yf_single_data = yf.download(ticker_symbol, start=single_day_start, end=single_day_end, progress=False)
+        print(f"yfinance direct download for single day:")
+        print(f"  - Shape: {yf_single_data.shape}")
+        print(f"  - Number of rows: {len(yf_single_data)}")
+        
+        # Your function
+        try:
+            single_df = get_price_data(ticker_symbol, single_day_start, single_day_end, verbose_data=True)
+            print(f"get_price_data for single day:")
+            print(f"  - Shape: {single_df.shape}")
+            print(f"  - Number of rows: {len(single_df)}")
+        except Exception as e:
+            print(f"Error with get_price_data for single day: {e}")
+    except Exception as e:
+        print(f"Error with direct yfinance download for single day: {e}")
+    
+    # Test 4: Test with a two-day range
+    two_day_start = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    two_day_end = end_date
+    print(f"\n4. TESTING WITH TWO DAY RANGE ({two_day_start} to {two_day_end}):")
+    try:
+        # Direct yfinance
+        yf_two_data = yf.download(ticker_symbol, start=two_day_start, end=two_day_end, progress=False)
+        print(f"yfinance direct download for two days:")
+        print(f"  - Shape: {yf_two_data.shape}")
+        print(f"  - Number of rows: {len(yf_two_data)}")
+        
+        # Your function
+        try:
+            two_df = get_price_data(ticker_symbol, two_day_start, two_day_end, verbose_data=True)
+            print(f"get_price_data for two days:")
+            print(f"  - Shape: {two_df.shape}")
+            print(f"  - Number of rows: {len(two_df)}")
+        except Exception as e:
+            print(f"Error with get_price_data for two days: {e}")
+    except Exception as e:
+        print(f"Error with direct yfinance download for two days: {e}")
+    
+    # Test 5: Extended range test
+    extended_start = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d")
+    extended_end = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    print(f"\n5. TESTING WITH EXTENDED RANGE ({extended_start} to {extended_end}):")
+    try:
+        yf_extended = yf.download(ticker_symbol, start=extended_start, end=extended_end, progress=False)
+        print(f"yfinance direct download with extended range:")
+        print(f"  - Shape: {yf_extended.shape}")
+        print(f"  - Number of rows: {len(yf_extended)}")
+        print(f"  - Date range: {yf_extended.index.min()} to {yf_extended.index.max()}")
+    except Exception as e:
+        print(f"Error with extended range test: {e}")
+
+
 if __name__ == "__main__":
     # Test with a few tickers
     tickers = ["AAPL"]
+
+    # For historical dates where we know there should be data
+    start_date = "2023-03-10"  # This matches your backtest example issue
+    end_date = "2023-03-14"    # This matches your backtest example issue
     
     for ticker in tickers:
-        result = debug_yfinance_data(ticker)
-        sharesinfo = debug_yfinance_shares(ticker)
+        #result = debug_yfinance_data(ticker)
+        #sharesinfo = debug_yfinance_shares(ticker)
+        debug_price_data_fetching(ticker, start_date, end_date)
+
         print("\n" + "="*50 + "\n")

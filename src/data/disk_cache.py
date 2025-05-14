@@ -40,7 +40,7 @@ class DiskCache:
                 filtered_data = [
                     price for price in cached_data 
                     if (not start_date or price["time"] >= start_date) and
-                       (not end_date or price["time"] <= end_date)
+                       (not end_date or price["time"] <= end_date) #end_date is inclusive
                 ]
                 return filtered_data
             return cached_data
