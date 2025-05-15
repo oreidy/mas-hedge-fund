@@ -1370,6 +1370,21 @@ files = [
 ]
 
 [[package]]
+name = "hurst"
+version = "0.0.5"
+description = "Hurst exponent evaluation and R/S-analysis"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "hurst-0.0.5-py3-none-any.whl", hash = "sha256:d163f11fe2318aa8979c921d6667b8dfd6205c629924fefbed68505357cf995e"},
+]
+
+[package.dependencies]
+numpy = ">=1.10"
+pandas = ">=0.18"
+
+[[package]]
 name = "idna"
 version = "3.10"
 description = "Internationalized Domain Names in Applications (IDNA)"
@@ -4774,4 +4789,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9"
-content-hash = "8660021c148ceb56886987b44813c1ad683335bb408a398e0e2300cdf1e533c4"
+content-hash = "ac9ed019998cfbdfbefdca2d38c85f66305b86cb98bfaa57486a1959447a4796"

@@ -394,7 +394,7 @@ class Backtester:
 
             logger.info(f"Running hedge fund for {current_date.strftime("%Y-%m-%d")}", module="run_backtest")
 
-            lookback_start = (current_date - timedelta(days=30)).strftime("%Y-%m-%d")
+            lookback_start = (current_date - timedelta(days=183)).strftime("%Y-%m-%d") # Half year lookback period plus some slack
             current_date_str = current_date.strftime("%Y-%m-%d")
             previous_date_str = (current_date - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -405,16 +405,11 @@ class Backtester:
 
             # Get current prices for all tickers
 
-            
-
             try:
-                analysis_prices = {} # Prices for generating signals
                 execution_prices = {} # Prices for trade execution
                 evaluation_prices = {} # Prices for portfolio value evaluation
                 
                 for ticker in self.tickers:
-
-                    logger.info(f"previous_date: {previous_date_str}. current_date: {current_date_str}", module="run_backtest")
 
                     price_df = get_price_data(ticker, previous_date_str, current_date_str, verbose_data)
                     if verbose_data:
@@ -424,25 +419,18 @@ class Backtester:
                         if len(price_df) < 2:
                             logger.warning(f"Insufficient price data for {ticker} from {previous_date_str} to {current_date_str}. Need at least 2 trading days.", module="run_backtest")
                         
-                        
-                        # Use the previous trading day's close to create agent signals 
-                        analysis_price = price_df.iloc[-2]["close"]
 
                         # Use current trading day's open for trade execution
                         execution_price = price_df.iloc[-1]["open"]
-
                         # Use the current trading day's close to evaluate the portfolio value
                         evaluation_price = price_df.iloc[-1]["close"]
 
-
-                        analysis_prices[ticker] = analysis_price
                         execution_prices[ticker] = execution_price
                         evaluation_prices[ticker] = evaluation_price
 
                         if verbose_data:
-                            logger.info(f"Analysis price (prev close): {analysis_prices[ticker]}", module="run_backtest", ticker=ticker)
-                            logger.info(f"Execution price (current open): {execution_prices[ticker]}", module="run_backtest", ticker=ticker)
-                            logger.info(f"Evaluation price (current close): {evaluation_prices[ticker]}", module="run_backtest", ticker=ticker)
+                            logger.debug(f"Execution price (current open): {execution_prices[ticker]}", module="run_backtest", ticker=ticker)
+                            logger.debug(f"Evaluation price (current close): {evaluation_prices[ticker]}", module="run_backtest", ticker=ticker)
 
                     except:
                         logger.warning(f"Using fallback method for prices on prev_date: {previous_date_str} and current date: {current_date_str}", module="run_backtest")
@@ -451,7 +439,6 @@ class Backtester:
 
                         evaluation_price = price_df.iloc[-1]["close"]
 
-                        analysis_prices[ticker] = evaluation_price
                         execution_prices[ticker] = evaluation_price
                         evaluation_prices[ticker] = evaluation_price   
 
@@ -463,16 +450,12 @@ class Backtester:
             # ---------------------------------------------------------------
             # 1) Execute the agent's trades
             # ---------------------------------------------------------------
-            print(f"EXECUTING TRADES at {current_date_str}", flush=True)
-
-            logger.info(f"Executing trades on {current_date}", module="run_backtest")
-
             
-            print(f"GETTING AGENTS OUTPUT at {current_date_str}")
+            logger.info(f"Executing trades on {current_date}", module="run_backtest")
 
             output = self.agent( 
                 tickers=self.tickers,
-                start_date=lookback_start,
+                start_date=lookback_start, # Review: Is only needed by technicals and risk manager agent?
                 end_date=current_date_str,
                 portfolio=self.portfolio,
                 model_name=self.model_name,
@@ -504,7 +487,6 @@ class Backtester:
             # 2) Now that trades have been executed, recalculate the final
             #    portfolio value for this day.
             # ---------------------------------------------------------------
-            logger.info(f"Calculating portfolio value for {current_date}", module="run_backtest")
 
             total_value = self.calculate_portfolio_value(evaluation_prices)
 

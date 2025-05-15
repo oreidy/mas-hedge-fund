@@ -7,10 +7,12 @@ from graph.state import AgentState, show_agent_reasoning
 import json
 import pandas as pd
 import numpy as np
+from math import log
 
-from tools.api import get_prices, prices_to_df
+from tools.api import get_price_data, prices_to_df
 from utils.progress import progress
 from utils.logger import logger
+from hurst import compute_Hc
 
 
 ##### Technical Analyst #####
@@ -40,34 +42,40 @@ def technical_analyst_agent(state: AgentState):
         progress.update_status("technical_analyst_agent", ticker, "Analyzing price data")
 
         # Get the historical price data
-        prices = get_prices(
-            ticker=ticker,
-            start_date=start_date,
-            end_date=end_date,
-            verbose_data=verbose_data
-        )
+        prices_df = get_price_data(ticker=ticker, 
+                                   start_date=start_date, 
+                                   end_date=end_date,
+                                   verbose_data=verbose_data)
+        
+        if verbose_data:
+            logger.debug(f"prices_df: {prices_df}", module="technical_analyst_agent")
 
-        if not prices:
+        if prices_df.empty:
             progress.update_status("technical_analyst_agent", ticker, "Failed: No price data found")
             continue
 
-        # Convert prices to a DataFrame
-        prices_df = prices_to_df(prices)
+        if len(prices_df) < 127: # For 6-month momentum 126 returns are needed.
+            logger.warning(
+                f"Insufficient historical data: {len(prices_df)} days available, "
+                f"Some indicators may return NaN values or default signals.",
+                module="technical_analyst_agent",
+                ticker=ticker
+            )
 
         progress.update_status("technical_analyst_agent", ticker, "Calculating trend signals")
-        trend_signals = calculate_trend_signals(prices_df)
+        trend_signals = calculate_trend_signals(prices_df, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Calculating mean reversion")
-        mean_reversion_signals = calculate_mean_reversion_signals(prices_df)
+        mean_reversion_signals = calculate_mean_reversion_signals(prices_df, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Calculating momentum")
-        momentum_signals = calculate_momentum_signals(prices_df)
+        momentum_signals = calculate_momentum_signals(prices_df, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Analyzing volatility")
-        volatility_signals = calculate_volatility_signals(prices_df)
+        volatility_signals = calculate_volatility_signals(prices_df, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Statistical analysis")
-        stat_arb_signals = calculate_stat_arb_signals(prices_df)
+        stat_arb_signals = calculate_stat_arb_signals(prices_df, verbose_data)
 
         # Combine all signals using a weighted ensemble approach
         strategy_weights = {
@@ -89,6 +97,18 @@ def technical_analyst_agent(state: AgentState):
             },
             strategy_weights,
         )
+        if verbose_data:
+            logger.debug(
+                f"=== Technical Analysis Summary for {ticker} ===\n"
+                f"Trend Signal: {trend_signals['signal']} (Confidence: {trend_signals['confidence']:.2f})\n"
+                f"Mean Reversion Signal: {mean_reversion_signals['signal']} (Confidence: {mean_reversion_signals['confidence']:.2f})\n"
+                f"Momentum Signal: {momentum_signals['signal']} (Confidence: {momentum_signals['confidence']:.2f})\n"
+                f"Volatility Signal: {volatility_signals['signal']} (Confidence: {volatility_signals['confidence']:.2f})\n"
+                f"Stat Arb Signal: {stat_arb_signals['signal']} (Confidence: {stat_arb_signals['confidence']:.2f})\n"
+                f"COMBINED Signal: {combined_signal['signal']} (Confidence: {combined_signal['confidence']:.2f})",
+                module="technical_analyst_agent", 
+                ticker=ticker
+            )
 
         # Generate detailed analysis report for this ticker
         technical_analysis[ticker] = {
@@ -142,7 +162,7 @@ def technical_analyst_agent(state: AgentState):
     }
 
 
-def calculate_trend_signals(prices_df):
+def calculate_trend_signals(prices_df, verbose_data):
     """
     Advanced trend following strategy using multiple timeframes and indicators
     """
@@ -151,7 +171,7 @@ def calculate_trend_signals(prices_df):
     ema_21 = calculate_ema(prices_df, 21)
     ema_55 = calculate_ema(prices_df, 55)
 
-    # Calculate ADX for trend strength
+    # Calculate ADX for trend strength (Average Directional Index)
     adx = calculate_adx(prices_df, 14)
 
     # Determine trend direction and strength
@@ -171,6 +191,15 @@ def calculate_trend_signals(prices_df):
         signal = "neutral"
         confidence = 0.5
 
+    if verbose_data:
+        logger.debug(
+            f"TREND ANALYSIS: Signal={signal}, Confidence={confidence:.2f}\n"
+            f"- EMA: 8={ema_8.iloc[-1]:.2f}, 21={ema_21.iloc[-1]:.2f}, 55={ema_55.iloc[-1]:.2f}\n"
+            f"- Trends: Short={'Bullish' if short_trend.iloc[-1] else 'Bearish'}, Medium={'Bullish' if medium_trend.iloc[-1] else 'Bearish'}\n"
+            f"- ADX: {adx['adx'].iloc[-1]:.2f}, Trend Strength: {trend_strength:.2f}",
+            module="calculate_trend_signals"
+        )
+    
     return {
         "signal": signal,
         "confidence": confidence,
@@ -181,7 +210,7 @@ def calculate_trend_signals(prices_df):
     }
 
 
-def calculate_mean_reversion_signals(prices_df):
+def calculate_mean_reversion_signals(prices_df, verbose_data):
     """
     Mean reversion strategy using statistical measures and Bollinger Bands
     """
@@ -211,6 +240,15 @@ def calculate_mean_reversion_signals(prices_df):
         signal = "neutral"
         confidence = 0.5
 
+    if verbose_data:
+        logger.debug(
+            f"MEAN REVERSION: Signal={signal}, Confidence={confidence:.2f}\n"
+            f"- Z-Score: {z_score.iloc[-1]:.2f}\n"
+            f"- Price vs BB: {price_vs_bb:.2f} (0=at lower band, 1=at upper band)\n"
+            f"- RSI: 14-day={rsi_14.iloc[-1]:.2f}, 28-day={rsi_28.iloc[-1]:.2f}",
+            module="calculate_mean_reversion_signals"
+        )
+
     return {
         "signal": signal,
         "confidence": confidence,
@@ -223,7 +261,7 @@ def calculate_mean_reversion_signals(prices_df):
     }
 
 
-def calculate_momentum_signals(prices_df):
+def calculate_momentum_signals(prices_df, verbose_data):
     """
     Multi-factor momentum strategy
     """
@@ -256,6 +294,15 @@ def calculate_momentum_signals(prices_df):
         signal = "neutral"
         confidence = 0.5
 
+    if verbose_data:
+        logger.debug(
+            f"MOMENTUM: Signal={signal}, Confidence={confidence:.2f}\n"
+            f"- Momentum Score: {momentum_score:.4f}\n"
+            f"- Time Periods: 1M={mom_1m.iloc[-1]:.4f}, 3M={mom_3m.iloc[-1]:.4f}, 6M={mom_6m.iloc[-1]:.4f}\n"
+            f"- Volume Confirmation: {volume_confirmation} (Vol/MA: {volume_momentum.iloc[-1]:.2f})",
+            module="calculate_momentum_signals"
+        )
+
     return {
         "signal": signal,
         "confidence": confidence,
@@ -268,7 +315,7 @@ def calculate_momentum_signals(prices_df):
     }
 
 
-def calculate_volatility_signals(prices_df):
+def calculate_volatility_signals(prices_df, verbose_data):
     """
     Volatility-based trading strategy
     """
@@ -303,6 +350,16 @@ def calculate_volatility_signals(prices_df):
         signal = "neutral"
         confidence = 0.5
 
+    if verbose_data:
+        logger.debug(
+            f"VOLATILITY: Signal={signal}, Confidence={confidence:.2f}\n"
+            f"- Historical Volatility: {hist_vol.iloc[-1]:.4f} (annualized)\n"
+            f"- Volatility Regime: {current_vol_regime:.2f} (<1=low, >1=high)\n"
+            f"- Vol Z-Score: {vol_z:.2f}\n"
+            f"- ATR Ratio: {atr_ratio.iloc[-1]:.4f}",
+            module="calculate_volatility_signals"
+        )
+
     return {
         "signal": signal,
         "confidence": confidence,
@@ -315,7 +372,7 @@ def calculate_volatility_signals(prices_df):
     }
 
 
-def calculate_stat_arb_signals(prices_df):
+def calculate_stat_arb_signals(prices_df, verbose_data):
     """
     Statistical arbitrage signals based on price action analysis
     """
@@ -342,6 +399,16 @@ def calculate_stat_arb_signals(prices_df):
     else:
         signal = "neutral"
         confidence = 0.5
+
+
+    if verbose_data:
+        logger.debug(
+            f"STATISTICAL ARB: Signal={signal}, Confidence={confidence:.2f}\n"
+            f"- Hurst Exponent: {hurst:.2f} (<0.5=mean reverting, >0.5=trending)\n"
+            f"- Skewness: {skew.iloc[-1]:.2f} (>0=right skew, <0=left skew)\n"
+            f"- Kurtosis: {kurt.iloc[-1]:.2f} (>3=fat tails)",
+            module="calculate_stat_arb_signals"
+        )
 
     return {
         "signal": signal,
@@ -503,14 +570,52 @@ def calculate_hurst_exponent(price_series: pd.Series, max_lag: int = 20) -> floa
     Returns:
         float: Hurst exponent
     """
-    lags = range(2, max_lag)
-    # Add small epsilon to avoid log(0)
-    tau = [max(1e-8, np.sqrt(np.std(np.subtract(price_series[lag:], price_series[:-lag])))) for lag in lags]
-
-    # Return the Hurst exponent from linear fit
+    # Convert price series to returns
+    returns = price_series.pct_change().dropna()
+    
+    if len(returns) < max_lag * 2:
+        return 0.5  # Not enough data
+    
+    # Calculate R/S for different lag values
+    lags = range(2, min(max_lag, len(returns) // 2))
+    rs_values = []
+    
+    for lag in lags:
+        # Split returns into chunks of size 'lag'
+        chunks = len(returns) // lag
+        if chunks < 1:
+            continue
+            
+        # Calculate R/S for each chunk and average
+        rs_list = []
+        for i in range(chunks):
+            chunk = returns[i * lag:(i + 1) * lag]
+            if len(chunk) < 2:
+                continue
+                
+            # Calculate cumulative deviation from mean
+            mean = chunk.mean()
+            deviation = chunk - mean
+            cumulative = deviation.cumsum()
+            
+            # Calculate range and standard deviation
+            r = cumulative.max() - cumulative.min()
+            s = chunk.std()
+            
+            if s > 0:
+                rs_list.append(r / s)
+        
+        if rs_list:
+            rs_values.append(np.mean(rs_list))
+    
+    if len(rs_values) < 4:
+        return 0.5  # Not enough valid data points
+    
+    # Fit a line to log-log plot of R/S vs lag
     try:
-        reg = np.polyfit(np.log(lags), np.log(tau), 1)
-        return reg[0]  # Hurst exponent is the slope
-    except (ValueError, RuntimeWarning):
-        # Return 0.5 (random walk) if calculation fails
+        log_lags = np.log10([lags[i] for i in range(len(rs_values))])
+        log_rs = np.log10(rs_values)
+        reg = np.polyfit(log_lags, log_rs, 1)
+        return reg[0]  # Slope is the Hurst exponent
+    except Exception:
         return 0.5
