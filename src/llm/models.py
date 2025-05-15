@@ -35,6 +35,30 @@ class LLMModel(BaseModel):
 
 # Define available models
 AVAILABLE_MODELS = [
+
+    # Groq models
+    LLMModel(
+        display_name="[groq] llama3-70b-8192",
+        model_name="llama3-70b-8192",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] deepseek-r1 70b",
+        model_name="deepseek-r1-distill-llama-70b",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] llama-4-scout-17b",
+        model_name="meta-llama/llama-4-scout-17b-16e-instruct",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] Gemma2-9b-it",
+        model_name="gemma2-9b-it",
+        provider=ModelProvider.GROQ
+    ),
+
+    # Ollama models
     LLMModel(
         display_name="[ollama] tinyllama (1.1B)",
         model_name="tinyllama",
@@ -45,6 +69,8 @@ AVAILABLE_MODELS = [
         model_name="deepseek-r1:1.5b",
         provider=ModelProvider.OLLAMA
     ),
+
+    # Anthropic models
     LLMModel(
         display_name="[anthropic] claude-3.5-haiku",
         model_name="claude-3-5-haiku-latest",
@@ -60,36 +86,8 @@ AVAILABLE_MODELS = [
         model_name="claude-3-opus-latest",
         provider=ModelProvider.ANTHROPIC
     ),
-    LLMModel(
-        display_name="[groq] deepseek-r1 70b",
-        model_name="deepseek-r1-distill-llama-70b",
-        provider=ModelProvider.GROQ
-    ),
-    LLMModel(
-        display_name="[groq] llama-3.3-70b-versatile",
-        model_name="llama-3.3-70b-versatile",
-        provider=ModelProvider.GROQ
-    ),
-    LLMModel(
-        display_name="[groq] Llama-3.3-70b-specdec",
-        model_name="llama-3.3-70b-specdec",
-        provider=ModelProvider.GROQ
-    ),
-    LLMModel(
-        display_name="[groq] Mixtral-8x7b-32768",
-        model_name="mixtral-8x7b-32768",
-        provider=ModelProvider.GROQ
-    ),
-    LLMModel(
-        display_name="[groq] Llama-3.1-8b-instant",
-        model_name="llama-3.1-8b-instant",
-        provider=ModelProvider.GROQ
-    ),
-    LLMModel(
-        display_name="[groq] Gemma2-9b-it",
-        model_name="gemma2-9b-it",
-        provider=ModelProvider.GROQ
-    ),
+
+     # OpenAI models
     LLMModel(
         display_name="[openai] gpt-4o",
         model_name="gpt-4o",
@@ -111,6 +109,8 @@ AVAILABLE_MODELS = [
         provider=ModelProvider.OPENAI
     ),
 ]
+
+
 
 # Create LLM_ORDER in the format expected by the UI
 LLM_ORDER = [model.to_choice_tuple() for model in AVAILABLE_MODELS]
