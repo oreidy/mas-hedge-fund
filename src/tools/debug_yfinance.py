@@ -485,16 +485,16 @@ def print_financial_statements(ticker_symbol, end_date="2023-03-12", periods=2):
 
 if __name__ == "__main__":
     # Test with a few tickers
-    tickers = ["WMT"]
+    tickers = ["JPM"]
 
     # For historical dates where we know there should be data
     start_date = "2023-03-10"  # This matches your backtest example issue
     end_date = "2023-03-14"    # This matches your backtest example issue
     
     for ticker in tickers:
-        #result = debug_yfinance_data(ticker)
+        result = debug_yfinance_data(ticker)
         #sharesinfo = debug_yfinance_shares(ticker)
         #debug_price_data_fetching(ticker, start_date, end_date)
-        print_financial_statements(ticker, end_date, periods=2)
+        #print_financial_statements(ticker, end_date, periods=2)
 
         print("\n" + "="*50 + "\n")

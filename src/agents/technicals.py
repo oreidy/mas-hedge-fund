@@ -63,19 +63,19 @@ def technical_analyst_agent(state: AgentState):
             )
 
         progress.update_status("technical_analyst_agent", ticker, "Calculating trend signals")
-        trend_signals = calculate_trend_signals(prices_df, verbose_data)
+        trend_signals = calculate_trend_signals(prices_df, ticker, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Calculating mean reversion")
-        mean_reversion_signals = calculate_mean_reversion_signals(prices_df, verbose_data)
+        mean_reversion_signals = calculate_mean_reversion_signals(prices_df, ticker, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Calculating momentum")
-        momentum_signals = calculate_momentum_signals(prices_df, verbose_data)
+        momentum_signals = calculate_momentum_signals(prices_df, ticker, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Analyzing volatility")
-        volatility_signals = calculate_volatility_signals(prices_df, verbose_data)
+        volatility_signals = calculate_volatility_signals(prices_df, ticker, verbose_data)
 
         progress.update_status("technical_analyst_agent", ticker, "Statistical analysis")
-        stat_arb_signals = calculate_stat_arb_signals(prices_df, verbose_data)
+        stat_arb_signals = calculate_stat_arb_signals(prices_df, ticker, verbose_data)
 
         # Combine all signals using a weighted ensemble approach
         strategy_weights = {
@@ -162,7 +162,7 @@ def technical_analyst_agent(state: AgentState):
     }
 
 
-def calculate_trend_signals(prices_df, verbose_data):
+def calculate_trend_signals(prices_df, ticker, verbose_data):
     """
     Advanced trend following strategy using multiple timeframes and indicators
     """
@@ -197,7 +197,8 @@ def calculate_trend_signals(prices_df, verbose_data):
             f"- EMA: 8={ema_8.iloc[-1]:.2f}, 21={ema_21.iloc[-1]:.2f}, 55={ema_55.iloc[-1]:.2f}\n"
             f"- Trends: Short={'Bullish' if short_trend.iloc[-1] else 'Bearish'}, Medium={'Bullish' if medium_trend.iloc[-1] else 'Bearish'}\n"
             f"- ADX: {adx['adx'].iloc[-1]:.2f}, Trend Strength: {trend_strength:.2f}",
-            module="calculate_trend_signals"
+            module="calculate_trend_signals",
+            ticker=ticker
         )
     
     return {
@@ -210,7 +211,7 @@ def calculate_trend_signals(prices_df, verbose_data):
     }
 
 
-def calculate_mean_reversion_signals(prices_df, verbose_data):
+def calculate_mean_reversion_signals(prices_df, ticker, verbose_data):
     """
     Mean reversion strategy using statistical measures and Bollinger Bands
     """
@@ -246,7 +247,8 @@ def calculate_mean_reversion_signals(prices_df, verbose_data):
             f"- Z-Score: {z_score.iloc[-1]:.2f}\n"
             f"- Price vs BB: {price_vs_bb:.2f} (0=at lower band, 1=at upper band)\n"
             f"- RSI: 14-day={rsi_14.iloc[-1]:.2f}, 28-day={rsi_28.iloc[-1]:.2f}",
-            module="calculate_mean_reversion_signals"
+            module="calculate_mean_reversion_signals",
+            ticker=ticker
         )
 
     return {
@@ -261,7 +263,7 @@ def calculate_mean_reversion_signals(prices_df, verbose_data):
     }
 
 
-def calculate_momentum_signals(prices_df, verbose_data):
+def calculate_momentum_signals(prices_df, ticker, verbose_data):
     """
     Multi-factor momentum strategy
     """
@@ -300,7 +302,8 @@ def calculate_momentum_signals(prices_df, verbose_data):
             f"- Momentum Score: {momentum_score:.4f}\n"
             f"- Time Periods: 1M={mom_1m.iloc[-1]:.4f}, 3M={mom_3m.iloc[-1]:.4f}, 6M={mom_6m.iloc[-1]:.4f}\n"
             f"- Volume Confirmation: {volume_confirmation} (Vol/MA: {volume_momentum.iloc[-1]:.2f})",
-            module="calculate_momentum_signals"
+            module="calculate_momentum_signals",
+            ticker=ticker
         )
 
     return {
@@ -315,7 +318,7 @@ def calculate_momentum_signals(prices_df, verbose_data):
     }
 
 
-def calculate_volatility_signals(prices_df, verbose_data):
+def calculate_volatility_signals(prices_df, ticker, verbose_data):
     """
     Volatility-based trading strategy
     """
@@ -357,7 +360,8 @@ def calculate_volatility_signals(prices_df, verbose_data):
             f"- Volatility Regime: {current_vol_regime:.2f} (<1=low, >1=high)\n"
             f"- Vol Z-Score: {vol_z:.2f}\n"
             f"- ATR Ratio: {atr_ratio.iloc[-1]:.4f}",
-            module="calculate_volatility_signals"
+            module="calculate_volatility_signals",
+            ticker=ticker
         )
 
     return {
@@ -372,7 +376,7 @@ def calculate_volatility_signals(prices_df, verbose_data):
     }
 
 
-def calculate_stat_arb_signals(prices_df, verbose_data):
+def calculate_stat_arb_signals(prices_df, ticker, verbose_data):
     """
     Statistical arbitrage signals based on price action analysis
     """
@@ -407,7 +411,8 @@ def calculate_stat_arb_signals(prices_df, verbose_data):
             f"- Hurst Exponent: {hurst:.2f} (<0.5=mean reverting, >0.5=trending)\n"
             f"- Skewness: {skew.iloc[-1]:.2f} (>0=right skew, <0=left skew)\n"
             f"- Kurtosis: {kurt.iloc[-1]:.2f} (>3=fat tails)",
-            module="calculate_stat_arb_signals"
+            module="calculate_stat_arb_signals",
+            ticker=ticker
         )
 
     return {

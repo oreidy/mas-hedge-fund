@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from enum import Enum
 from datetime import datetime
 from colorama import Fore, Style, init
@@ -26,6 +27,9 @@ class Logger:
         self.level = level
         self.log_to_file = log_to_file
         self.log_file = log_file or f"logs/{name.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+        # lock for thread safety
+        self._lock = threading.Lock()
         
         # Create logs directory if it doesn't exist and log_to_file is True
         if self.log_to_file:
@@ -66,47 +70,50 @@ class Logger:
     
     def _log(self, message, level, module=None, ticker=None):
         """Internal method to format and output log messages."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Format with colors for console output
-        level_color = {
-            LogLevel.DEBUG: Fore.CYAN,
-            LogLevel.INFO: Fore.GREEN,
-            LogLevel.WARNING: Fore.YELLOW,
-            LogLevel.ERROR: Fore.RED,
-            LogLevel.CRITICAL: Fore.MAGENTA + Style.BRIGHT
-        }
-        
-        level_text = f"{level_color[level]}{level.name}{Style.RESET_ALL}"
-        timestamp_text = f"{Fore.WHITE}{timestamp}{Style.RESET_ALL}"
-        
-        # Add optional module and ticker
-        context = ""
-        if module:
-            context += f"{Fore.BLUE}{module}{Style.RESET_ALL}"
-        if ticker:
-            context += f" [{Fore.CYAN}{ticker}{Style.RESET_ALL}]"
-        
-        if context:
-            context = f" {context}"
-        
-        console_message = f"{timestamp_text} [{level_text}]{context}: {message}"
-        
-        # Plain text version for file logging
-        file_message = f"{timestamp} [{level.name}]"
-        if module:
-            file_message += f" {module}"
-        if ticker:
-            file_message += f" [{ticker}]"
-        file_message += f": {message}"
-        
-        # Output to console
-        print(console_message, flush=True)
-        
-        # Output to file if enabled
-        if self.log_to_file:
-            with open(self.log_file, 'a') as f:
-                f.write(file_message + "\n")
+        # Use the lock to ensure thread safety
+        with self._lock:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Format with colors for console output
+            level_color = {
+                LogLevel.DEBUG: Fore.CYAN,
+                LogLevel.INFO: Fore.GREEN,
+                LogLevel.WARNING: Fore.YELLOW,
+                LogLevel.ERROR: Fore.RED,
+                LogLevel.CRITICAL: Fore.MAGENTA + Style.BRIGHT
+            }
+            
+            level_text = f"{level_color[level]}{level.name}{Style.RESET_ALL}"
+            timestamp_text = f"{Fore.WHITE}{timestamp}{Style.RESET_ALL}"
+            
+            # Add optional module and ticker
+            context = ""
+            if module:
+                context += f"{Fore.BLUE}{module}{Style.RESET_ALL}"
+            if ticker:
+                context += f" [{Fore.CYAN}{ticker}{Style.RESET_ALL}]"
+            
+            if context:
+                context = f" {context}"
+            
+            console_message = f"{timestamp_text} [{level_text}]{context}: {message}"
+            
+            # Plain text version for file logging
+            file_message = f"{timestamp} [{level.name}]"
+            if module:
+                file_message += f" {module}"
+            if ticker:
+                file_message += f" [{ticker}]"
+            file_message += f": {message}"
+            
+            # Output to console
+            print(console_message, flush=True)
+            
+            # Output to file if enabled
+            if self.log_to_file:
+                with open(self.log_file, 'a') as f:
+                    f.write(file_message + "\n")
+
 
 
 # Create a global logger instance
