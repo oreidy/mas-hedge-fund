@@ -320,10 +320,172 @@ def debug_price_data_fetching(ticker_symbol, start_date=None, end_date=None):
     except Exception as e:
         print(f"Error with extended range test: {e}")
 
+def print_financial_statements(ticker_symbol, end_date="2023-03-12", periods=2):
+    """
+    Simple function to print raw financial statements for manual cross-checking.
+    
+    Args:
+        ticker_symbol: The stock ticker symbol
+        end_date: Optional end date (YYYY-MM-DD) to match your backtest
+        periods: Number of periods to display (default: 2)
+    """
+    print(f"\n=== FINANCIAL STATEMENTS FOR {ticker_symbol} ===")
+    if end_date:
+        print(f"For date: {end_date}")
+    
+    ticker = yf.Ticker(ticker_symbol)
+    
+    # Get financial statements
+    balance_sheet = ticker.balance_sheet
+    income_stmt = ticker.income_stmt  
+    cash_flow = ticker.cashflow
+    
+    # Filter by end_date if provided
+    if end_date and not balance_sheet.empty:
+        # Convert columns to string format for comparison
+        date_strs = [col.strftime('%Y-%m-%d') for col in balance_sheet.columns]
+        # Keep only columns where date <= end_date
+        valid_cols = [i for i, date_str in enumerate(date_strs) if date_str <= end_date]
+        if valid_cols:
+            balance_sheet = balance_sheet.iloc[:, valid_cols]
+    
+    if end_date and not income_stmt.empty:
+        # Convert columns to string format for comparison
+        date_strs = [col.strftime('%Y-%m-%d') for col in income_stmt.columns]
+        # Keep only columns where date <= end_date
+        valid_cols = [i for i, date_str in enumerate(date_strs) if date_str <= end_date]
+        if valid_cols:
+            income_stmt = income_stmt.iloc[:, valid_cols]
+    
+    if end_date and not cash_flow.empty:
+        # Convert columns to string format for comparison
+        date_strs = [col.strftime('%Y-%m-%d') for col in cash_flow.columns]
+        # Keep only columns where date <= end_date
+        valid_cols = [i for i, date_str in enumerate(date_strs) if date_str <= end_date]
+        if valid_cols:
+            cash_flow = cash_flow.iloc[:, valid_cols]
+    
+    # Limit to requested number of periods
+    if not balance_sheet.empty:
+        balance_sheet = balance_sheet.iloc[:, :periods]
+    if not income_stmt.empty:
+        income_stmt = income_stmt.iloc[:, :periods]  
+    if not cash_flow.empty:
+        cash_flow = cash_flow.iloc[:, :periods]
+    
+    # Print Balance Sheet
+    print("\n=== BALANCE SHEET ===")
+    if not balance_sheet.empty:
+        for col in balance_sheet.columns:
+            print(f"Date: {col.strftime('%Y-%m-%d')}")
+        
+        # Print key items we're interested in
+        important_items = [
+            'Current Assets', 
+            'Current Liabilities', 
+            'Total Assets',
+            'Total Liabilities Net Minority Interest',
+            'Stockholders Equity',
+            'Ordinary Shares Number'
+        ]
+        
+        print("\nKey Balance Sheet Items:")
+        for item in important_items:
+            if item in balance_sheet.index:
+                values = []
+                for col in balance_sheet.columns:
+                    values.append(f"${float(balance_sheet.loc[item, col]):,.2f}")
+                print(f"{item}: {' | '.join(values)}")
+            else:
+                print(f"{item}: Not available")
+        
+        print("\nAll Balance Sheet Items:")
+        for item in balance_sheet.index:
+            try:
+                values = []
+                for col in balance_sheet.columns:
+                    values.append(f"${float(balance_sheet.loc[item, col]):,.2f}")
+                print(f"{item}: {' | '.join(values)}")
+            except:
+                print(f"{item}: Could not format values")
+    else:
+        print("No balance sheet data available")
+    
+    # Print Income Statement
+    print("\n=== INCOME STATEMENT ===")
+    if not income_stmt.empty:
+        for col in income_stmt.columns:
+            print(f"Date: {col.strftime('%Y-%m-%d')}")
+        
+        # Print key items we're interested in
+        important_items = [
+            'Total Revenue', 
+            'Operating Income', 
+            'Net Income'
+        ]
+        
+        print("\nKey Income Statement Items:")
+        for item in important_items:
+            if item in income_stmt.index:
+                values = []
+                for col in income_stmt.columns:
+                    values.append(f"${float(income_stmt.loc[item, col]):,.2f}")
+                print(f"{item}: {' | '.join(values)}")
+            else:
+                print(f"{item}: Not available")
+        
+        print("\nAll Income Statement Items:")
+        for item in income_stmt.index:
+            try:
+                values = []
+                for col in income_stmt.columns:
+                    values.append(f"${float(income_stmt.loc[item, col]):,.2f}")
+                print(f"{item}: {' | '.join(values)}")
+            except:
+                print(f"{item}: Could not format values")
+    else:
+        print("No income statement data available")
+    
+    # Print Cash Flow Statement
+    print("\n=== CASH FLOW STATEMENT ===")
+    if not cash_flow.empty:
+        for col in cash_flow.columns:
+            print(f"Date: {col.strftime('%Y-%m-%d')}")
+        
+        # Print key items we're interested in
+        important_items = [
+            'Operating Cash Flow', 
+            'Capital Expenditure', 
+            'Free Cash Flow'
+        ]
+        
+        print("\nKey Cash Flow Items:")
+        for item in important_items:
+            if item in cash_flow.index:
+                values = []
+                for col in cash_flow.columns:
+                    values.append(f"${float(cash_flow.loc[item, col]):,.2f}")
+                print(f"{item}: {' | '.join(values)}")
+            else:
+                print(f"{item}: Not available")
+        
+        print("\nAll Cash Flow Items:")
+        for item in cash_flow.index:
+            try:
+                values = []
+                for col in cash_flow.columns:
+                    values.append(f"${float(cash_flow.loc[item, col]):,.2f}")
+                print(f"{item}: {' | '.join(values)}")
+            except:
+                print(f"{item}: Could not format values")
+    else:
+        print("No cash flow statement data available")
+
+
 
 if __name__ == "__main__":
     # Test with a few tickers
-    tickers = ["AAPL"]
+    tickers = ["WMT"]
 
     # For historical dates where we know there should be data
     start_date = "2023-03-10"  # This matches your backtest example issue
@@ -332,6 +494,7 @@ if __name__ == "__main__":
     for ticker in tickers:
         #result = debug_yfinance_data(ticker)
         #sharesinfo = debug_yfinance_shares(ticker)
-        debug_price_data_fetching(ticker, start_date, end_date)
+        #debug_price_data_fetching(ticker, start_date, end_date)
+        print_financial_statements(ticker, end_date, periods=2)
 
         print("\n" + "="*50 + "\n")

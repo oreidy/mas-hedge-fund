@@ -358,8 +358,9 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
     total_tickers = len(tickers)
     results_dict = {}
 
+    # Helper function that fetches financial metrics for one ticker
     async def fetch_ticker_metrics(ticker):
-        nonlocal cache_hits, results_dict # Review: What does nonlocal do? What is it for?
+        nonlocal cache_hits, results_dict
 
         cached_data = _cache.get_financial_metrics(ticker)
         if cached_data:
@@ -410,7 +411,7 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     total_liabilities = float(balance_sheet.loc['Total Liabilities Net Minority Interest', col]) if 'Total Liabilities Net Minority Interest' in balance_sheet.index else None
                     stockholders_equity = float(balance_sheet.loc['Stockholders Equity', col]) if 'Stockholders Equity' in balance_sheet.index else None
                     
-                    # Calculate financial ratios
+                    # Get the market cap
                     market_cap = get_historical_market_cap(ticker, report_date, verbose_data=verbose_data)
                     
                     # ROE, margins, etc.
@@ -420,15 +421,52 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     operating_margin = operating_income / total_revenue if total_revenue and operating_income else None
                     debt_to_equity = total_liabilities / stockholders_equity if stockholders_equity and total_liabilities else None
                     
-                    # Growth metrics (would need previous period data for accurate calculation)
+                    # Growth metrics
                     revenue_growth = None
                     earnings_growth = None
+                    book_value_growth = None
+
+                    if i < len(income_stmt.columns) - 1:
+                        prev_col = income_stmt.columns[i+1]  # Previous period column
+                        
+                        # Revenue growth
+                        prev_revenue = float(income_stmt.loc['Total Revenue', prev_col]) if 'Total Revenue' in income_stmt.index else None
+                        if total_revenue and prev_revenue and prev_revenue > 0:
+                            revenue_growth = (total_revenue - prev_revenue) / prev_revenue
+                        
+                        # Earnings growth
+                        prev_net_income = float(income_stmt.loc['Net Income', prev_col]) if 'Net Income' in income_stmt.index else None
+                        if net_income and prev_net_income and prev_net_income > 0:
+                            earnings_growth = (net_income - prev_net_income) / prev_net_income
+                        
+                        # Book value growth
+                        prev_equity = float(balance_sheet.loc['Stockholders Equity', prev_col]) if 'Stockholders Equity' in balance_sheet.index else None
+                        if stockholders_equity and prev_equity and prev_equity > 0:
+                            book_value_growth = (stockholders_equity - prev_equity) / prev_equity
+            
                     
                     # Free cash flow
                     operating_cash_flow = float(cash_flow.loc['Operating Cash Flow', col]) if 'Operating Cash Flow' in cash_flow.index else None
                     capital_expenditure = float(cash_flow.loc['Capital Expenditure', col]) if 'Capital Expenditure' in cash_flow.index else None
                     free_cash_flow = (operating_cash_flow + capital_expenditure) if operating_cash_flow is not None and capital_expenditure is not None else None
-                    
+
+                    # Calculations for current_ratio
+                    current_assets = float(balance_sheet.loc['Current Assets', col]) if 'Current Assets' in balance_sheet.index else None
+                    current_liabilities = float(balance_sheet.loc['Current Liabilities', col]) if 'Current Liabilities' in balance_sheet.index else None
+
+                    if current_assets is None or current_liabilities is None:
+                        logger.warning(f"Missing data for current_ratio calculation: current_assets={current_assets}, current_liabilities={current_liabilities}", 
+                                module="fetch_financial_metrics_async", ticker=ticker)
+
+                    current_ratio = current_assets / current_liabilities if current_assets and current_liabilities else None
+
+                    # Get shares outstanding for per-share metrics
+                    shares_outstanding = float(balance_sheet.loc['Ordinary Shares Number', col]) if 'Ordinary Shares Number' in balance_sheet.index else None
+
+                    # Calculate EPS and FCF per share
+                    earnings_per_share = net_income / shares_outstanding if shares_outstanding and net_income else None
+                    free_cash_flow_per_share = free_cash_flow / shares_outstanding if shares_outstanding and free_cash_flow else None
+            
                     # Create FinancialMetrics object
                     metrics = FinancialMetrics(
                         ticker=ticker,
@@ -451,18 +489,19 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                         return_on_assets=net_income / total_assets if total_assets and net_income else None,
                         return_on_invested_capital=None,  # Need more data
                         debt_to_equity=debt_to_equity,
-                        current_ratio=None,  # Need current assets and liabilities
+                        current_ratio=current_ratio,  
                         revenue_growth=revenue_growth,
                         earnings_growth=earnings_growth,
-                        free_cash_flow_per_share=None,  # Need shares outstanding
-                        earnings_per_share=None,  # Calculated based on actual reported data
-                        book_value_per_share=None,  # Need shares outstanding
+                        book_value_growth=book_value_growth,
+                        free_cash_flow_per_share=free_cash_flow_per_share,  
+                        earnings_per_share=earnings_per_share, 
+                        book_value_per_share=None, 
                         # Many fields set to None as they require additional calculation
                         **{field: None for field in [
                             'peg_ratio', 'asset_turnover', 'inventory_turnover', 'receivables_turnover',
                             'days_sales_outstanding', 'operating_cycle', 'working_capital_turnover',
                             'quick_ratio', 'cash_ratio', 'operating_cash_flow_ratio', 'debt_to_assets',
-                            'interest_coverage', 'book_value_growth', 'earnings_per_share_growth', 
+                            'interest_coverage', 'earnings_per_share_growth', 
                             'free_cash_flow_growth', 'operating_income_growth', 'ebitda_growth', 'payout_ratio'
                         ]}
                     )
@@ -674,6 +713,9 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
 
     logger.debug(f"Running get_historical_market_cap() for {ticker} at {date}", 
                 module="get_historical_market_cap", ticker=ticker)
+
+    # overwritten to False for the sake of clarity
+    verbose_data = False
 
     try:
         

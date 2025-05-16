@@ -29,7 +29,7 @@ def fundamentals_agent(state: AgentState):
         financial_metrics = get_financial_metrics(
             ticker=ticker,
             end_date=end_date,
-            period="ttm",
+            period="annual",
             limit=10,
             verbose_data = verbose_data
         )
@@ -64,6 +64,17 @@ def fundamentals_agent(state: AgentState):
             "details": (f"ROE: {return_on_equity:.2%}" if return_on_equity else "ROE: N/A") + ", " + (f"Net Margin: {net_margin:.2%}" if net_margin else "Net Margin: N/A") + ", " + (f"Op Margin: {operating_margin:.2%}" if operating_margin else "Op Margin: N/A"),
         }
 
+        if verbose_data:
+            logger.debug(
+                f"Profitability Analysis - {ticker}:\n"
+                f"  ROE: {return_on_equity if return_on_equity is not None else 'N/A'}\n"
+                f"  Net Margin: {net_margin if net_margin is not None else 'N/A'}\n"
+                f"  Operating Margin: {operating_margin if operating_margin is not None else 'N/A'}\n"
+                f"  Score: {profitability_score}/3\n"
+                f"  Signal: {signals[0]}",
+                module="fundamentals_agent", ticker=ticker
+            )
+
         progress.update_status("fundamentals_agent", ticker, "Analyzing growth")
         # 2. Growth Analysis
         revenue_growth = metrics.revenue_growth
@@ -82,6 +93,17 @@ def fundamentals_agent(state: AgentState):
             "signal": signals[1],
             "details": (f"Revenue Growth: {revenue_growth:.2%}" if revenue_growth else "Revenue Growth: N/A") + ", " + (f"Earnings Growth: {earnings_growth:.2%}" if earnings_growth else "Earnings Growth: N/A"),
         }
+
+        if verbose_data:
+            logger.debug(
+                f"Growth Analysis - {ticker}:\n"
+                f"  Revenue Growth: {revenue_growth if revenue_growth is not None else 'N/A'}\n"
+                f"  Earnings Growth: {earnings_growth if earnings_growth is not None else 'N/A'}\n"
+                f"  Book Value Growth: {book_value_growth if book_value_growth is not None else 'N/A'}\n"
+                f"  Score: {growth_score}/3\n"
+                f"  Signal: {signals[1]}",
+                module="fundamentals_agent", ticker=ticker
+            )
 
         progress.update_status("fundamentals_agent", ticker, "Analyzing financial health")
         # 3. Financial Health
@@ -104,6 +126,18 @@ def fundamentals_agent(state: AgentState):
             "details": (f"Current Ratio: {current_ratio:.2f}" if current_ratio else "Current Ratio: N/A") + ", " + (f"D/E: {debt_to_equity:.2f}" if debt_to_equity else "D/E: N/A"),
         }
 
+        if verbose_data:
+            logger.debug(
+                f"Financial Health Analysis - {ticker}:\n"
+                f"  Current Ratio: {current_ratio if current_ratio is not None else 'N/A'}\n"
+                f"  Debt to Equity: {debt_to_equity if debt_to_equity is not None else 'N/A'}\n"
+                f"  Free Cash Flow per Share: {free_cash_flow_per_share if free_cash_flow_per_share is not None else 'N/A'}\n"
+                f"  Earnings per Share: {earnings_per_share if earnings_per_share is not None else 'N/A'}\n"
+                f"  Score: {health_score}/3\n"
+                f"  Signal: {signals[2]}",
+                module="fundamentals_agent", ticker=ticker
+            )
+
         progress.update_status("fundamentals_agent", ticker, "Analyzing valuation ratios")
         # 4. Price to X ratios
         pe_ratio = metrics.price_to_earnings_ratio
@@ -122,6 +156,17 @@ def fundamentals_agent(state: AgentState):
             "signal": signals[3],
             "details": (f"P/E: {pe_ratio:.2f}" if pe_ratio else "P/E: N/A") + ", " + (f"P/B: {pb_ratio:.2f}" if pb_ratio else "P/B: N/A") + ", " + (f"P/S: {ps_ratio:.2f}" if ps_ratio else "P/S: N/A"),
         }
+
+        if verbose_data:
+            logger.debug(
+                f"Price Ratios Analysis - {ticker}:\n"
+                f"  P/E Ratio: {pe_ratio if pe_ratio is not None else 'N/A'}\n"
+                f"  P/B Ratio: {pb_ratio if pb_ratio is not None else 'N/A'}\n"
+                f"  P/S Ratio: {ps_ratio if ps_ratio is not None else 'N/A'}\n"
+                f"  Score: {price_ratio_score}/3\n"
+                f"  Signal: {signals[3]}",
+                module="fundamentals_agent", ticker=ticker
+            )
 
         progress.update_status("fundamentals_agent", ticker, "Calculating final signal")
         # Determine overall signal
@@ -144,6 +189,17 @@ def fundamentals_agent(state: AgentState):
             "confidence": confidence,
             "reasoning": reasoning,
         }
+
+        if verbose_data:
+            logger.debug(
+                f"Final Analysis - {ticker}:\n"
+                f"  Bullish Signals: {bullish_signals}/{len(signals)}\n"
+                f"  Bearish Signals: {bearish_signals}/{len(signals)}\n"
+                f"  Neutral Signals: {len(signals) - bullish_signals - bearish_signals}/{len(signals)}\n"
+                f"  Overall Signal: {overall_signal}\n"
+                f"  Confidence: {confidence}%",
+                module="fundamentals_agent", ticker=ticker
+            )
 
         progress.update_status("fundamentals_agent", ticker, "Done")
 
