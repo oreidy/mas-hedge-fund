@@ -13,7 +13,7 @@ def valuation_agent(state: AgentState):
 
     # Get verbose_data from metadata or default to False
     verbose_data = state["metadata"].get("verbose_data", False)
-    logger.debug("Accessing Technicals Agent", module="technicals_agent")
+    logger.debug("Accessing Valuation Agent", module="valuation_agent")
 
     data = state["data"]
     end_date = data["end_date"]
@@ -29,16 +29,22 @@ def valuation_agent(state: AgentState):
         financial_metrics = get_financial_metrics(
             ticker=ticker,
             end_date=end_date,
-            period="ttm",
+            period="annual",
             verbose_data=verbose_data
         )
 
         # Add safety check for financial metrics
         if not financial_metrics:
+            logger.warning(f"No financial metrics found for {ticker}", module="valuation_agent", ticker=ticker)
             progress.update_status("valuation_agent", ticker, "Failed: No financial metrics found")
             continue
         
         metrics = financial_metrics[0]
+
+        if verbose_data:
+            logger.debug(f"Retrieved financial metrics for {ticker}:", module="valuation_agent", ticker=ticker)
+            logger.debug(f"Earnings growth: {metrics.earnings_growth}", module="valuation_agent", ticker=ticker)
+            logger.debug(f"P/E ratio: {metrics.price_to_earnings_ratio}", module="valuation_agent", ticker=ticker)
 
         progress.update_status("valuation_agent", ticker, "Gathering line items")
         # Fetch the specific line_items that we need for valuation purposes
@@ -52,19 +58,32 @@ def valuation_agent(state: AgentState):
                 "working_capital",
             ],
             end_date=end_date,
-            period="ttm",
+            period="annual",
             limit=2,
             verbose_data=verbose_data
         )
 
         # Add safety check for financial line items
         if len(financial_line_items) < 2:
+            logger.warning(f"Insufficient financial line items for {ticker}: only {len(financial_line_items)} periods found, need at least 2", 
+                         module="valuation_agent", ticker=ticker)
+            if financial_line_items:
+                logger.debug(f"Retrieved line items: {[item.model_dump() for item in financial_line_items]}", 
+                           module="valuation_agent", ticker=ticker)
             progress.update_status("valuation_agent", ticker, "Failed: Insufficient financial line items")
             continue
 
         # Pull the current and previous financial line items
         current_financial_line_item = financial_line_items[0]
         previous_financial_line_item = financial_line_items[1]
+
+        if verbose_data:
+            logger.debug(f"Current financial line item:", module="valuation_agent", ticker=ticker)
+            logger.debug(f"  - Report period: {current_financial_line_item.report_period}", module="valuation_agent", ticker=ticker)
+            logger.debug(f"  - Free cash flow: {current_financial_line_item.free_cash_flow}", module="valuation_agent", ticker=ticker)
+            logger.debug(f"  - Net income: {current_financial_line_item.net_income}", module="valuation_agent", ticker=ticker)
+            logger.debug(f"  - Working capital: {current_financial_line_item.working_capital}", module="valuation_agent", ticker=ticker)
+
 
         progress.update_status("valuation_agent", ticker, "Calculating owner earnings")
         # Calculate working capital change
@@ -81,6 +100,10 @@ def valuation_agent(state: AgentState):
             margin_of_safety=0.25,
         )
 
+        if verbose_data:
+            logger.debug(f"Owner earnings value: {owner_earnings_value}", module="valuation_agent", ticker=ticker)
+                
+
         progress.update_status("valuation_agent", ticker, "Calculating DCF value")
         # DCF Valuation
         dcf_value = calculate_intrinsic_value(
@@ -91,14 +114,30 @@ def valuation_agent(state: AgentState):
             num_years=5,
         )
 
+        if verbose_data:
+            logger.debug(f"DCF value: {dcf_value}", module="valuation_agent", ticker=ticker)
+
         progress.update_status("valuation_agent", ticker, "Comparing to market value")
         # Get the market cap
         market_cap = get_market_cap(ticker=ticker, end_date=end_date, verbose_data=verbose_data)
+
+        if market_cap is None:
+            logger.warning(f"No market cap found for {ticker}", module="valuation_agent", ticker=ticker)
+            progress.update_status("valuation_agent", ticker, "Failed: No market cap found")
+            continue
+            
+        if verbose_data:
+            logger.debug(f"Market cap: {market_cap}", module="valuation_agent", ticker=ticker)
 
         # Calculate combined valuation gap (average of both methods)
         dcf_gap = (dcf_value - market_cap) / market_cap
         owner_earnings_gap = (owner_earnings_value - market_cap) / market_cap
         valuation_gap = (dcf_gap + owner_earnings_gap) / 2
+
+        if verbose_data:
+                logger.debug(f"DCF gap: {dcf_gap:.2%}", module="valuation_agent", ticker=ticker)
+                logger.debug(f"Owner earnings gap: {owner_earnings_gap:.2%}", module="valuation_agent", ticker=ticker)
+                logger.debug(f"Valuation gap: {valuation_gap:.2%}", module="valuation_agent", ticker=ticker)
 
         if valuation_gap > 0.15:  # More than 15% undervalued
             signal = "bullish"
@@ -125,6 +164,10 @@ def valuation_agent(state: AgentState):
             "confidence": confidence,
             "reasoning": reasoning,
         }
+
+        if verbose_data:
+            logger.debug(f"Final valuation signal: {signal}", module="valuation_agent", ticker=ticker)
+            logger.debug(f"Confidence: {confidence}%", module="valuation_agent", ticker=ticker)
 
         progress.update_status("valuation_agent", ticker, "Done")
 

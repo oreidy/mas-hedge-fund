@@ -1214,8 +1214,8 @@ def search_line_items(
                 
                 elif item == "working_capital":
                     # Working capital = Current Assets - Current Liabilities
-                    current_assets = balance_sheet.loc["Total Current Assets", col] if "Total Current Assets" in balance_sheet.index else None
-                    current_liabilities = balance_sheet.loc["Total Current Liabilities", col] if "Total Current Liabilities" in balance_sheet.index else None
+                    current_assets = balance_sheet.loc["Current Assets", col] if "Current Assets" in balance_sheet.index else None
+                    current_liabilities = balance_sheet.loc["Current Liabilities", col] if "Current Liabilities" in balance_sheet.index else None
                     if current_assets is not None and current_liabilities is not None:
                         setattr(line_item, item, float(current_assets - current_liabilities))
                     else:

@@ -7,7 +7,7 @@ from tools.api import get_financial_metrics
 from utils.logger import logger
 
 
-##### Fundamental Agent #####
+##### Fundamentals Agent #####
 def fundamentals_agent(state: AgentState):
     """Analyzes fundamental data and generates trading signals for multiple tickers."""
 
@@ -184,7 +184,7 @@ def fundamentals_agent(state: AgentState):
             (pb_ratio, 3),  # Reasonable P/B ratio
             (ps_ratio, 5),  # Reasonable P/S ratio
         ]
-        price_ratio_score = sum(metric is not None and metric > threshold for metric, threshold in thresholds)
+        price_ratio_score = sum(metric is not None and metric < threshold for metric, threshold in thresholds)
 
         if any(metric is None for metric, _ in thresholds):
             signals.append("neutral")  # Default to neutral if any metric is missing
