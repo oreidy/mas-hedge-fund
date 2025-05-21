@@ -12,6 +12,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import the specific functions we want to debug
 from tools.api import get_price_data, get_prices, fetch_prices_batch
 
+# Import your logger setup function
+from utils.logger import setup_logger, logger
+
+# Configure logger in debug mode
+setup_logger(debug_mode=True)
+
 def debug_yfinance_data(ticker_symbol):
     """
     Debug function to inspect what financial data yfinance is actually getting.
@@ -482,19 +488,227 @@ def print_financial_statements(ticker_symbol, end_date="2023-03-12", periods=2):
         print("No cash flow statement data available")
 
 
+def debug_sec_edgar(ticker_symbol, start_date=None, end_date=None, verbose=True):
+    """
+    Debug function to test the SEC EDGAR scraper's ability to download real insider trades.
+    
+    Args:
+        ticker_symbol: Stock ticker symbol to test
+        start_date: Optional start date (YYYY-MM-DD)
+        end_date: Optional end date (YYYY-MM-DD)
+        verbose: Whether to display detailed output
+    """
+
+    # Handle different input types
+    if isinstance(ticker_symbol, list):
+        tickers_to_check = ticker_symbol.copy()  # Make a copy to avoid modifying the original
+        ticker_display = ", ".join(ticker_symbol)
+    else:
+        tickers_to_check = [ticker_symbol]  # Create a single-item list
+        ticker_display = ticker_symbol
+
+        
+    print(f"=== DEBUGGING SEC EDGAR SCRAPER FOR {ticker_symbol} ===")
+    
+    # Import the necessary functions from the scraper
+    from tools.sec_edgar_scraper import fetch_multiple_insider_trades
+    from datetime import datetime, timedelta
+    import time
+    
+    print(f"Testing for {end_date}")
+    
+    try:
+        # Start timer
+        start_time = time.time()
+        
+        # Test the fetch_multiple_insider_trades function (async)
+        print("\nFetching insider trades from SEC EDGAR...")
+        results = fetch_multiple_insider_trades(ticker_symbol, end_date, verbose_data=True)
+        
+        print (f"results: {results}")
+        # End timer
+        end_time = time.time()
+        elapsed = end_time - start_time
+        
+        # Process and display results
+        total_trades = 0
+        
+        # Loop through each ticker to display results
+        for ticker in tickers_to_check:
+            ticker_trades = results.get(ticker, [])
+            total_trades += len(ticker_trades)
+            
+            print(f"\nFor {ticker}:")
+            print(f"Found {len(ticker_trades)} insider trades")
+            
+            if ticker_trades:
+                print("\nSample trades:")
+                for i, trade in enumerate(ticker_trades[:3]):  # Show first 3 trades
+                    shares = trade.transaction_shares
+                    price = trade.transaction_price_per_share
+                    value = trade.transaction_value
+                    
+                    print(f"Trade {i+1}:")
+                    print(f"  Date: {trade.transaction_date}")
+                    print(f"  Insider: {trade.name or 'Unknown'} ({trade.title or 'N/A'})")
+                    print(f"  Shares: {shares}")
+                    print(f"  Price: ${price}")
+                    print(f"  Value: ${value}")
+                    
+                if len(ticker_trades) > 3:
+                    print(f"... and {len(ticker_trades) - 3} more trades.")
+        
+        print(f"\nQuery completed in {elapsed:.2f} seconds")
+        print(f"Total trades found: {total_trades}")
+        
+        return results
+    
+    except Exception as e:
+        print(f"Error testing SEC EDGAR scraper: {e}")
+    
+    print("\nSEC EDGAR scraper test complete")
+
+def debug_sec_edgar_direct(ticker_symbol, start_date=None, end_date=None):
+    """
+    Debug function that directly checks the SEC website for Form 4 filings.
+    """
+    print(f"=== DIRECT SEC EDGAR CHECK FOR {ticker_symbol} ===")
+    
+    import requests
+    from datetime import datetime, timedelta
+    import re
+    from bs4 import BeautifulSoup
+    from secedgar.cik_lookup import CIKLookup
+    from secedgar.client import NetworkClient
+    
+    # Set default dates if not provided
+    if not end_date:
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    
+    if not start_date:
+        start_date_obj = datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=365)
+        start_date = start_date_obj.strftime('%Y-%m-%d')
+    
+    print(f"Testing date range: {start_date} to {end_date}")
+    
+    try:
+        # Get CIK for the company
+        client = NetworkClient(user_agent="Oliver Reidy oliver.reidy@uzh.ch")
+        cik_lookup = CIKLookup([ticker_symbol], client=client)
+        cik_data = cik_lookup.get_ciks()
+        
+        if ticker_symbol not in cik_data:
+            print(f"Could not find CIK for {ticker_symbol}")
+            return
+        
+        cik = cik_data[ticker_symbol]
+        print(f"Found CIK: {cik}")
+        
+        # Pad CIK to 10 digits with leading zeros as required by SEC website
+        cik_padded = str(cik).zfill(10)
+        
+        # Directly access the SEC's EDGAR search page for Form 4 filings
+        url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik_padded}&type=4&dateb=&owner=include&count=100"
+        print(f"Checking SEC EDGAR directly at:\n{url}")
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code != 200:
+            print(f"Error accessing SEC EDGAR: Status code {response.status_code}")
+            return
+        
+        # Parse the HTML response
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Find the table with the filings
+        filing_table = soup.find('table', class_='tableFile2')
+        
+        if not filing_table:
+            print("No filing table found on SEC website")
+            print("This could be due to changes in the SEC website structure")
+            return
+        
+        # Extract Form 4 filings
+        filings = []
+        rows = filing_table.find_all('tr')
+        
+        for row in rows[1:]:  # Skip header row
+            cells = row.find_all('td')
+            if len(cells) >= 4:
+                filing_type = cells[0].text.strip()
+                if "4" in filing_type:  # Form 4 filing
+                    filing_date = cells[3].text.strip()
+                    filing_link = cells[1].find('a')['href'] if cells[1].find('a') else None
+                    filing_description = cells[2].text.strip()
+                    
+                    # Check if filing date is within our date range
+                    try:
+                        filing_date_obj = datetime.strptime(filing_date, '%Y-%m-%d')
+                        start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+                        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+                        
+                        if start_date_obj <= filing_date_obj <= end_date_obj:
+                            filings.append({
+                                'type': filing_type,
+                                'date': filing_date,
+                                'description': filing_description,
+                                'link': filing_link
+                            })
+                    except ValueError:
+                        # Skip filings with invalid dates
+                        continue
+        
+        print(f"\nFound {len(filings)} Form 4 filings for {ticker_symbol} on SEC website")
+        
+        if filings:
+            print("\nSample filings:")
+            for i, filing in enumerate(filings[:5]):
+                print(f"Filing {i+1}:")
+                print(f"  Type: {filing['type']}")
+                print(f"  Date: {filing['date']}")
+                print(f"  Description: {filing['description']}")
+                print(f"  Link: https://www.sec.gov{filing['link']}" if filing['link'] else "  Link: N/A")
+                print()
+        else:
+            print("\nNo Form 4 filings found on SEC website for the specified date range.")
+        
+        print("\nComparing with secedgar library results:")
+        print("If SEC website shows filings but secedgar doesn't, there might be an issue with the library.")
+    
+    except Exception as e:
+        print(f"Error checking SEC EDGAR directly: {e}")
+    
+    print("\nDirect SEC EDGAR check complete")
+
+
+
+
+
 
 if __name__ == "__main__":
     # Test with a few tickers
-    tickers = ["JPM"]
+    tickers = ["AAPL"]
 
-    # For historical dates where we know there should be data
-    start_date = "2023-03-10"  # This matches your backtest example issue
-    end_date = "2023-03-14"    # This matches your backtest example issue
+    start_date = "2021-01-01"
+    end_date = "2024-04-05" 
     
-    for ticker in tickers:
-        result = debug_yfinance_data(ticker)
+    debug_sec_edgar(tickers, start_date, end_date)
+
+    #for ticker in tickers:
+        #result = debug_yfinance_data(ticker)
+        
+        #debug_sec_edgar_direct(ticker, start_date, end_date)
         #sharesinfo = debug_yfinance_shares(ticker)
         #debug_price_data_fetching(ticker, start_date, end_date)
         #print_financial_statements(ticker, end_date, periods=2)
 
-        print("\n" + "="*50 + "\n")
+        #print("\n" + "="*50 + "\n")
+    print("\n" + "="*50 + "\n")

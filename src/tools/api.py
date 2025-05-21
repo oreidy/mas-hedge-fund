@@ -8,6 +8,7 @@ from functools import partial
 from typing import List, Dict, Optional, Any, Union
 from datetime import datetime, timedelta
 from pathlib import Path
+import traceback
 
 from data.disk_cache import DiskCache
 from data.models import (
@@ -25,7 +26,7 @@ from data.models import (
 
 # Import the market calendar, SEC EDGAR scraper and logger.
 from utils.market_calendar import is_trading_day, adjust_date_range, adjust_yfinance_date_range
-from tools.sec_edgar_scraper import fetch_insider_trades_for_ticker, fetch_multiple_insider_trades
+from tools.sec_edgar_scraper import fetch_multiple_insider_trades
 from utils.logger import logger
 
 
@@ -44,6 +45,7 @@ def get_prices(ticker: str, start_date: str, end_date: str, verbose_data: bool =
         ticker: Stock ticker symbol
         start_date: Start date string (YYYY-MM-DD)
         end_date: End date string (YYYY-MM-DD)
+        verbose_data: Optional flag for verbose logging
         
     Returns:
         List of Price objects
@@ -321,6 +323,7 @@ def get_financial_metrics(
         end_date: End date string (YYYY-MM-DD)
         period: Period type ("ttm", "annual", etc.)
         limit: Maximum number of periods to return
+        verbose_data: Optional flag for verbose logging
         
     Returns:
         List of FinancialMetrics objects
@@ -764,7 +767,7 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
 
 # ===== INSIDER TRADES FROM SEC EDGAR =====
 def get_insider_trades(
-    ticker: str, # Review: Since there is only a string here, does it mean it loads the news individually and the setting up a loop doesnt bring any advantage?
+    ticker: Union[str, List[str]],
     end_date: str,
     start_date: str = None,
     limit: int = 1000,
@@ -772,128 +775,35 @@ def get_insider_trades(
 ) -> List[InsiderTrade]:
     """
     Fetch insider trades for a single ticker.
-    Maintains compatibility with the original function.
-    """
-
-    logger.debug(f"Running get_insider_trades() for {ticker} from {start_date or 'earliest'} to {end_date}", 
-                module="get_insider_trades", ticker=ticker)
-
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(get_insider_trades_async([ticker], end_date, start_date, verbose_data))
-        return results.get(ticker, [])[:limit]
-    finally:
-        loop.close()
-
-
-async def get_insider_trades_async(tickers: List[str], end_date: str, start_date: str = None, verbose_data: bool = False) -> Dict[str, List[InsiderTrade]]:
-    """
-    Fetch insider trades for multiple tickers from SEC EDGAR.
+    Delegates caching to fetch_multiple_insider_trades.
     
     Args:
-        tickers: List of stock ticker symbols
+        ticker: Stock ticker symbol
         end_date: End date string (YYYY-MM-DD)
         start_date: Optional start date (YYYY-MM-DD)
+        limit: Maximum number of trades to return
+        verbose_data: Optional flag for verbose logging
         
     Returns:
-        Dictionary mapping tickers to lists of InsiderTrade objects
+        List of InsiderTrade objects
     """
-
-    logger.debug(f"Running get_insider_trades_async() for {len(tickers)} tickers", 
-                module="get_insider_trades_async")
-
-    results = {}
-
-    # Cache tracking
-    cache_hits = 0
-    total_tickers = len(tickers)
+    logger.debug(f"Running get_insider_trades() to {end_date}", 
+                module="get_insider_trades", ticker=ticker)
     
-    # First try to get data from cache
-    for ticker in tickers:
-        cached_data = _cache.get_insider_trades(ticker)
-        if cached_data:
-            # Filter by date range
-            filtered_data = [
-                InsiderTrade(**trade) for trade in cached_data # Review: Why are there two** in InsiderTrade(**trade)?
-                if (start_date is None or (trade.get("transaction_date") or trade["filing_date"]) >= start_date)
-                and (trade.get("transaction_date") or trade["filing_date"]) <= end_date
-            ]
-            
-            # If we have recent data, use it
-            if filtered_data and (datetime.now() - datetime.strptime(cached_data[-1]["filing_date"], "%Y-%m-%d")).days < 7:
-                results[ticker] = filtered_data
-                cache_hits += 1
-                continue
-    
-    # For any tickers not found in cache, fetch from SEC EDGAR
-    tickers_to_fetch = [ticker for ticker in tickers if ticker not in results]
-    
-    # Debug: Log cache statistics
-    if verbose_data:
-        cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
-        download_percentage = 100 - cache_percentage
-        logger.debug(f"INSIDER TRADES CACHE STATS:", module="get_insider_trades_async")    
-        logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="get_insider_trades_async")    
-        logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="get_insider_trades_async")
-
-    if tickers_to_fetch:
-        try:
-            # Use the SEC EDGAR scraper to fetch insider trades
-            edgar_results = await fetch_multiple_insider_trades(tickers_to_fetch, start_date, end_date)
-            logger.debug(f"SEC EDGAR scraper results: {edgar_results}",
-                         module="get_insider_trades_async")
-            
-            # Update results and cache
-            for ticker, trades in edgar_results.items():
-                # Cache the trades
-                if trades:
-                    _cache.set_insider_trades(ticker, [trade.model_dump() for trade in trades])
-                
-                # Add to results
-                results[ticker] = trades
-                
-        except Exception as e:
-            logger.error(f"Error fetching insider trades from SEC EDGAR: {e}", 
-                        module="get_insider_trades_async")
-            # Fall back to returning empty lists for tickers not in cache
-            for ticker in tickers_to_fetch:
-                results[ticker] = []
-    
-    # Debug: Data preview before return
-    if verbose_data:
-        if cache_hits > 0:
-            for ticker, trades in results.items():
-                if len(trades) > 0 and ticker not in tickers_to_fetch:
-                    logger.debug(f"Sample cached insider trades for {ticker}:" , module="get_insider_trades_async", ticker=ticker)
-                    logger.debug(f"Total trades: {len(trades)}" , module="get_insider_trades_async", ticker=ticker)
-                    logger.debug(f"Most recent trade: {trades[0].filing_date}", module="get_insider_trades_async", ticker=ticker)
-                    logger.debug(f"Transaction shares: {trades[0].transaction_shares}, Value: {trades[0].transaction_value}", module="get_insider_trades_async", ticker=ticker)
-                    
-                    break
-                else:
-                    logger.debug("Preview of cached data not working", module="get_insider_trades_async", ticker=ticker)
-        else:
-            logger.debug("No cached data to preview", module="get_insider_trades_async")
+    try:
+        # Use the SEC EDGAR scraper to fetch insider trades (handles caching internally)
+        edgar_results = fetch_multiple_insider_trades(ticker, end_date, start_date, verbose_data)
+        trades = edgar_results.get(ticker, []) or []
         
-        # Debug: Preview downloaded data
-        if tickers_to_fetch and any(ticker in results for ticker in tickers_to_fetch):
-            for ticker in tickers_to_fetch:
-                if ticker in results and results[ticker]:
-                    logger.debug(f"Sample downloaded insider trades for {ticker}:" , module="get_insider_trades_async", ticker=ticker)
-                    logger.debug(f"Total trades: {len(results[ticker])}" , module="get_insider_trades_async", ticker=ticker)
-                    logger.debug(f"Most recent trade: {results[ticker][0].filing_date if results[ticker] else 'N/A'}" , module="get_insider_trades_async", ticker=ticker)
-                    logger.debug(f"Transaction shares: {results[ticker][0].transaction_shares if results[ticker] else 'N/A'}, " , module="get_insider_trades_async", ticker=ticker)
-                    logger.debug(f"Value: {results[ticker][0].transaction_value if results[ticker] else 'N/A'}"  , module="get_insider_trades_async", ticker=ticker)
-
-                    break
-                else:
-                    logger.debug("Preview of downloaded data not working", module="get_insider_trades_async", ticker=ticker)
-        else:
-            logger.debug("No downloaded data to preview", module="get_insider_trades_async")
-
-
-    return results
+        logger.debug(f"get_insider_trades received results: {len(trades)} trades", 
+                    module="get_insider_trades", ticker=ticker)
+        
+        return trades[:limit]
+    
+    except Exception as e:
+        logger.error(f"Error fetching insider trades for {ticker}: {e}", 
+                    module="get_insider_trades", ticker=ticker)
+        return []
 
 
 # ===== COMPANY NEWS =====
@@ -931,6 +841,7 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
         tickers: List of stock ticker symbols
         end_date: End date string (YYYY-MM-DD)
         start_date: Optional start date (YYYY-MM-DD)
+        verbose_data: Optional flag for verbose logging
         
     Returns:
         Dictionary mapping tickers to lists of CompanyNews objects
@@ -1304,6 +1215,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
         start_date: Start date string (YYYY-MM-DD)
         end_date: End date string (YYYY-MM-DD)
         batch_size: Number of tickers to process in each batch
+        verbose_data: Optional flag for verbose logging
         
     Returns:
         Dictionary of ticker to data mapping
@@ -1316,39 +1228,35 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
     ticker_batches = [tickers[i:i+batch_size] for i in range(0, len(tickers), batch_size)]
     
     results = {}
-    loop = asyncio.new_event_loop()
-    
     try:
-        asyncio.set_event_loop(loop)
-        
         # Process each batch of tickers
         for batch in ticker_batches:
-            # Get price data, financial metrics, insider trades, and news in a batch
-            price_task = fetch_prices_batch(batch, start_date, end_date, verbose_data)
-            metrics_task = fetch_financial_metrics_async(batch, end_date, verbose_data)
-            insider_task = get_insider_trades_async(batch, end_date, start_date, verbose_data)
-            news_task = get_company_news_async(batch, end_date, start_date, verbose_data)
+            # Get insider trades (this is synchronous)
+            insider_results = fetch_multiple_insider_trades(batch, end_date, start_date, verbose_data)
             
-            # Run all tasks concurrently
-            batch_results = loop.run_until_complete(
-                asyncio.gather(price_task, metrics_task, insider_task, news_task)
-            )
+            # Create and run a new event loop for the async operations
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             
-            # Process results for this batch
-            price_data, metrics_data, insider_data, news_data = batch_results
+            try:
+                # Run price data, financial metrics, and news tasks synchronously
+                price_data = loop.run_until_complete(fetch_prices_batch(batch, start_date, end_date, verbose_data))
+                metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "ttm", 10, verbose_data))
+                news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, verbose_data))
+            finally:
+                loop.close()
             
             # Merge into results dictionary
             for ticker in batch:
                 results[ticker] = {
                     "prices": price_data.get(ticker, pd.DataFrame()),
                     "metrics": metrics_data.get(ticker, []),
-                    "insider_trades": insider_data.get(ticker, []),
+                    "insider_trades": insider_results.get(ticker, []),
                     "news": news_data.get(ticker, [])
                 }
     except Exception as e:
         logger.error(f"Error fetching data for tickers: {e}", module="get_data_for_tickers")
-    finally:
-        loop.close()
+        logger.error(f"Traceback: {traceback.format_exc()}", module="get_data_for_tickers")
 
     # Preview the results
     if results and verbose_data:

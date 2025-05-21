@@ -15,7 +15,7 @@ def sentiment_agent(state: AgentState):
 
     # Get verbose_data from metadata or default to False
     verbose_data = state["metadata"].get("verbose_data", False)
-    logger.debug("Accessing Fundamentals Agent", module="fundamentals_agent")
+    logger.debug("Accessing Sentiment Agent", module="sentiment_agent")
 
     data = state.get("data", {})
     end_date = data.get("end_date")

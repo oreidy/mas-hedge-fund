@@ -1,310 +1,308 @@
-import requests
-import aiohttp
-import asyncio
+import os
 import pandas as pd
-from bs4 import BeautifulSoup
-import re
 from datetime import datetime, timedelta
-import time
-import random
-from pathlib import Path
 import json
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
+from pathlib import Path
+import tempfile
+from secedgar import filings, FilingType
+import xml.etree.ElementTree as ET
+import glob
 
+from utils.logger import logger
 from data.models import InsiderTrade
 
-# Constants for SEC EDGAR
-SEC_EDGAR_URL = "https://www.sec.gov/cgi-bin/browse-edgar"
-SEC_ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data"
+from bs4 import XMLParsedAsHTMLWarning
+import warnings
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # Create a cache directory for SEC data
-SEC_CACHE_DIR = Path("./cache/sec")
+SEC_CACHE_DIR = Path(os.path.expanduser("~/ai-hedge-fund/src/tools/cache/sec_edgar_filings"))
 SEC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Headers to make requests look like they're coming from a browser
-# This is important for SEC.gov which blocks requests without proper headers
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Connection": "keep-alive",
-}
 
-async def fetch_insider_trades_for_ticker(ticker: str, start_date: str = None, end_date: str = None) -> List[InsiderTrade]:
+def fetch_multiple_insider_trades(tickers: List[str], end_date: str = None, start_date: str = None, verbose_data: bool = False) -> Dict[str, List[InsiderTrade]]:
     """
-    Scrape insider trades for a specific ticker from SEC EDGAR.
+    Fetch insider trades for multiple tickers using the secedgar library.
     
     Args:
-        ticker: The stock ticker symbol
-        start_date: Optional start date (YYYY-MM-DD)
+        tickers: List of stock ticker symbols
         end_date: Optional end date (YYYY-MM-DD)
         
     Returns:
-        List of InsiderTrade objects
+        Dictionary mapping tickers to lists of InsiderTrade objects
     """
-    cache_file = SEC_CACHE_DIR / f"{ticker}_insider_trades.json"
-    
-    # Try to load from cache first
-    if cache_file.exists():
-        try:
-            with open(cache_file, 'r') as f:
-                cached_data = json.load(f)
-                
-            # Filter by date if needed
-            filtered_data = []
-            for trade in cached_data:
-                trade_date = trade.get("transaction_date") or trade.get("filing_date")
-                if (not start_date or trade_date >= start_date) and (not end_date or trade_date <= end_date):
-                    filtered_data.append(InsiderTrade(**trade))
-                    
-            # If we have data and it's recent (within last 7 days), return it
-            if filtered_data and (datetime.now() - datetime.strptime(cached_data[-1]["filing_date"], "%Y-%m-%d")).days < 7:
-                return filtered_data
-        except Exception as e:
-            print(f"Error loading cached insider trades for {ticker}: {e}")
-    
-    # Form 4 is for insider trading reports
-    form_type = "4"
-    
+    if verbose_data:
+        logger.debug(f"End date: {end_date}", module="sec_edgar_scraper")
+
+    # Ensure tickers is a list of strings
+    if isinstance(tickers, str):
+        tickers = [tickers]
+
     # Calculate date range if not provided
     if not end_date:
         end_date = datetime.now().strftime("%Y-%m-%d")
+    
+    # Default start_date to 10 days before end_date if not provided
     if not start_date:
-        start_date_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=365)
+        start_date_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=10)
         start_date = start_date_dt.strftime("%Y-%m-%d")
     
-    # Format dates for SEC EDGAR
-    start_date_sec = datetime.strptime(start_date, "%Y-%m-%d").strftime("%Y%m%d")
-    end_date_sec = datetime.strptime(end_date, "%Y-%m-%d").strftime("%Y%m%d")
+    # Convert string dates to datetime objects
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
     
-    insider_trades = []
+    results = {}
     
-    try:
-        # First, get the CIK number for the company
-        cik = await get_cik_number(ticker)
-        if not cik:
-            print(f"Could not find CIK for {ticker}")
-            return []
-        
-        # Make a request to SEC EDGAR to get Form 4 filings
-        async with aiohttp.ClientSession() as session:
-            params = {
-                "action": "getcompany",
-                "CIK": cik,
-                "type": form_type,
-                "dateb": end_date_sec,
-                "datea": start_date_sec,
-                "owner": "include",
-                "output": "xml",
-                "count": "100"
-            }
-            
-            # Add a delay to avoid hitting SEC rate limits
-            await asyncio.sleep(0.1 + random.random() * 0.2)
-            
-            async with session.get(SEC_EDGAR_URL, params=params, headers=HEADERS) as response:
-                if response.status != 200:
-                    print(f"Error fetching insider trades for {ticker}: Status {response.status}")
-                    return []
-                
-                text = await response.text()
-                
-                # Parse the XML to find Form 4 links
-                soup = BeautifulSoup(text, 'html.parser')
-                filing_entries = soup.find_all('entry')
-                
-                for entry in filing_entries:
-                    filing_href = entry.find('filing-href')
-                    if not filing_href:
-                        continue
-                        
-                    filing_url = filing_href.text
-                    
-                    # Get Form 4 data
-                    trades = await parse_form4(session, filing_url, ticker)
-                    insider_trades.extend(trades)
-                    
-                    # Add a delay between requests
-                    await asyncio.sleep(0.1 + random.random() * 0.2)
-        
-        # Sort by transaction date
-        insider_trades.sort(key=lambda x: x.transaction_date or x.filing_date, reverse=True)
-        
-        # Cache the results
-        if insider_trades:
-            with open(cache_file, 'w') as f:
-                json.dump([trade.model_dump() for trade in insider_trades], f)
-        
-        return insider_trades
+    # Check cache for each ticker
+    cache_hits = 0
+    tickers_to_fetch = []
     
-    except Exception as e:
-        print(f"Error fetching insider trades for {ticker}: {e}")
-        return []
+    for ticker in tickers:
+        cache_file = SEC_CACHE_DIR / f"{ticker}_insider_trades.json"
 
-async def get_cik_number(ticker: str) -> Optional[str]:
-    """
-    Get the CIK (Central Index Key) for a ticker from the SEC.
-    
-    Args:
-        ticker: The stock ticker symbol
+        #if verbose_data:
+            #logger.debug(f"Checking cache at {cache_file}", module="sec_edgar_scraper", ticker=ticker)
         
-    Returns:
-        CIK number as string or None if not found
-    """
-    # Check cache first
-    cache_file = SEC_CACHE_DIR / "cik_lookup.json"
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r') as f:
+                    cached_data = json.load(f)
+                
+                if verbose_data:
+                    logger.debug(f"Found cache file with {len(cached_data)} entries", module="sec_edgar_scraper", ticker=ticker)
+                
+                # Filter by date range
+                filtered_data = []
+                for trade in cached_data:
+                    trade_date = trade.get("transaction_date") or trade.get("filing_date")
+                    if trade_date and start_date <= trade_date <= end_date:
+                        filtered_data.append(InsiderTrade(**trade))
+                
+                if filtered_data:
+                    if verbose_data:
+                        logger.debug(f"Found {len(filtered_data)} trades in cache matching date range", module="sec_edgar_scraper", ticker=ticker)
+                    
+                    results[ticker] = filtered_data
+                    cache_hits += 1
+                    continue
+                elif verbose_data:
+                    logger.debug(f"No trades in cache match the date range", module="sec_edgar_scraper", ticker=ticker)
+            except Exception as e:
+                logger.error(f"Error loading cached insider trades for {ticker}: {e}", module="sec_edgar_scraper", ticker=ticker)
+        elif verbose_data:
+            logger.debug(f"No cache file found for {ticker}", module="sec_edgar_scraper", ticker=ticker)
+        
+        tickers_to_fetch.append(ticker)
     
-    if cache_file.exists():
+    if not tickers_to_fetch:
+        if verbose_data:
+            logger.debug(f"All tickers found in cache, no need to fetch", module="sec_edgar_scraper")
+            for ticker in tickers:
+                if ticker in results and results[ticker]:
+                    most_recent_date = max(trade.transaction_date or trade.filing_date for trade in results[ticker])
+                    logger.debug(f"Most recent cached trade: {most_recent_date}", module="sec_edgar_scraper", ticker=ticker)
+        return results
+
+    
+    # Use a temporary directory for Form 4 downloads.
+    # # We don't need them after saving them as json in the cache
+    with tempfile.TemporaryDirectory() as temp_dir:
         try:
-            with open(cache_file, 'r') as f:
-                cik_lookup = json.load(f)
-                if ticker in cik_lookup:
-                    return cik_lookup[ticker]
-        except Exception:
-            pass
-    
-    # Use SEC's ticker to CIK JSON API
-    try:
-        async with aiohttp.ClientSession() as session:
-            url = "https://www.sec.gov/files/company_tickers.json"
-            
-            async with session.get(url, headers=HEADERS) as response:
-                if response.status != 200:
-                    return None
-                
-                data = await response.json()
-                
-                # Search for the ticker in the data
-                for _, company in data.items():
-                    if company["ticker"].upper() == ticker.upper():
-                        cik = str(company["cik_str"]).zfill(10)
-                        
-                        # Save to cache
-                        cik_lookup = {}
-                        if cache_file.exists():
-                            with open(cache_file, 'r') as f:
-                                cik_lookup = json.load(f)
-                        
-                        cik_lookup[ticker] = cik
-                        with open(cache_file, 'w') as f:
-                            json.dump(cik_lookup, f)
-                        
-                        return cik
-    except Exception as e:
-        print(f"Error getting CIK for {ticker}: {e}")
-    
-    return None
+            if verbose_data:
+                logger.debug(f"Using temporary directory: {temp_dir}", module="sec_edgar_scraper")
 
-async def parse_form4(session: aiohttp.ClientSession, form_url: str, ticker: str) -> List[InsiderTrade]:
+            logger.debug(f"Fetching SEC filings for tickers: {tickers_to_fetch}, start: {start_dt}, end: {end_dt}", 
+            module="sec_edgar_scraper")
+            
+            # Create a Filing object for Form 4
+            my_filings = filings(
+                cik_lookup=tickers_to_fetch,
+                filing_type=FilingType.FILING_4,
+                user_agent="Oliver Reidy (oliver.reidy@uzh.ch)",
+                start_date=start_dt,
+                end_date=end_dt,
+            )
+            
+            if verbose_data:
+                logger.debug(f"Created filing object: {type(my_filings)}", module="sec_edgar_scraper")
+
+            # Download the filings
+            my_filings.save(directory=str(temp_dir))
+            if verbose_data:
+                logger.debug(f"Saved filings to {temp_dir}", module="sec_edgar_scraper")
+
+            # Debug: List all files in the temp directory to see the structure
+            if verbose_data:
+                logger.debug("Directory structure:", module="sec_edgar_scraper")
+                for root, dirs, files in os.walk(temp_dir):
+                    logger.debug(f"Root: {root}", module="sec_edgar_scraper")
+                    logger.debug(f"Dirs: {dirs}", module="sec_edgar_scraper")
+                    logger.debug(f"Files: {len(files)}", module="sec_edgar_scraper")
+            
+            # Process the downloaded files for each ticker
+            for ticker in tickers_to_fetch:
+                insider_trades = []
+                
+                ticker_dir = os.path.join(temp_dir, ticker)
+                form4_dir = os.path.join(ticker_dir, "4")
+                
+                if os.path.exists(form4_dir):
+                    #if verbose_data:
+                        #logger.debug(f"Found Form 4 directory: {form4_dir}", module="sec_edgar_scraper", ticker=ticker)
+                    
+                    # Process all TXT files in the directory
+                    for txt_file in glob.glob(os.path.join(form4_dir, "**/*.txt"), recursive=True):
+                        #if verbose_data:
+                            #logger.debug(f"Processing TXT file: {txt_file}", module="sec_edgar_scraper", ticker=ticker)
+                        trades = parse_form4_file(txt_file, ticker)
+                        insider_trades.extend(trades)
+                else:
+                    logger.debug(f"No downloaded insider trades found", module="sec_edgar_scraper", ticker=ticker)
+                
+                # Sort by transaction date
+                insider_trades.sort(key=lambda x: x.transaction_date or x.filing_date, reverse=True)
+                
+                # Cache the results
+                if insider_trades:
+                    cache_file = SEC_CACHE_DIR / f"{ticker}_insider_trades.json"
+                    with open(cache_file, 'w') as f:
+                        json.dump([trade.model_dump() for trade in insider_trades], f)
+                    logger.debug(f"Cached {len(insider_trades)} insider trades", module="sec_edgar_scraper", ticker=ticker)
+                else:
+                    logger.warning(f"No insider trades to cache", module="sec_edgar_scraper", ticker=ticker)
+                
+                results[ticker] = insider_trades
+        
+        except Exception as e:
+            logger.error(f"Error fetching insider trades: {e}")
+            # Print more detailed error information
+            import traceback
+            logger.error(f"Error details: {traceback.format_exc()}", module="sec_edgar_scraper")
+            # For any tickers that failed, return empty lists
+            for ticker in tickers_to_fetch:
+                if ticker not in results:
+                    results[ticker] = []
+        
+        # Debug:
+        if verbose_data:
+            for ticker in tickers_to_fetch:
+                if ticker in results and results[ticker]:
+                    most_recent_date = max(trade.transaction_date or trade.filing_date for trade in results[ticker])
+                    logger.debug(f"Most recent trade: {most_recent_date}", module="sec_edgar_scraper", ticker=ticker)
+        
+        return results
+
+def parse_form4_file(file_path: str, ticker: str) -> List[InsiderTrade]:
     """
-    Parse a Form 4 filing to extract insider trading information.
+    Parse a Form 4 XML file to extract insider trading information.
     
     Args:
-        session: aiohttp session
-        form_url: URL to the Form 4 filing
+        file_path: Path to the Form 4 XML file
         ticker: Ticker symbol for the company
         
     Returns:
         List of InsiderTrade objects
     """
     try:
-        # First, get the Form 4 page
-        async with session.get(form_url, headers=HEADERS) as response:
-            if response.status != 200:
-                return []
-            
-            text = await response.text()
-            
-        # Extract the link to the actual XML data file
-        soup = BeautifulSoup(text, 'html.parser')
-        xml_link = None
-        for link in soup.find_all('a'):
-            if link.get('href', '').endswith('.xml'):
-                xml_link = 'https://www.sec.gov' + link['href']
-                break
-        
-        if not xml_link:
+        # Read the file content
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Extract the XML portion from the SEC EDGAR file
+        xml_start = content.find('<XML>')
+        xml_end = content.find('</XML>')
+
+        if xml_start == -1 or xml_end == -1:
+            logger.debug(f"No XML tags found in {file_path}", module="sec_edgar_scraper")
             return []
         
-        # Get the XML data
-        async with session.get(xml_link, headers=HEADERS) as response:
-            if response.status != 200:
-                return []
-            
-            xml_text = await response.text()
+        # Extract the XML content (add 5 to skip the <XML> tag itself)
+        xml_content = content[xml_start + 5:xml_end].strip()
+
+        # Create a file-like object from the XML content
+        import io
+        xml_file = io.StringIO(xml_content)
+
+        # Parse the txt file
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
         
-        soup = BeautifulSoup(xml_text, 'xml')
+        # Extract namespace from root tag if present
+        ns = ''
+        if '}' in root.tag:
+            ns = root.tag.split('}')[0] + '}'
         
         # Extract information about the issuer
-        issuer_element = soup.find('issuer')
-        if not issuer_element:
+        issuer_element = root.find(f'.//{ns}issuer')
+        if issuer_element is None:
             return []
             
-        issuer_name = issuer_element.find('issuerName').text if issuer_element.find('issuerName') else None
-        issuer_ticker = issuer_element.find('issuerTradingSymbol').text if issuer_element.find('issuerTradingSymbol') else None
+        issuer_name = issuer_element.find(f'.//{ns}issuerName').text if issuer_element.find(f'.//{ns}issuerName') is not None else None
+        issuer_ticker = issuer_element.find(f'.//{ns}issuerTradingSymbol').text if issuer_element.find(f'.//{ns}issuerTradingSymbol') is not None else None
         
         # If the ticker doesn't match, skip this form
         if issuer_ticker and issuer_ticker.upper() != ticker.upper():
             return []
         
         # Extract information about the reporting owner
-        owner_element = soup.find('reportingOwner')
-        owner_name = owner_element.find('rptOwnerName').text if owner_element and owner_element.find('rptOwnerName') else None
+        owner_element = root.find(f'.//{ns}reportingOwner')
+        owner_name = owner_element.find(f'.//{ns}rptOwnerName').text if owner_element is not None and owner_element.find(f'.//{ns}rptOwnerName') is not None else None
         
         # Check if owner is a director
         is_director = False
-        relationship = owner_element.find('reportingOwnerRelationship') if owner_element else None
-        if relationship and relationship.find('isDirector') and relationship.find('isDirector').text.upper() == 'TRUE':
+        relationship = owner_element.find(f'.//{ns}reportingOwnerRelationship') if owner_element is not None else None
+        if relationship is not None and relationship.find(f'.//{ns}isDirector') is not None and relationship.find(f'.//{ns}isDirector').text.upper() == 'TRUE':
             is_director = True
         
         # Get owner's title
         title = None
-        if relationship and relationship.find('officerTitle'):
-            title = relationship.find('officerTitle').text
+        if relationship is not None and relationship.find(f'.//{ns}officerTitle') is not None:
+            title = relationship.find(f'.//{ns}officerTitle').text
         
         # Extract filing date
-        filing_date_elem = soup.find('periodOfReport')
-        filing_date = filing_date_elem.text if filing_date_elem else None
+        filing_date_elem = root.find(f'.//{ns}periodOfReport')
+        filing_date = filing_date_elem.text if filing_date_elem is not None else None
         if filing_date:
             filing_date = datetime.strptime(filing_date, '%Y-%m-%d').strftime('%Y-%m-%d')
         
         # Extract transactions
         transactions = []
-        non_derivative_table = soup.find('nonDerivativeTable')
+        non_derivative_table = root.find(f'.//{ns}nonDerivativeTable')
         
-        if non_derivative_table:
-            transaction_elements = non_derivative_table.find_all('nonDerivativeTransaction')
+        if non_derivative_table is not None:
+            transaction_elements = non_derivative_table.findall(f'.//{ns}nonDerivativeTransaction')
             
             for transaction in transaction_elements:
                 # Extract transaction details
-                transaction_date_elem = transaction.find('transactionDate').find('value') if transaction.find('transactionDate') else None
-                transaction_date = transaction_date_elem.text if transaction_date_elem else None
+                transaction_date_elem = transaction.find(f'.//{ns}transactionDate/{ns}value') if transaction.find(f'.//{ns}transactionDate') is not None else None
+                transaction_date = transaction_date_elem.text if transaction_date_elem is not None else None
                 
                 if transaction_date:
                     transaction_date = datetime.strptime(transaction_date, '%Y-%m-%d').strftime('%Y-%m-%d')
                 
                 # Security information
-                security_title_elem = transaction.find('securityTitle').find('value') if transaction.find('securityTitle') else None
-                security_title = security_title_elem.text if security_title_elem else None
+                security_title_elem = transaction.find(f'.//{ns}securityTitle/{ns}value') if transaction.find(f'.//{ns}securityTitle') is not None else None
+                security_title = security_title_elem.text if security_title_elem is not None else None
                 
                 # Transaction amounts
-                shares_elem = transaction.find('transactionAmounts').find('transactionShares').find('value') if transaction.find('transactionAmounts') else None
-                price_elem = transaction.find('transactionAmounts').find('transactionPricePerShare').find('value') if transaction.find('transactionAmounts') else None
+                shares_elem = transaction.find(f'.//{ns}transactionAmounts/{ns}transactionShares/{ns}value') if transaction.find(f'.//{ns}transactionAmounts') is not None else None
+                price_elem = transaction.find(f'.//{ns}transactionAmounts/{ns}transactionPricePerShare/{ns}value') if transaction.find(f'.//{ns}transactionAmounts') is not None else None
                 
-                shares = float(shares_elem.text) if shares_elem else None
-                price = float(price_elem.text) if price_elem else None
+                shares = float(shares_elem.text) if shares_elem is not None and shares_elem.text else None
+                price = float(price_elem.text) if price_elem is not None and price_elem.text else None
                 
                 # Transaction code (P=Purchase, S=Sale, etc.)
-                transaction_code_elem = transaction.find('transactionAmounts').find('transactionAcquiredDisposedCode').find('value') if transaction.find('transactionAmounts') else None
-                transaction_code = transaction_code_elem.text if transaction_code_elem else None
+                transaction_code_elem = transaction.find(f'.//{ns}transactionAmounts/{ns}transactionAcquiredDisposedCode/{ns}value') if transaction.find(f'.//{ns}transactionAmounts') is not None else None
+                transaction_code = transaction_code_elem.text if transaction_code_elem is not None else None
                 
                 # If it's a sale, make shares negative
                 if transaction_code == 'D':  # D = Disposed (sold)
                     shares = -shares if shares else None
                 
                 # Shares owned after transaction
-                shares_owned_after_elem = transaction.find('postTransactionAmounts').find('sharesOwnedFollowingTransaction').find('value') if transaction.find('postTransactionAmounts') else None
-                shares_owned_after = float(shares_owned_after_elem.text) if shares_owned_after_elem else None
+                shares_owned_after_elem = transaction.find(f'.//{ns}postTransactionAmounts/{ns}sharesOwnedFollowingTransaction/{ns}value') if transaction.find(f'.//{ns}postTransactionAmounts') is not None else None
+                shares_owned_after = float(shares_owned_after_elem.text) if shares_owned_after_elem is not None and shares_owned_after_elem.text else None
                 
                 # Calculate shares owned before transaction
                 shares_owned_before = shares_owned_after - shares if shares_owned_after is not None and shares is not None else None
@@ -334,22 +332,5 @@ async def parse_form4(session: aiohttp.ClientSession, form_url: str, ticker: str
         return transactions
     
     except Exception as e:
-        print(f"Error parsing Form 4 at {form_url}: {e}")
+        logger.error(f"Error parsing Form 4 file {file_path}: {e}", module="sec_edgar_scraper")
         return []
-
-async def fetch_multiple_insider_trades(tickers: List[str], start_date: str = None, end_date: str = None) -> Dict[str, List[InsiderTrade]]:
-    """
-    Fetch insider trades for multiple tickers in parallel.
-    
-    Args:
-        tickers: List of stock ticker symbols
-        start_date: Optional start date (YYYY-MM-DD)
-        end_date: Optional end date (YYYY-MM-DD)
-        
-    Returns:
-        Dictionary of ticker to insider trades list
-    """
-    tasks = [fetch_insider_trades_for_ticker(ticker, start_date, end_date) for ticker in tickers]
-    results = await asyncio.gather(*tasks)
-    
-    return {ticker: trades for ticker, trades in zip(tickers, results)}
