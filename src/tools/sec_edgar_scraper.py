@@ -8,6 +8,7 @@ import tempfile
 from secedgar import filings, FilingType
 import xml.etree.ElementTree as ET
 import glob
+import traceback
 
 from utils.logger import logger
 from data.models import InsiderTrade
@@ -175,10 +176,18 @@ def fetch_multiple_insider_trades(tickers: List[str], end_date: str = None, star
                 results[ticker] = insider_trades
         
         except Exception as e:
-            logger.error(f"Error fetching insider trades: {e}")
-            # Print more detailed error information
-            import traceback
-            logger.error(f"Error details: {traceback.format_exc()}", module="sec_edgar_scraper")
+            if "No filings available" in str(e):
+                logger.info(f"No insider trading filings found for the requested date range", 
+                        module="sec_edgar_scraper")
+            else:
+                logger.warning(f"Error fetching insider trades: {e}. Activate verbose_data for detailed error", 
+                            module="sec_edgar_scraper")
+            
+            if verbose_data:
+                # Print more detailed error information
+                logger.error(f"Error details: {traceback.format_exc()}", 
+                            module="sec_edgar_scraper")
+    
             # For any tickers that failed, return empty lists
             for ticker in tickers_to_fetch:
                 if ticker not in results:

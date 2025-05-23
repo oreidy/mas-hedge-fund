@@ -292,10 +292,6 @@ class Backtester:
         start_date_dt = datetime.strptime(self.start_date, "%Y-%m-%d")
         end_date_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
 
-        # Adjust the dates to fetch up to 1 year of historical lookback data before start date
-        historical_start_dt = start_date_dt - relativedelta(years=1)
-        historical_start_str = historical_start_dt.strftime("%Y-%m-%d")
-
         # Check if the start and end dates are trading days
         start_valid = is_trading_day(start_date_dt)
         end_valid = is_trading_day(end_date_dt)
@@ -320,7 +316,10 @@ class Backtester:
             self.end_date = prev_day
             logger.info(f"Automatically adjusted end date to previous trading day: {self.end_date}", module="prefetch_data")
             
-    
+        # Fetch up to one year worth of data before start_date
+        adjusted_start_date_dt = datetime.strptime(self.start_date, "%Y-%m-%d")
+        historical_start_dt = adjusted_start_date_dt - relativedelta(years=1)
+        historical_start_str = historical_start_dt.strftime("%Y-%m-%d")
 
         logger.info(f"Fetching historical data from {historical_start_str} to {self.end_date}", module="prefetch_data")
 

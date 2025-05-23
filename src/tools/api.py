@@ -9,6 +9,7 @@ from typing import List, Dict, Optional, Any, Union
 from datetime import datetime, timedelta
 from pathlib import Path
 import traceback
+import requests
 
 from data.disk_cache import DiskCache
 from data.models import (
@@ -815,47 +816,71 @@ def get_company_news(
     verbose_data: bool = False
 ) -> List[CompanyNews]:
     """
-    Fetch company news for a single ticker.
-    Maintains compatibility with the original function.
+    Fetch company news sentiment from Alpha Vantage Intelligence API.
+    
+    Args:
+        ticker: Stock ticker symbol
+        end_date: End date string (YYYY-MM-DD) 
+        start_date: Optional start date (YYYY-MM-DD)
+        limit: Maximum number of news items to return
+        verbose_data: Optional flag for verbose logging
+        
+    Returns:
+        List of CompanyNews objects with sentiment data
     """
 
-    from utils.logger import logger
+    logger.debug(f"Running get_company_news() from {start_date} to {end_date}", module="get_company_news", ticker=ticker)
 
-    logger.debug(f"Running get_company_news() for {[ticker]} from {start_date} to {end_date}", module="get_company_news", ticker=ticker)
+    if start_date is None:
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        start_dt = end_dt - timedelta(days=30)
+        start_date = start_dt.strftime('%Y-%m-%d')
 
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(get_company_news_async([ticker], end_date, start_date, verbose_data))
+        results = loop.run_until_complete(get_company_news_async([ticker], end_date, start_date, limit, verbose_data))
         return results.get(ticker, [])[:limit]
     finally:
         loop.close()
 
 
-async def get_company_news_async(tickers: List[str], end_date: str, start_date: str = None, verbose_data: bool = False) -> Dict[str, List[CompanyNews]]:
+async def get_company_news_async(
+        tickers: List[str],
+        end_date: str,
+        start_date: str = None,
+        limit: int = 50,
+        verbose_data: bool = False
+    ) -> Dict[str, List[CompanyNews]]:
     """
-    Fetch company news from Yahoo Finance.
-    This is a minimal implementation that could be expanded with sentiment analysis.
+    Fetch company news sentiment from Alpha Vantage Intelligence API.
     
     Args:
         tickers: List of stock ticker symbols
         end_date: End date string (YYYY-MM-DD)
         start_date: Optional start date (YYYY-MM-DD)
+        limit: Maximum number of news items to return. Free tier Alpha Vantage might cap at limit = 50.
         verbose_data: Optional flag for verbose logging
         
     Returns:
         Dictionary mapping tickers to lists of CompanyNews objects
     """
 
-    logger.debug(f"Running get_company_news_async() for {[tickers]} from {start_date} to {end_date}", module="get_company_news_async")
+    logger.debug(f"Running get_company_news_async() from {start_date} to {end_date}", module="get_company_news_async")
 
+    # Get Alpha Vantage API key
+    api_key = os.environ.get("ALPHA_VANTAGE_API_KEY")
+    if not api_key:
+        logger.error("ALPHA_VANTAGE_API_KEY not found in environment variables", 
+                    module="get_company_news_async")
+        return {ticker: [] for ticker in tickers}
+
+    # Initialize variables
     results = {}
-
-    # Cache tracking
     cache_hits = 0
     total_tickers = len(tickers)
     
-    # First try to get data from cache
+    # Check cache first
     for ticker in tickers:
         cached_data = _cache.get_company_news(ticker)
         if cached_data:
@@ -866,13 +891,12 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
                 and news["date"] <= end_date
             ]
             
-            # If we have recent data, use it
-            if filtered_data and (datetime.now() - datetime.strptime(cached_data[-1]["date"], "%Y-%m-%d")).days < 3:
+            if filtered_data:
                 results[ticker] = filtered_data
                 cache_hits += 1
                 continue
-    
-    # For any tickers not found in cache or with outdated data, fetch from Yahoo Finance
+            
+    # Fetch from Alpha Vantage for remaining tickers
     tickers_to_fetch = [ticker for ticker in tickers if ticker not in results]
     
     # Log cache statistics
@@ -884,42 +908,147 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
         logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="get_company_news_async")
         
     
-    if tickers_to_fetch:
-        for ticker in tickers_to_fetch:
-            try:
-                # with LogCapture(debug_mode=True, module="yfinance") as capture:
-                ticker_obj = yf.Ticker(ticker)
-                news_data = ticker_obj.news
-                
-                news_list = []
-                for news_item in news_data:
-                    # Convert unix timestamp to date
-                    timestamp = news_item.get('providerPublishTime', 0)
-                    date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
-                    
-                    # Filter by date range
-                    if (start_date is None or date >= start_date) and date <= end_date:
-                        news = CompanyNews(
-                            ticker=ticker,
-                            title=news_item.get('title', ''),
-                            author=news_item.get('publisher', ''),
-                            source=news_item.get('publisher', ''),
-                            date=date,
-                            url=news_item.get('link', ''),
-                            sentiment=None  # Would need sentiment analysis
-                        )
-                        news_list.append(news)
-                
-                # Cache the news
-                if news_list:
-                    _cache.set_company_news(ticker, [news.model_dump() for news in news_list])
-                
-                # Add to results
-                results[ticker] = news_list
-                
-            except Exception as e:
-                print(f"Error fetching news for {ticker}: {e}")
+    # Fetch data with rate limiting
+    for i, ticker in enumerate(tickers_to_fetch):
+        try:
+            # Add delay between requests to respect rate limits (5 calls per minute for free tier)
+            if i > 0:
+                await asyncio.sleep(12)  # 12 seconds between requests = 5 requests per minute
+
+            # Alpha Vantage uses format YYYYMMDDTHHMM
+            if start_date:
+                time_from = datetime.strptime(start_date, '%Y-%m-%d').strftime('%Y%m%dT0000')
+            else:
+                # Default to 30 days before end_date if start_date is None
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                start_dt = end_dt - timedelta(days=30)
+                time_from = start_dt.strftime('%Y%m%dT0000')
+
+            time_to = datetime.strptime(end_date, '%Y-%m-%d').strftime('%Y%m%dT2359')
+            
+            # Build Alpha Vantage URL  
+            url = f"https://www.alphavantage.co/query"
+            params = {
+                'function': 'NEWS_SENTIMENT',
+                'tickers': ticker,
+                "time_from": time_from,  
+                "time_to": time_to,   
+                'apikey': api_key,
+                'sort': 'LATEST',
+                'limit': limit
+            }
+            
+
+            logger.debug(f"Fetching news sentiment from Alpha Vantage", 
+                        module="get_company_news_async", ticker=ticker)
+            
+            # Make API request
+            response = requests.get(url, params=params)
+            
+            if response.status_code != 200:
+                logger.error(f"Alpha Vantage API error for {ticker}: {response.status_code}", 
+                           module="get_company_news_async", ticker=ticker)
                 results[ticker] = []
+                continue
+                
+            data = response.json()
+
+            if verbose_data:
+                feed_count = len(data.get('feed', []))
+                logger.debug(f"Alpha Vantage returned {feed_count} raw news items", module="get_company_news_async", ticker=ticker)
+                if feed_count > 0:
+                    sample_item = data['feed'][0]
+                    logger.debug(f"Sample raw item: title='{sample_item.get('title', 'N/A')}', date='{sample_item.get('time_published', 'N/A')}'", 
+                                 module="get_company_news_async", ticker=ticker)
+            
+            # Check for API errors
+            if 'Error Message' in data:
+                logger.error(f"Alpha Vantage error for {ticker}: {data['Error Message']}", 
+                           module="get_company_news_async", ticker=ticker)
+                results[ticker] = []
+                continue
+                
+            if 'Information' in data:
+                logger.warning(f"Alpha Vantage rate limit hit for {ticker}: {data['Information']}", 
+                             module="get_company_news_async", ticker=ticker)
+                results[ticker] = []
+                continue
+
+            # Process news items
+            news_list = []
+            feed_items = data.get('feed', [])
+            
+            for item in feed_items:
+                try:
+                    # Parse the timestamp  
+                    time_published = item.get('time_published', '')
+                    if len(time_published) >= 8:
+                        # Format: YYYYMMDDTHHMMSS
+                        date_str = time_published[:8]  # Get YYYYMMDD part
+                        date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                    else:
+                        continue
+                    
+                    # Get ticker-specific sentiment
+                    ticker_sentiments = item.get('ticker_sentiment', [])
+                    ticker_sentiment = None
+                    
+                    for ts in ticker_sentiments:
+                        if ts.get('ticker') == ticker:
+                            sentiment_label = ts.get('ticker_sentiment_label', 'Neutral')
+                            # Map Alpha Vantage labels to your system
+                            if sentiment_label in ['Bullish', 'Somewhat-Bullish']:
+                                ticker_sentiment = 'positive'
+                            elif sentiment_label in ['Bearish', 'Somewhat-Bearish']:
+                                ticker_sentiment = 'negative'  
+                            else:
+                                ticker_sentiment = 'neutral'
+                            break
+                    
+                    # Use overall sentiment if ticker-specific not found
+                    if ticker_sentiment is None:
+                        overall_sentiment = item.get('overall_sentiment_label', 'Neutral')
+                        if overall_sentiment in ['Bullish', 'Somewhat-Bullish']:
+                            ticker_sentiment = 'positive'
+                        elif overall_sentiment in ['Bearish', 'Somewhat-Bearish']:
+                            ticker_sentiment = 'negative'
+                        else:
+                            ticker_sentiment = 'neutral'
+
+                    news = CompanyNews(
+                        ticker=ticker,
+                        title=item.get('title', ''),
+                        author=item.get('authors', [''])[0] if item.get('authors') else '',
+                        source=item.get('source', ''),
+                        date=date,
+                        url=item.get('url', ''),
+                        sentiment=ticker_sentiment
+                    )
+                    news_list.append(news)
+
+                except Exception as e:
+                    logger.warning(f"Error processing news item for {ticker}: {e}", 
+                                    module="get_company_news_async", ticker=ticker)
+                    continue
+                
+            # Cache the news
+            if news_list:
+                _cache.set_company_news(ticker, [news.model_dump() for news in news_list])
+                logger.debug(f"Cached {len(news_list)} news items", 
+                    module="get_company_news_async", ticker=ticker)
+            else:
+                logger.warning(f"No valid news found", 
+                            module="get_company_news_async", ticker=ticker)
+                
+            # Add to results
+            results[ticker] = news_list
+                
+        except Exception as e:
+            logger.error(f"Error fetching news for {ticker}: {str(e)}", 
+                module="get_company_news_async", ticker=ticker)
+            logger.error(f"Traceback: {traceback.format_exc()}", 
+                        module="get_company_news_async", ticker=ticker)
+            results[ticker] = []
     
     # Debug: Data preview before return
     if verbose_data: 
@@ -927,9 +1056,10 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
         if cache_hits > 0:
             for ticker, news_items in results.items():
                 if len(news_items) > 0 and ticker not in tickers_to_fetch:
-                    logger.debug(f"Sample cached company news for {ticker}:", module="get_company_news_async", ticker=ticker)
+                    logger.debug(f"=== CACHED COMPANY NEWS FOR {ticker} ===", module="get_company_news_async", ticker=ticker)
                     logger.debug(f"Total news items: {len(news_items)}", module="get_company_news_async", ticker=ticker)
-                    logger.debug(f"Most recent news ({news_items[0].date}): {news_items[0].title}", module="get_company_news_async", ticker=ticker)
+                    logger.debug(f"Most recent news: ({news_items[0]})", module="get_company_news_async", ticker=ticker)
+                    logger.debug(f"Oldest news: {news_items[-1].title} at {news_items[-1].date}", module="get_company_news_async", ticker=ticker)
                     
                     break
         
@@ -937,10 +1067,24 @@ async def get_company_news_async(tickers: List[str], end_date: str, start_date: 
         if tickers_to_fetch and any(ticker in results for ticker in tickers_to_fetch):
             for ticker in tickers_to_fetch:
                 if ticker in results and results[ticker]:
-                    logger.debug(f"Sample downloaded company news for {ticker}:", module="get_company_news_async", ticker=ticker)
+                    ticker_news = results[ticker]
+                    logger.debug(f"=== DOWNLOADED COMPANY NEWS FOR {ticker} ===", module="get_company_news_async", ticker=ticker)
                     logger.debug(f"Total news items: {len(results[ticker])}", module="get_company_news_async", ticker=ticker)
-                    logger.debug(f"Most recent news ({results[ticker][0].date if results[ticker] else 'N/A'}): " , module="get_company_news_async", ticker=ticker)
-                        
+                    
+                    # Show first news items with full details
+                    for i, news_item in enumerate(ticker_news[:1]):
+                        logger.debug(f"--- Downloaded News Item #{i+1} ---", module="get_company_news_async", ticker=ticker)
+                        logger.debug(f"Date: {news_item.date}", module="get_company_news_async", ticker=ticker)
+                        logger.debug(f"Title: {news_item.title}", module="get_company_news_async", ticker=ticker)
+                        logger.debug(f"Source: {news_item.source}", module="get_company_news_async", ticker=ticker)
+                        logger.debug(f"Sentiment: {news_item.sentiment}", module="get_company_news_async", ticker=ticker)
+                        logger.debug("", module="get_company_news_async", ticker=ticker)
+                    
+                    # Show date range for downloaded data
+                    dates = [item.date for item in ticker_news]
+                    oldest_date = min(dates) if dates else "Unknown"
+                    newest_date = max(dates) if dates else "Unknown"
+                    logger.debug(f"Downloaded news date range: {oldest_date} to {newest_date}", module="get_company_news_async", ticker=ticker)
                     break
     
     return results # Review: Do I need to use return results.get(ticker, [])
@@ -1242,7 +1386,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                 # Run price data, financial metrics, and news tasks synchronously
                 price_data = loop.run_until_complete(fetch_prices_batch(batch, start_date, end_date, verbose_data))
                 metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "ttm", 10, verbose_data))
-                news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, verbose_data))
+                news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, 1000, verbose_data))
             finally:
                 loop.close()
             
