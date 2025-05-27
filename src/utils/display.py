@@ -139,21 +139,21 @@ def print_backtest_results(table_rows: list) -> None:
         print(f"\n{Fore.WHITE}{Style.BRIGHT}PORTFOLIO SUMMARY:{Style.RESET_ALL}")
 
         # Extract values and remove commas before converting to float
-        cash_str = latest_summary[7].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
-        position_str = latest_summary[6].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
-        total_str = latest_summary[8].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
+        cash_str = latest_summary[8].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
+        position_str = latest_summary[7].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
+        total_str = latest_summary[9].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
 
         print(f"Cash Balance: {Fore.CYAN}${float(cash_str):,.2f}{Style.RESET_ALL}")
         print(f"Total Position Value: {Fore.YELLOW}${float(position_str):,.2f}{Style.RESET_ALL}")
         print(f"Total Value: {Fore.WHITE}${float(total_str):,.2f}{Style.RESET_ALL}")
-        print(f"Return: {latest_summary[9]}")
+        print(f"Return: {latest_summary[10]}")
         
         # Display performance metrics if available
-        if latest_summary[10]:  # Sharpe ratio
+        if latest_summary[11]:  # Sharpe ratio
             print(f"Sharpe Ratio: {latest_summary[10]}")
-        if latest_summary[11]:  # Sortino ratio
+        if latest_summary[12]:  # Sortino ratio
             print(f"Sortino Ratio: {latest_summary[11]}")
-        if latest_summary[12]:  # Max drawdown
+        if latest_summary[13]:  # Max drawdown
             print(f"Max Drawdown: {latest_summary[12]}")
 
     # Add vertical spacing
@@ -169,7 +169,8 @@ def print_backtest_results(table_rows: list) -> None:
                 "Ticker",
                 "Action",
                 "Quantity",
-                "Price",
+                "Open",
+                "Close",
                 "Shares",
                 "Position Value",
                 "Bullish",
@@ -183,7 +184,8 @@ def print_backtest_results(table_rows: list) -> None:
                 "left",  # Ticker
                 "center",  # Action
                 "right",  # Quantity
-                "right",  # Price
+                "right",  # Open Price
+                "right",  # Close Price
                 "right",  # Shares
                 "right",  # Position Value
                 "right",  # Bullish
@@ -202,7 +204,8 @@ def format_backtest_row(
     ticker: str,
     action: str,
     quantity: float,
-    price: float,
+    open_price: float,
+    close_price: float,
     shares_owned: float,
     position_value: float,
     bullish_count: int,
@@ -235,7 +238,8 @@ def format_backtest_row(
             f"{Fore.WHITE}{Style.BRIGHT}PORTFOLIO SUMMARY{Style.RESET_ALL}",
             "",  # Action
             "",  # Quantity
-            "",  # Price
+            "",  # Open Price
+            "",  # Close Price
             "",  # Shares
             f"{Fore.YELLOW}${total_position_value:,.2f}{Style.RESET_ALL}",  # Total Position Value
             f"{Fore.CYAN}${cash_balance:,.2f}{Style.RESET_ALL}",  # Cash Balance
@@ -253,7 +257,8 @@ def format_backtest_row(
             f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
             f"{action_color}{action.upper()}{Style.RESET_ALL}",
             f"{action_color}{quantity:,.0f}{Style.RESET_ALL}",
-            f"{Fore.WHITE}{price:,.2f}{Style.RESET_ALL}",
+            f"{Fore.WHITE}{open_price:,.2f}{Style.RESET_ALL}",
+            f"{Fore.WHITE}{close_price:,.2f}{Style.RESET_ALL}",
             f"{Fore.WHITE}{shares_owned:,.0f}{Style.RESET_ALL}",
             f"{Fore.YELLOW}{position_value:,.2f}{Style.RESET_ALL}",
             f"{Fore.GREEN}{bullish_count}{Style.RESET_ALL}",
