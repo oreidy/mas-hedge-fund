@@ -221,7 +221,14 @@ def calculate_owner_earnings_value(
         float: Intrinsic value with margin of safety
     """
     if not all([isinstance(x, (int, float)) for x in [net_income, depreciation, capex, working_capital_change]]):
+        logger.warning(f"returning 0 owner earnings value because of missing financial metrics", module="valuation_agent")
         return 0
+
+    # Handle None growth rate using a default
+    if growth_rate is None:
+        growth_rate = 0.05
+        logger.debug("Growth rate was None, using default 5%", module="calculate_owner_earnings_value")
+
 
     # Calculate initial owner earnings
     owner_earnings = net_income + depreciation - capex - working_capital_change
@@ -259,6 +266,12 @@ def calculate_intrinsic_value(
     Computes the discounted cash flow (DCF) for a given company based on the current free cash flow.
     Use this function to calculate the intrinsic value of a stock.
     """
+
+    # Handle None growth rate using a default
+    if growth_rate is None:
+        growth_rate = 0.05  
+        logger.debug("Growth rate was None, using default 5%", module="calculate_intrinsic_value")
+
     # Estimate the future cash flows based on the growth rate
     cash_flows = [free_cash_flow * (1 + growth_rate) ** i for i in range(num_years)]
 

@@ -12,7 +12,7 @@ from math import log
 from tools.api import get_price_data, prices_to_df
 from utils.progress import progress
 from utils.logger import logger
-from hurst import compute_Hc
+
 
 
 ##### Technical Analyst #####

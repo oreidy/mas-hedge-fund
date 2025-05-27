@@ -25,8 +25,8 @@ from data.models import (
     InsiderTradeResponse,
 )
 
-# Import the market calendar, SEC EDGAR scraper and logger.
-from utils.market_calendar import is_trading_day, adjust_date_range, adjust_yfinance_date_range
+# Import other functions
+from utils.market_calendar import is_trading_day, adjust_date_range, adjust_yfinance_date_range, get_previous_trading_day, get_next_trading_day
 from tools.sec_edgar_scraper import fetch_multiple_insider_trades
 from utils.logger import logger
 
@@ -311,7 +311,7 @@ def prices_to_df(prices: List[Price]) -> pd.DataFrame:
 def get_financial_metrics(
     ticker: str,
     end_date: str,
-    period: str = "ttm",
+    period: str = "annual",
     limit: int = 10,
     verbose_data: bool = False
 ) -> List[FinancialMetrics]:
@@ -345,17 +345,11 @@ def get_financial_metrics(
         loop.close()
 
 
-async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "ttm", limit: int = 10, verbose_data: bool = False):
+async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "annual", limit: int = 10, verbose_data: bool = False):
     """Fetch financial metrics for multiple tickers in parallel"""
 
     logger.debug(f"Running fetch_financial_metrics_async() for {len(tickers)} tickers", 
-                module="fetch_financial_metrics_async")
-    
-    # Also adjsut this end_date since end_date in yfinance is exclusive
-    end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-    end_dt = end_dt + timedelta(days=1)
-    end_date = end_dt.strftime('%Y-%m-%d')
-    
+                module="fetch_financial_metrics_async")  
 
     # Counter for cache tracking
     cache_hits = 0
@@ -431,23 +425,31 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     book_value_growth = None
 
                     if i < len(income_stmt.columns) - 1:
-                        prev_col = income_stmt.columns[i+1]  # Previous period column
+                        prev_col = income_stmt.columns[i + 1] 
                         
                         # Revenue growth
                         prev_revenue = float(income_stmt.loc['Total Revenue', prev_col]) if 'Total Revenue' in income_stmt.index else None
                         if total_revenue and prev_revenue and prev_revenue > 0:
                             revenue_growth = (total_revenue - prev_revenue) / prev_revenue
+
+                        if verbose_data:
+                            logger.debug(f"prev_revenue: {prev_revenue}, revenue_groth: {revenue_growth}", module="fetch_financial_metrics_async")
                         
                         # Earnings growth
                         prev_net_income = float(income_stmt.loc['Net Income', prev_col]) if 'Net Income' in income_stmt.index else None
                         if net_income and prev_net_income and prev_net_income > 0:
                             earnings_growth = (net_income - prev_net_income) / prev_net_income
                         
+                        if verbose_data:
+                            logger.debug(f"prev_net_income: {prev_net_income}, earnings_groth: {earnings_growth}", module="fetch_financial_metrics_async")
+                        
                         # Book value growth
                         prev_equity = float(balance_sheet.loc['Stockholders Equity', prev_col]) if 'Stockholders Equity' in balance_sheet.index else None
                         if stockholders_equity and prev_equity and prev_equity > 0:
                             book_value_growth = (stockholders_equity - prev_equity) / prev_equity
-            
+
+                        if verbose_data:
+                            logger.debug(f"prev_equity: {prev_equity}, book_value_groth: {book_value_growth}", module="fetch_financial_metrics_async")
                     
                     # Free cash flow
                     operating_cash_flow = float(cash_flow.loc['Operating Cash Flow', col]) if 'Operating Cash Flow' in cash_flow.index else None
@@ -678,7 +680,7 @@ def get_market_cap(
     ticker: str, 
     end_date: str,
     verbose_data: bool = False
-) -> float:
+    ) -> float:
     """
     Fetch market cap for a ticker at a specific date.
     yfinance only provides the market cap for the current day.
@@ -722,9 +724,24 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
     verbose_data = False
 
     try:
+        # Check if the requested date is a trading day
+        if not is_trading_day(date):
+            # Get the previous trading day
+            adjusted_date = get_previous_trading_day(date)
+            logger.debug(f"Date {date} is not a trading day, using previous trading day: {adjusted_date}", 
+                        module="get_historical_market_cap", ticker=ticker)
+            date = adjusted_date
         
-        end_date = datetime.strptime(date, '%Y-%m-%d') + timedelta(days=1) # Since end_date in yfinance is exclusive
-        end_date_str = end_date.strftime('%Y-%m-%d')
+        end_date_dt = datetime.strptime(date, '%Y-%m-%d') + timedelta(days=1) # Since end_date in yfinance is exclusive
+        end_date_str = end_date_dt.strftime('%Y-%m-%d')
+
+        # If the end date is also not a trading day, adjust it to next trading day
+        # Note: This does not create lookahead bias because we only use data for 'date' (.iloc[0]),
+        # not for 'end_date_str'. The end_date_str is only needed for yfinance API requirements.
+        if not is_trading_day(end_date_str):
+            end_date_str = get_next_trading_day(date)
+            logger.debug(f"Adjusted end date to next trading day: {end_date_str}", 
+                        module="get_historical_market_cap", ticker=ticker)
 
         ticker_obj = yf.Ticker(ticker)
 
@@ -773,7 +790,7 @@ def get_insider_trades(
     start_date: str = None,
     limit: int = 1000,
     verbose_data: bool = False,
-) -> List[InsiderTrade]:
+    ) -> List[InsiderTrade]:
     """
     Fetch insider trades for a single ticker.
     Delegates caching to fetch_multiple_insider_trades.
@@ -814,7 +831,7 @@ def get_company_news(
     start_date: str = None,
     limit: int = 1000,
     verbose_data: bool = False
-) -> List[CompanyNews]:
+    ) -> List[CompanyNews]:
     """
     Fetch company news sentiment from Alpha Vantage Intelligence API.
     
@@ -1098,7 +1115,7 @@ def search_line_items(
     period: str = "ttm",
     limit: int = 10,
     verbose_data: bool = False,
-) -> List[LineItem]:
+    ) -> List[LineItem]:
     """
     Fetch specific line items from financial statements using caching and yfinance.
     
@@ -1385,7 +1402,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
             try:
                 # Run price data, financial metrics, and news tasks synchronously
                 price_data = loop.run_until_complete(fetch_prices_batch(batch, start_date, end_date, verbose_data))
-                metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "ttm", 10, verbose_data))
+                metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "annual", 10, verbose_data))
                 news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, 1000, verbose_data))
             finally:
                 loop.close()

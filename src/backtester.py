@@ -393,7 +393,7 @@ class Backtester:
 
             logger.info(f"Running hedge fund for {current_date.strftime("%Y-%m-%d")}", module="run_backtest")
 
-            lookback_start = (current_date - timedelta(days=183)).strftime("%Y-%m-%d") # Half year lookback period plus some slack
+            lookback_start = (current_date - timedelta(days=200)).strftime("%Y-%m-%d") # Half year lookback period plus some slack
             current_date_str = current_date.strftime("%Y-%m-%d")
             previous_date_str = (current_date - timedelta(days=1)).strftime("%Y-%m-%d")
 

@@ -326,7 +326,7 @@ def debug_price_data_fetching(ticker_symbol, start_date=None, end_date=None):
     except Exception as e:
         print(f"Error with extended range test: {e}")
 
-def print_financial_statements(ticker_symbol, end_date="2023-03-12", periods=2):
+def print_financial_statements(ticker_symbol, end_date="2024-05-12", periods=2):
     """
     Simple function to print raw financial statements for manual cross-checking.
     
@@ -695,20 +695,20 @@ def debug_sec_edgar_direct(ticker_symbol, start_date=None, end_date=None):
 
 if __name__ == "__main__":
     # Test with a few tickers
-    tickers = ["AAPL"]
+    tickers = ["CROX"]
 
-    start_date = "2021-01-01"
-    end_date = "2024-04-05" 
+    start_date = "2023-01-01"
+    end_date = "2024-04-22" 
     
-    debug_sec_edgar(tickers, start_date, end_date)
+    #debug_sec_edgar(tickers, start_date, end_date)
 
-    #for ticker in tickers:
+    for ticker in tickers:
         #result = debug_yfinance_data(ticker)
         
         #debug_sec_edgar_direct(ticker, start_date, end_date)
         #sharesinfo = debug_yfinance_shares(ticker)
         #debug_price_data_fetching(ticker, start_date, end_date)
-        #print_financial_statements(ticker, end_date, periods=2)
+        print_financial_statements(ticker, end_date, periods=4)
 
         #print("\n" + "="*50 + "\n")
     print("\n" + "="*50 + "\n")

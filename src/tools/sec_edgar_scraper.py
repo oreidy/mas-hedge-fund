@@ -179,13 +179,16 @@ def fetch_multiple_insider_trades(tickers: List[str], end_date: str = None, star
             if "No filings available" in str(e):
                 logger.info(f"No insider trading filings found for the requested date range", 
                         module="sec_edgar_scraper")
+            elif "NoFilingsError" in str(type(e).__name__):
+                logger.info(f"No insider trading filings found for the requested date range", 
+                        module="sec_edgar_scraper")
             else:
-                logger.warning(f"Error fetching insider trades: {e}. Activate verbose_data for detailed error", 
+                logger.error(f"Error fetching insider trades: {e}. Activate verbose_data for detailed error", 
                             module="sec_edgar_scraper")
             
             if verbose_data:
                 # Print more detailed error information
-                logger.error(f"Error details: {traceback.format_exc()}", 
+                logger.debug(f"Error details: {traceback.format_exc()}", 
                             module="sec_edgar_scraper")
     
             # For any tickers that failed, return empty lists
