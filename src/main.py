@@ -123,6 +123,12 @@ def create_workflow(selected_analysts=None):
     # Default to all analysts if none selected
     if selected_analysts is None:
         selected_analysts = list(analyst_nodes.keys())
+    
+    # If all analysts are selected, use optimized workflow with ticker filtering
+    if set(selected_analysts) == set(analyst_nodes.keys()):
+        return create_optimized_workflow()
+    
+    # For partial analyst selection, use original workflow
     # Add selected analyst nodes
     for analyst_key in selected_analysts:
         node_name, node_func = analyst_nodes[analyst_key]
@@ -143,6 +149,138 @@ def create_workflow(selected_analysts=None):
 
     workflow.set_entry_point("start_node")
     return workflow
+
+
+def create_optimized_workflow():
+    """Create optimized workflow that filters tickers based on signal agreement."""
+    workflow = StateGraph(AgentState)
+    workflow.add_node("start_node", start)
+    
+    # First tier: Technical and Sentiment agents (run on all tickers)
+    workflow.add_node("technical_analyst_agent", technical_analyst_agent)
+    workflow.add_node("sentiment_agent", sentiment_agent)
+    workflow.add_edge("start_node", "technical_analyst_agent")
+    workflow.add_edge("start_node", "sentiment_agent")
+    
+    # Ticker filtering node
+    workflow.add_node("ticker_filter", ticker_filter_node)
+    workflow.add_edge("technical_analyst_agent", "ticker_filter")
+    workflow.add_edge("sentiment_agent", "ticker_filter")
+    
+    # Second tier: Expensive analysts (run only on filtered tickers)
+    workflow.add_node("fundamentals_agent", fundamentals_agent_filtered)
+    workflow.add_node("valuation_agent", valuation_agent_filtered)
+    workflow.add_node("warren_buffett_agent", warren_buffett_agent_filtered)
+    workflow.add_node("bill_ackman_agent", bill_ackman_agent_filtered)
+    
+    # Connect filtered agents in sequence
+    workflow.add_edge("ticker_filter", "fundamentals_agent")
+    workflow.add_edge("fundamentals_agent", "valuation_agent")
+    workflow.add_edge("valuation_agent", "warren_buffett_agent")
+    workflow.add_edge("warren_buffett_agent", "bill_ackman_agent")
+    
+    # Management nodes
+    workflow.add_node("risk_management_agent", risk_management_agent)
+    workflow.add_node("portfolio_management_agent", portfolio_management_agent)
+    
+    workflow.add_edge("bill_ackman_agent", "risk_management_agent")
+    workflow.add_edge("risk_management_agent", "portfolio_management_agent")
+    workflow.add_edge("portfolio_management_agent", END)
+    
+    workflow.set_entry_point("start_node")
+    return workflow
+
+
+def ticker_filter_node(state: AgentState):
+    """Filter tickers based on agreement between technical and sentiment signals."""
+    analyst_signals = state["data"].get("analyst_signals", {})
+    tickers = state["data"].get("tickers", [])
+    
+    # Get signals from technicals and sentiment agents
+    tech_signals = analyst_signals.get("technical_analyst_agent", {})
+    sentiment_signals = analyst_signals.get("sentiment_agent", {})
+    
+    # Determine which tickers have agreeing non-neutral signals
+    agreeing_tickers = []
+    disagreeing_tickers = []
+    
+    for ticker in tickers:
+        tech_signal = tech_signals.get(ticker, {}).get("signal", "neutral")
+        sentiment_signal = sentiment_signals.get(ticker, {}).get("signal", "neutral")
+        
+        # Check if both agree and have non-neutral signals
+        if (tech_signal == sentiment_signal and tech_signal != "neutral"):
+            agreeing_tickers.append(ticker)
+        else:
+            disagreeing_tickers.append(ticker)
+            # Set disagreeing tickers to neutral for both agents
+            if ticker in tech_signals:
+                tech_signals[ticker]["signal"] = "neutral"
+            if ticker in sentiment_signals:
+                sentiment_signals[ticker]["signal"] = "neutral"
+    
+    # Store filtered ticker lists in state
+    state["data"]["agreeing_tickers"] = agreeing_tickers
+    state["data"]["disagreeing_tickers"] = disagreeing_tickers
+    
+    return state
+
+
+def fundamentals_agent_filtered(state: AgentState):
+    """Run fundamentals agent only on agreeing tickers."""
+    # Temporarily replace tickers with agreeing tickers
+    original_tickers = state["data"]["tickers"]
+    agreeing_tickers = state["data"].get("agreeing_tickers", [])
+    
+    if not agreeing_tickers:
+        return state  # Skip if no agreeing tickers
+    
+    state["data"]["tickers"] = agreeing_tickers
+    result = fundamentals_agent(state)
+    state["data"]["tickers"] = original_tickers  # Restore original
+    return result
+
+
+def valuation_agent_filtered(state: AgentState):
+    """Run valuation agent only on agreeing tickers."""
+    original_tickers = state["data"]["tickers"]
+    agreeing_tickers = state["data"].get("agreeing_tickers", [])
+    
+    if not agreeing_tickers:
+        return state
+    
+    state["data"]["tickers"] = agreeing_tickers
+    result = valuation_agent(state)
+    state["data"]["tickers"] = original_tickers
+    return result
+
+
+def warren_buffett_agent_filtered(state: AgentState):
+    """Run Warren Buffett agent only on agreeing tickers."""
+    original_tickers = state["data"]["tickers"]
+    agreeing_tickers = state["data"].get("agreeing_tickers", [])
+    
+    if not agreeing_tickers:
+        return state
+    
+    state["data"]["tickers"] = agreeing_tickers
+    result = warren_buffett_agent(state)
+    state["data"]["tickers"] = original_tickers
+    return result
+
+
+def bill_ackman_agent_filtered(state: AgentState):
+    """Run Bill Ackman agent only on agreeing tickers."""
+    original_tickers = state["data"]["tickers"]
+    agreeing_tickers = state["data"].get("agreeing_tickers", [])
+    
+    if not agreeing_tickers:
+        return state
+    
+    state["data"]["tickers"] = agreeing_tickers
+    result = bill_ackman_agent(state)
+    state["data"]["tickers"] = original_tickers
+    return result
 
 
 if __name__ == "__main__":

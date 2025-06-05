@@ -12,9 +12,9 @@ def test_backtester():
     """Test the backtester with minimal configuration"""
     
     # Configuration
-    tickers = ["AAPL", "MSFT"]
-    start_date = "2023-04-05"
-    end_date = "2023-04-07"
+    tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+    start_date = "2024-12-16"
+    end_date = "2024-12-20"
     initial_capital = 100000
     selected_analysts = ["technical_analyst", "fundamentals_analyst", "sentiment_analyst", "valuation_analyst", "warren_buffett", "bill_ackman"]
     model_name = "llama3-70b-8192"
