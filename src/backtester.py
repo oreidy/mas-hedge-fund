@@ -271,15 +271,17 @@ class Backtester:
 
         for ticker in self.tickers:
             position = self.portfolio["positions"][ticker]
-            price = evaluation_prices[ticker]
+            current_price = evaluation_prices[ticker]
 
-            # Long position value
-            long_value = position["long"] * price
-            total_value += long_value
+            # Long positions: Add current market value
+            if position["long"] > 0:
+                long_market_value = position["long"] * current_price
+                total_value += long_market_value
 
             # Short position unrealized PnL = short_shares * (short_cost_basis - evaluation_prices)
             if position["short"] > 0:
-                total_value += position["short"] * (position["short_cost_basis"] - price)
+                short_unrealized_pnl = position["short"] * (position["short_cost_basis"] - current_price)
+                total_value += short_unrealized_pnl
 
         return total_value
 
@@ -410,8 +412,8 @@ class Backtester:
                 
                 for ticker in self.tickers:
 
-                    price_df = get_price_data(ticker, previous_date_str, current_date_str, verbose_data)
-                    if verbose_data:
+                    price_df = get_price_data(ticker, previous_date_str, current_date_str, self.verbose_data)
+                    if self.verbose_data:
                         logger.debug(f"price_df: {price_df}", module="run_backtest", ticker=ticker)
 
                     try:
@@ -434,7 +436,7 @@ class Backtester:
                     except:
                         logger.warning(f"Using fallback method for prices on prev_date: {previous_date_str} and current date: {current_date_str}", module="run_backtest")
 
-                        price_df = get_price_data(ticker, previous_date_str, current_date_str, verbose_data)
+                        price_df = get_price_data(ticker, previous_date_str, current_date_str, self.verbose_data)
 
                         evaluation_price = price_df.iloc[-1]["close"]
 

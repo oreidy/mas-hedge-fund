@@ -534,7 +534,13 @@ def calculate_adx(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     # Calculate ADX
     df["+di"] = 100 * (df["plus_dm"].ewm(span=period).mean() / df["tr"].ewm(span=period).mean())
     df["-di"] = 100 * (df["minus_dm"].ewm(span=period).mean() / df["tr"].ewm(span=period).mean())
-    df["dx"] = 100 * abs(df["+di"] - df["-di"]) / (df["+di"] + df["-di"])
+
+    # Handle division by zero case
+    di_sum = df["+di"] + df["-di"]
+    df["dx"] = np.where(di_sum != 0, 
+                       100 * abs(df["+di"] - df["-di"]) / di_sum, 
+                       0)  # Set to 0 when no directional movement
+    
     df["adx"] = df["dx"].ewm(span=period).mean()
 
     return df[["adx", "+di", "-di"]]
