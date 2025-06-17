@@ -43,3 +43,6 @@ Thumbs.db
 
 # Txt files
 *.txt
+
+# Development notes
+CLAUDE.md

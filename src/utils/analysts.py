@@ -8,4 +8,5 @@ ANALYST_ORDER = [
     ("Fundamentals Analyst", "fundamentals_analyst"),
     ("Sentiment Analyst", "sentiment_analyst"),
     ("Valuation Analyst", "valuation_analyst"),
+    ("Macro Analyst", "macro_analyst"),
 ]

@@ -13,6 +13,7 @@ from agents.technicals import technical_analyst_agent
 from agents.risk_manager import risk_management_agent
 from agents.sentiment import sentiment_agent
 from agents.warren_buffett import warren_buffett_agent
+from agents.macro import macro_agent
 from graph.state import AgentState
 from agents.valuation import valuation_agent
 from utils.display import print_trading_output
@@ -118,6 +119,7 @@ def create_workflow(selected_analysts=None):
         "valuation_analyst": ("valuation_agent", valuation_agent),
         "warren_buffett": ("warren_buffett_agent", warren_buffett_agent),
         "bill_ackman": ("bill_ackman_agent", bill_ackman_agent),
+        "macro_analyst": ("macro_agent", macro_agent),
     }
 
     # Default to all analysts if none selected
@@ -156,9 +158,11 @@ def create_optimized_workflow():
     workflow = StateGraph(AgentState)
     workflow.add_node("start_node", start)
     
-    # First tier: Technical and Sentiment agents (run on all tickers)
+    # First tier: Macro agent (runs independently) and Technical/Sentiment agents (run on all tickers)
+    workflow.add_node("macro_agent", macro_agent)
     workflow.add_node("technical_analyst_agent", technical_analyst_agent)
     workflow.add_node("sentiment_agent", sentiment_agent)
+    workflow.add_edge("start_node", "macro_agent")
     workflow.add_edge("start_node", "technical_analyst_agent")
     workflow.add_edge("start_node", "sentiment_agent")
     
@@ -179,11 +183,12 @@ def create_optimized_workflow():
     workflow.add_edge("valuation_agent", "warren_buffett_agent")
     workflow.add_edge("warren_buffett_agent", "bill_ackman_agent")
     
-    # Management nodes
+    # Management nodes - risk management needs macro agent output
     workflow.add_node("risk_management_agent", risk_management_agent)
     workflow.add_node("portfolio_management_agent", portfolio_management_agent)
     
     workflow.add_edge("bill_ackman_agent", "risk_management_agent")
+    workflow.add_edge("macro_agent", "risk_management_agent")
     workflow.add_edge("risk_management_agent", "portfolio_management_agent")
     workflow.add_edge("portfolio_management_agent", END)
     
