@@ -27,13 +27,13 @@ def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: 
     """
     
     logger.debug(f"Fetching FRED data for {series_id} from {start_date} to {end_date}", 
-                module="get_fred_data", series_id=series_id)
+                module="get_fred_data")
     
     # Check cache first
     cached_data = _cache.get_fred_data(series_id, start_date, end_date)
     if cached_data:
         logger.debug(f"Retrieved FRED data for {series_id} from cache", 
-                    module="get_fred_data", series_id=series_id)
+                    module="get_fred_data")
         df = pd.DataFrame(cached_data)
         df['date'] = pd.to_datetime(df['date'])
         df.set_index('date', inplace=True)
@@ -43,7 +43,7 @@ def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: 
     api_key = os.environ.get("FRED_API_KEY")
     if not api_key:
         logger.error("FRED_API_KEY not found in environment variables", 
-                    module="get_fred_data", series_id=series_id)
+                    module="get_fred_data")
         return pd.DataFrame()
     
     try:
@@ -51,14 +51,14 @@ def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: 
         fred = Fred(api_key=api_key)
         
         logger.debug(f"Downloading FRED series: {series_id}", 
-                    module="get_fred_data", series_id=series_id)
+                    module="get_fred_data")
         
         # Fetch data
         data = fred.get_series(series_id, start=start_date, end=end_date)
         
         if data.empty:
             logger.warning(f"No data found for {series_id}", 
-                         module="get_fred_data", series_id=series_id)
+                         module="get_fred_data")
             return pd.DataFrame()
         
         # Convert to DataFrame with proper format
@@ -71,7 +71,7 @@ def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: 
                      for _, row in df.iterrows() if pd.notna(row['value'])]
         
         if cache_data:
-            _cache.set_fred_data(series_id, cache_data)
+            _cache.set_fred_data(series_id, cache_data, start_date, end_date)
         
         # Return DataFrame with date index
         df['date'] = pd.to_datetime(df['date'])
@@ -79,13 +79,13 @@ def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: 
         
         if verbose_data:
             logger.debug(f"Fetched {len(df)} observations for {series_id}", 
-                        module="get_fred_data", series_id=series_id)
+                        module="get_fred_data")
         
         return df
         
     except Exception as e:
         logger.error(f"Error fetching FRED series {series_id}: {e}", 
-                    module="get_fred_data", series_id=series_id)
+                    module="get_fred_data")
         return pd.DataFrame()
 
 

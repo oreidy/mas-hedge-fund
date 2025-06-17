@@ -16,7 +16,8 @@ class DiskCache:
             "prices": timedelta(hours=1),          # Price data refreshes hourly
             "financial_metrics": timedelta(days=7), # Financial metrics refresh weekly
             "insider_trades": timedelta(days=1),    # Insider trade data daily
-            "company_news": timedelta(hours=4)      # News refreshes 4 times daily
+            "company_news": timedelta(hours=4),     # News refreshes 4 times daily
+            "fred_data": timedelta(days=1)          # FRED data refreshes daily
         }
         
         # Create separate caches for different data types
@@ -150,6 +151,21 @@ class DiskCache:
         )
         
         return updated_data
+
+    def get_fred_data(self, series_id, start_date, end_date):
+        """Get cached FRED data"""
+        cache_key = f"fred_data:{series_id}:{start_date}:{end_date}"
+        return self.caches["fred_data"].get(cache_key)
+    
+    def set_fred_data(self, series_id, data, start_date, end_date):
+        """Cache FRED data with expiration using requested date range"""
+        if data:
+            cache_key = f"fred_data:{series_id}:{start_date}:{end_date}"
+            self.caches["fred_data"].set(
+                cache_key, 
+                data, 
+                expire=self._get_expiration("fred_data")
+            )
 
     def clear(self, data_type=None):
         """Clear cache for specific data type or all caches"""

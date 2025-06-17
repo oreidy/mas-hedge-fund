@@ -9,7 +9,7 @@ from utils.logger import logger
 
 ##### Risk Management Agent #####
 def risk_management_agent(state: AgentState):
-    """Controls position sizing based on real-world risk factors for multiple tickers."""
+    """Controls position sizing based on real-world risk factors and macro allocation for multiple tickers."""
 
     # Get verbose_data from metadata or default to False
     verbose_data = state["metadata"].get("verbose_data", False)
@@ -18,6 +18,22 @@ def risk_management_agent(state: AgentState):
     portfolio = state["data"]["portfolio"]
     data = state["data"]
     tickers = data["tickers"]
+    
+    # Get macro allocation from macro agent
+    macro_allocation = data["analyst_signals"].get("macro_agent", {})
+    stock_allocation = macro_allocation.get("stock_allocation", 0.6)  # Default to 60% stocks
+    
+    if verbose_data:
+        logger.debug(f"Macro agent signals received: {json.dumps(macro_allocation, indent=2)}", module="risk_management_agent")
+        if "signal_summary" in macro_allocation:
+            signal_summary = macro_allocation["signal_summary"]
+            logger.debug(f"Macro signal breakdown - Stocks: {signal_summary.get('stock_signals', 0)}, Bonds: {signal_summary.get('bond_signals', 0)}, Neutral: {signal_summary.get('neutral_signals', 0)}", module="risk_management_agent")
+        if "reasoning" in macro_allocation:
+            reasoning = macro_allocation["reasoning"]
+            for category, details in reasoning.items():
+                logger.debug(f"Macro {category} analysis: {details.get('signal', 'N/A')} - {details.get('details', 'No details')}", module="risk_management_agent")
+    
+    progress.update_status("risk_management_agent", "PORTFOLIO", f"Applying macro allocation: {stock_allocation*100:.0f}% stocks")
 
     # Initialize risk analysis for each ticker
     risk_analysis = {}
@@ -51,14 +67,34 @@ def risk_management_agent(state: AgentState):
         # Calculate total portfolio value using stored prices
         total_portfolio_value = portfolio.get("cash", 0) + sum(portfolio.get("cost_basis", {}).get(t, 0) for t in portfolio.get("cost_basis", {}))
 
-        # Base limit is 20% of portfolio for any single position
-        position_limit = total_portfolio_value * 0.20
+        # Apply macro allocation constraint: scale individual position limits proportionally
+        default_stock_allocation = 0.6  # Default 60% stock allocation
+        base_individual_limit_pct = 0.20  # Base 20% per position
+        
+        # Scale individual position limit based on macro allocation vs default
+        # If macro says 40% stocks instead of 60%, scale position limits proportionally
+        macro_scaling_factor = stock_allocation / default_stock_allocation
+        scaled_individual_limit_pct = base_individual_limit_pct * macro_scaling_factor
+        
+        # This is the only limit we actually need for position sizing
+        macro_constrained_limit = total_portfolio_value * scaled_individual_limit_pct
 
         # For existing positions, subtract current position value from limit
-        remaining_position_limit = position_limit - current_position_value
+        remaining_position_limit = macro_constrained_limit - current_position_value
 
         # Ensure we don't exceed available cash
         max_position_size = min(remaining_position_limit, portfolio.get("cash", 0))
+        
+        if verbose_data:
+            logger.debug(f"Position constraints for {ticker}:", module="risk_management_agent")
+            logger.debug(f"  Total portfolio value: ${total_portfolio_value:,.2f}", module="risk_management_agent")
+            logger.debug(f"  Macro scaling factor: {macro_scaling_factor:.3f}", module="risk_management_agent")
+            logger.debug(f"  Scaled individual limit: {scaled_individual_limit_pct*100:.1f}%", module="risk_management_agent")
+            logger.debug(f"  Macro-constrained limit: ${macro_constrained_limit:,.2f}", module="risk_management_agent")
+            logger.debug(f"  Current position value: ${current_position_value:,.2f}", module="risk_management_agent")
+            logger.debug(f"  Remaining position limit: ${remaining_position_limit:,.2f}", module="risk_management_agent")
+            logger.debug(f"  Available cash: ${portfolio.get('cash', 0):,.2f}", module="risk_management_agent")
+            logger.debug(f"  Final max position size: ${max_position_size:,.2f}", module="risk_management_agent")
 
         risk_analysis[ticker] = {
             "remaining_position_limit": float(max_position_size),
@@ -66,9 +102,10 @@ def risk_management_agent(state: AgentState):
             "reasoning": {
                 "portfolio_value": float(total_portfolio_value),
                 "current_position": float(current_position_value),
-                "position_limit": float(position_limit),
+                "macro_constrained_limit": float(macro_constrained_limit),
                 "remaining_limit": float(remaining_position_limit),
                 "available_cash": float(portfolio.get("cash", 0)),
+                "macro_stock_allocation": float(stock_allocation),
             },
         }
 
