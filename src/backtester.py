@@ -328,6 +328,7 @@ class Backtester:
         data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
 
         # Log a summary of fetched data
+        logger.info(f"Checking verbose_data condition: self.verbose_data = {self.verbose_data}", module="prefetch_data")
         if self.verbose_data:
             logger.debug("=== DATA FETCHED SUMMARY from prefetch_data ===", module="prefetch_data")
             logger.debug(f"Tickers: {self.tickers}", module="prefetch_data")

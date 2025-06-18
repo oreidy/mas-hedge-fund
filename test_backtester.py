@@ -7,16 +7,40 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 from datetime import datetime
 from src.backtester import Backtester
 from src.main import run_hedge_fund
+from src.utils.logger import setup_logger
 
 def test_backtester():
     """Test the backtester with minimal configuration"""
     
-    # Configuration
+    # Simulate CLI argument flags (matching src/backtester.py CLI behavior)
+    args_debug = True
+    args_verbose_data = True  
+    args_quiet = False
+    
+    # Set up logger exactly like CLI (src/backtester.py:799-803)
+    setup_logger(
+        debug_mode=args_debug and not args_quiet,
+        log_to_file=False,
+        log_file=None
+    )
+    
+    # Set verbose_data flag exactly like CLI (src/backtester.py:805-806)
+    verbose_data = args_verbose_data and args_debug and not args_quiet
+    
+    print(f"Debug logging enabled: {args_debug and not args_quiet}")
+    print(f"Verbose data enabled: {verbose_data}")
+    
+    # Test debug logging to verify it's working
+    from src.utils.logger import logger
+    logger.debug("🔍 TEST: Debug logging is working in test_backtester.py")
+    logger.info("ℹ️ TEST: Info logging is working in test_backtester.py")
+    
+    # Configuration - matching CLI: --ticker WMT --start-date 2022-04-21 --end-date 2022-04-22 --debug --verbose-data
     tickers = ["WMT"]
-    start_date = "2024-04-21"
-    end_date = "2024-04-22"
+    start_date = "2022-04-21"
+    end_date = "2022-04-22"
     initial_capital = 100000
-    selected_analysts = ["macro_analyst"]
+    selected_analysts = ["macro_analyst"]  # Use just one analyst like original test
     model_name = "llama3-70b-8192"
     model_provider = "Groq"
     
@@ -26,7 +50,7 @@ def test_backtester():
     print(f"Analysts: {selected_analysts}")
     print()
     
-    # Create backtester
+    # Create backtester exactly like CLI (src/backtester.py:864-876)
     backtester = Backtester(
         agent=run_hedge_fund,
         tickers=tickers,
@@ -37,8 +61,8 @@ def test_backtester():
         model_provider=model_provider,
         selected_analysts=selected_analysts,
         initial_margin_requirement=0.0,
-        debug_mode=True,
-        verbose_data=True,
+        debug_mode=args_debug and not args_quiet,
+        verbose_data=args_verbose_data and args_debug and not args_quiet,
     )
     
     try:
