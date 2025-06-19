@@ -19,7 +19,9 @@ def macro_agent(state: AgentState):
     
     # Get verbose_data from metadata or default to False
     verbose_data = state["metadata"].get("verbose_data", False)
-    logger.debug("Accessing Macro Agent", module="macro_agent")
+    logger.info(f"ℹ️ Macro Agent: Logger level = {logger.level}", module="macro_agent")
+    logger.debug("🔍 Accessing Macro Agent", module="macro_agent")
+    logger.info("ℹ️ Macro Agent started", module="macro_agent")
     
     data = state["data"]
     start_date = data["start_date"]
