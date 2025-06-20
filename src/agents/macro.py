@@ -19,9 +19,7 @@ def macro_agent(state: AgentState):
     
     # Get verbose_data from metadata or default to False
     verbose_data = state["metadata"].get("verbose_data", False)
-    logger.info(f"ℹ️ Macro Agent: Logger level = {logger.level}", module="macro_agent")
-    logger.debug("🔍 Accessing Macro Agent", module="macro_agent")
-    logger.info("ℹ️ Macro Agent started", module="macro_agent")
+    logger.debug("Accessing Macro Agent", module="macro_agent")
     
     data = state["data"]
     start_date = data["start_date"]
@@ -29,17 +27,29 @@ def macro_agent(state: AgentState):
     
     progress.update_status("macro_agent", "MACRO", "Fetching macroeconomic indicators")
     
-    # Get macro indicators (excluding VIX for now)
+    # Get macro indicators
     macro_data = get_macro_indicators_for_allocation(start_date, end_date, verbose_data)
     
-    # Remove VIX from analysis for pure macro agent
-    if 'vix' in macro_data:
-        del macro_data['vix']
+    # Debug: Log what macro data we actually have
+    if verbose_data:
+        logger.debug(f"=== MACRO DATA ANALYSIS for {end_date} ===", module="macro_agent")
+        for indicator_name, data_df in macro_data.items():
+            if data_df is not None and not data_df.empty:
+                logger.debug(f"{indicator_name.upper()} data:", module="macro_agent")
+                logger.debug(f"  - Shape: {data_df.shape}", module="macro_agent")
+                logger.debug(f"  - Date range: {data_df.index.min()} to {data_df.index.max()}", module="macro_agent")
+                logger.debug(f"  - First 3 values: {data_df['value'].head(3).tolist()}", module="macro_agent")
+                logger.debug(f"  - Last 3 values: {data_df['value'].tail(3).tolist()}", module="macro_agent")
+                if len(data_df) >= 12:
+                    logger.debug(f"  - Last 12 months range: {data_df.tail(12).index.min()} to {data_df.tail(12).index.max()}", module="macro_agent")
+                    logger.debug(f"  - Last 12 months values: {data_df.tail(12)['value'].tolist()}", module="macro_agent")
+            else:
+                logger.debug(f"{indicator_name.upper()} data: EMPTY OR NONE", module="macro_agent")
     
     if not any(not df.empty for df in macro_data.values()):
         progress.update_status("macro_agent", "MACRO", "Failed: No macro data found")
         logger.warning("No macro data available for allocation decision", module="macro_agent")
-        allocation = {"stock_allocation": 0.5, "bond_allocation": 0.5, "reasoning": "No data available, using neutral allocation"}
+        allocation = {"stock_allocation": 0.6, "bond_allocation": 0.4, "reasoning": "No data available, using neutral allocation"}
     else:
         progress.update_status("macro_agent", "MACRO", "Analyzing macro indicators")
         allocation = analyze_macro_indicators(macro_data, verbose_data)

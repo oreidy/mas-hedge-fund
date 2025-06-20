@@ -44,8 +44,8 @@ def test_backtester():
     
     # Configuration
     tickers = ["WMT"]
-    start_date = "2022-04-21"  # Changed to match your paste.txt
-    end_date = "2022-04-22"
+    start_date = "2022-04-22"  # Testing earlier period
+    end_date = "2022-04-22"    # Single day to focus on macro
     initial_capital = 100000
     selected_analysts = ["macro_analyst"]
     model_name = "llama3-70b-8192"

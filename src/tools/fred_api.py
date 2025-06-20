@@ -53,18 +53,47 @@ def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: 
         logger.debug(f"Downloading FRED series: {series_id}", 
                     module="get_fred_data")
         
-        # Fetch data
-        data = fred.get_series(series_id, start=start_date, end=end_date)
+        # Determine units transformation based on series
+        if series_id in ['CPIAUCSL', 'PCEPI']:
+            # Get 12-month percentage change for inflation data
+            units = 'pc1'
+        else:
+            # Use levels for other series (Fed Funds, GDP already comes as % change)
+            units = 'lin'
+        
+        # Fetch data with appropriate transformation
+        data = fred.get_series(series_id, start=start_date, end=end_date, units=units)
         
         if data.empty:
             logger.warning(f"No data found for {series_id}", 
                          module="get_fred_data")
             return pd.DataFrame()
         
+        # DEBUG: Log what date range we actually got from FRED API
+        if verbose_data:
+            logger.debug(f"FRED API returned data for {series_id}: {len(data)} observations", 
+                        module="get_fred_data")
+            logger.debug(f"FRED data date range: {data.index.min()} to {data.index.max()}", 
+                        module="get_fred_data")
+            logger.debug(f"Requested date range: {start_date} to {end_date}", 
+                        module="get_fred_data")
+        
         # Convert to DataFrame with proper format
         df = data.to_frame(name='value')
         df.index.name = 'date'
-        df = df.reset_index()
+        
+        # Filter data by date range since FRED API ignores date parameters
+        start_date_parsed = pd.to_datetime(start_date)
+        end_date_parsed = pd.to_datetime(end_date)
+        df_filtered = df[(df.index >= start_date_parsed) & (df.index <= end_date_parsed)]
+        
+        if verbose_data:
+            logger.debug(f"FRED data filtered from {len(df)} to {len(df_filtered)} observations", 
+                        module="get_fred_data")
+            logger.debug(f"Filtered date range: {df_filtered.index.min()} to {df_filtered.index.max()}", 
+                        module="get_fred_data")
+        
+        df = df_filtered.reset_index()
         
         # Cache the results
         cache_data = [{'date': row['date'].strftime('%Y-%m-%d'), 'value': row['value'], 'series_id': series_id} 
@@ -103,13 +132,12 @@ def get_macro_indicators_for_allocation(start_date: str, end_date: str, verbose_
         Dictionary with macro indicators for allocation decisions
     """
     
-    # Key indicators from research proposal
+    # Key indicators from research proposal - using 12-month percentage change series
     indicators = {
-        'cpi': 'CPIAUCSL',      # Consumer Price Index
-        'pce': 'PCEPI',         # Personal Consumption Expenditures Price Index
-        'gdp': 'GDP',           # Gross Domestic Product
-        'fed_funds': 'FEDFUNDS', # Federal Funds Rate
-        'vix': 'VIXCLS',        # VIX (volatility index)
+        'cpi': 'CPIAUCSL',      # Consumer Price Index (12-month % change)
+        'pce': 'PCEPI',         # Personal Consumption Expenditures Price Index (12-month % change)
+        'gdp': 'A191RL1Q225SBEA', # Real GDP (% change from year ago, quarterly)
+        'fed_funds': 'FEDFUNDS', # Federal Funds Rate (level)
     }
     
     logger.debug(f"Fetching macro indicators for allocation", 
