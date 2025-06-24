@@ -46,6 +46,9 @@ def portfolio_management_agent(state: AgentState):
         progress.update_status("portfolio_management_agent", ticker, "Processing analyst signals")
 
         # Get position limits and current prices for the ticker
+        # Asset allocation (stocks vs bonds) is handled upstream by the risk manager.
+        # This portfolio manager focuses purely on individual stock selection and
+        # position sizing within the allocated stock capital.
         risk_data = analyst_signals.get("risk_management_agent", {}).get(ticker, {})
         position_limits[ticker] = risk_data.get("remaining_position_limit", 0)
         current_prices[ticker] = risk_data.get("current_price", 0)

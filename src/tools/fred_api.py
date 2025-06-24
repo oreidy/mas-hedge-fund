@@ -118,6 +118,26 @@ def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: 
         return pd.DataFrame()
 
 
+def get_vix_data(start_date: str, end_date: str, verbose_data: bool = False) -> pd.DataFrame:
+    """
+    Fetch VIX (Volatility Index) data from FRED API.
+    The VIX measures implied volatility and market uncertainty.
+    
+    Args:
+        start_date: Start date string (YYYY-MM-DD)
+        end_date: End date string (YYYY-MM-DD)
+        verbose_data: Optional flag for verbose logging
+        
+    Returns:
+        DataFrame with VIX values
+    """
+    
+    logger.debug(f"Fetching VIX data from {start_date} to {end_date}", 
+                module="get_vix_data")
+    
+    return get_fred_data('VIXCLS', start_date, end_date, verbose_data)
+
+
 def get_macro_indicators_for_allocation(start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, pd.DataFrame]:
     """
     Get key macro indicators for asset allocation decisions.

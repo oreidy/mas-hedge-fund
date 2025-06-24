@@ -42,12 +42,12 @@ def test_backtester():
     from src.utils.logger import LogLevel
     print(f"LogLevel.DEBUG value: {LogLevel.DEBUG.value}")
     
-    # Configuration
-    tickers = ["WMT"]
-    start_date = "2022-04-22"  # Testing earlier period
-    end_date = "2022-04-22"    # Single day to focus on macro
+    # Configuration for CVaR testing
+    tickers = ["AAPL", "MSFT"]  # Two tickers for testing
+    start_date = "2024-06-20"   # Three day span
+    end_date = "2024-06-24"     # Three day span
     initial_capital = 100000
-    selected_analysts = ["macro_analyst"]
+    selected_analysts = ["technical_analyst", "sentiment_analyst", "macro_analyst", "forward_looking_analyst"]  # Include all for comprehensive test
     model_name = "llama3-70b-8192"
     model_provider = "Groq"
     
