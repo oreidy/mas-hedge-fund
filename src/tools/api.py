@@ -1355,7 +1355,7 @@ def search_line_items(
         return []
 
 
-# ===== LIKELY A USELESS FUNCTION =====
+# ===== REVIEW: LIKELY A USELESS FUNCTION =====
 async def get_price_data_batch(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, pd.DataFrame]:
     """Get price data as DataFrames for multiple tickers in one batch request"""
 

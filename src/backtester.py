@@ -62,7 +62,16 @@ class Backtester:
         :param verbose_data: Whether to show detailed data output.
         """
         self.agent = agent
+        
+        # Keep original tickers for stock agents (don't add bond ETFs to avoid unnecessary analysis)
         self.tickers = tickers
+        
+        # Separate bond ETF handling when fixed-income agent is selected
+        self.include_fixed_income = "macro_analyst" in selected_analysts or "forward_looking_analyst" in selected_analysts
+        self.bond_etfs = ["SHY", "TLT"] if self.include_fixed_income else []
+        
+        # Combined list for portfolio initialization and price fetching
+        self.all_tickers = tickers + self.bond_etfs
         self.start_date = start_date
         self.end_date = end_date
         self.initial_capital = initial_capital
@@ -75,7 +84,7 @@ class Backtester:
         # Store the margin ratio (e.g. 0.5 means 50% margin required).
         self.margin_ratio = initial_margin_requirement
 
-        # Initialize portfolio with support for long/short positions
+        # Initialize portfolio with support for long/short positions (stocks + bond ETFs)
         self.portfolio_values = []
         self.portfolio = {
             "cash": initial_capital,
@@ -87,13 +96,13 @@ class Backtester:
                     "long_cost_basis": 0.0,  # Average cost basis per share (long)
                     "short_cost_basis": 0.0, # Average cost basis per share (short)
                     "short_margin_used": 0.0 # Dollars of margin used for this ticker's short
-                } for ticker in tickers
+                } for ticker in self.all_tickers  # Include both stocks and bond ETFs
             },
             "realized_gains": {
                 ticker: {
                     "long": 0.0,   # Realized gains from long positions
                     "short": 0.0,  # Realized gains from short positions
-                } for ticker in tickers
+                } for ticker in self.all_tickers  # Include both stocks and bond ETFs
             }
         }
 
@@ -269,7 +278,7 @@ class Backtester:
         """
         total_value = self.portfolio["cash"]
 
-        for ticker in self.tickers:
+        for ticker in self.all_tickers:
             position = self.portfolio["positions"][ticker]
             current_price = evaluation_prices[ticker]
 
@@ -325,16 +334,32 @@ class Backtester:
 
         logger.info(f"Fetching historical data from {historical_start_str} to {self.end_date}", module="prefetch_data")
 
+        # Fetch data for stocks (for agents to analyze)
         data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
+        
+        # Fetch price data for bond ETFs separately (only prices needed for execution)
+        if self.bond_etfs:
+            logger.info(f"Fetching bond ETF price data for: {self.bond_etfs}", module="prefetch_data")
+            for bond_etf in self.bond_etfs:
+                bond_prices = get_price_data(bond_etf, historical_start_str, self.end_date, verbose_data=self.verbose_data)
+                if bond_prices is not None:
+                    # Add bond ETF data with minimal structure (only prices needed)
+                    data[bond_etf] = {
+                        "prices": bond_prices,
+                        "metrics": [],  # No financial metrics for ETFs
+                        "insider_trades": [],  # No insider trades for ETFs
+                        "news": []  # Skip news to avoid API rate limits
+                    }
 
         # Log a summary of fetched data
         logger.info(f"Checking verbose_data condition: self.verbose_data = {self.verbose_data}", module="prefetch_data")
         if self.verbose_data:
             logger.debug("=== DATA FETCHED SUMMARY from prefetch_data ===", module="prefetch_data")
-            logger.debug(f"Tickers: {self.tickers}", module="prefetch_data")
+            logger.debug(f"Stock tickers: {self.tickers}", module="prefetch_data")
+            logger.debug(f"Bond ETFs: {self.bond_etfs}", module="prefetch_data")
             logger.debug(f"Period: {self.start_date} to {self.end_date}", module="prefetch_data")
             
-            for ticker in self.tickers:
+            for ticker in self.all_tickers:
                 ticker_data = data.get(ticker, {})
                 prices = ticker_data.get("prices")
                 metrics = ticker_data.get("metrics", [])
@@ -411,7 +436,8 @@ class Backtester:
                 execution_prices = {} # Prices for trade execution
                 evaluation_prices = {} # Prices for portfolio value evaluation
                 
-                for ticker in self.tickers:
+                # Fetch prices for all tickers (stocks + bond ETFs) for execution and portfolio evaluation
+                for ticker in self.all_tickers:
 
                     price_df = get_price_data(ticker, previous_date_str, current_date_str, self.verbose_data)
                     if self.verbose_data:
@@ -476,9 +502,9 @@ class Backtester:
                             module="run_backtest", 
                             ticker=ticker)
 
-            # Execute trades for each ticker
+            # Execute trades for each ticker (stocks + bond ETFs)
             executed_trades = {}
-            for ticker in self.tickers:
+            for ticker in self.all_tickers:
                 decision = decisions.get(ticker, {"action": "hold", "quantity": 0})
                 action, quantity = decision.get("action", "hold"), decision.get("quantity", 0)
 
@@ -495,11 +521,11 @@ class Backtester:
             # Also compute long/short exposures for final post‐trade state
             long_exposure = sum(
                 self.portfolio["positions"][t]["long"] * evaluation_prices[t]
-                for t in self.tickers
+                for t in self.all_tickers
             )
             short_exposure = sum(
                 self.portfolio["positions"][t]["short"] * evaluation_prices[t]
-                for t in self.tickers
+                for t in self.all_tickers
             )
 
             # Calculate gross and net exposures
@@ -562,13 +588,40 @@ class Backtester:
                         neutral_count=neutral_count,
                     )
                 )
+            
+            # Add bond ETF positions to display (no analyst signals for bonds)
+            for bond_etf in self.bond_etfs:
+                pos = self.portfolio["positions"][bond_etf]
+                long_val = pos["long"] * evaluation_prices[bond_etf]
+                short_val = pos["short"] * evaluation_prices[bond_etf]
+                net_position_value = long_val - short_val
+                
+                # Get the action and quantity from the decisions
+                action = decisions.get(bond_etf, {}).get("action", "hold")
+                quantity = executed_trades.get(bond_etf, 0)
+                
+                date_rows.append(
+                    format_backtest_row(
+                        date=current_date_str,
+                        ticker=bond_etf,
+                        action=action,
+                        quantity=quantity,
+                        open_price=execution_prices[bond_etf],
+                        close_price=evaluation_prices[bond_etf],
+                        shares_owned=pos["long"] - pos["short"],  # net shares
+                        position_value=net_position_value,
+                        bullish_count=0,  # No analyst signals for bonds
+                        bearish_count=0,
+                        neutral_count=0,
+                    )
+                )
             # ---------------------------------------------------------------
             # 4) Calculate performance summary metrics
             # ---------------------------------------------------------------
             total_realized_gains = sum(
                 self.portfolio["realized_gains"][t]["long"] +
                 self.portfolio["realized_gains"][t]["short"]
-                for t in self.tickers
+                for t in self.all_tickers
             )
 
             # Calculate cumulative return vs. initial capital

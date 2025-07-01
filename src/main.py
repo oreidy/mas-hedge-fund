@@ -15,6 +15,7 @@ from agents.sentiment import sentiment_agent
 from agents.warren_buffett import warren_buffett_agent
 from agents.macro import macro_agent
 from agents.forward_looking import forward_looking_agent
+from agents.fixed_income import fixed_income_agent
 from graph.state import AgentState
 from agents.valuation import valuation_agent
 from utils.display import print_trading_output
@@ -93,8 +94,26 @@ def run_hedge_fund(
             },
         )
 
+        # Merge decisions from multiple agents (portfolio manager + fixed income)
+        merged_decisions = {}
+        
+        # Look for messages from both portfolio management and fixed income agents
+        for message in final_state["messages"]:
+            if hasattr(message, 'name'):
+                if message.name == "portfolio_management":
+                    portfolio_decisions = parse_hedge_fund_response(message.content)
+                    if portfolio_decisions:
+                        merged_decisions.update(portfolio_decisions)
+                elif message.name == "fixed_income_agent":
+                    bond_decisions = parse_hedge_fund_response(message.content)
+                    if bond_decisions:
+                        # Only include SHY and TLT decisions, skip analysis data
+                        for ticker, decision in bond_decisions.items():
+                            if ticker in ["SHY", "TLT"] and isinstance(decision, dict) and "action" in decision:
+                                merged_decisions[ticker] = decision
+
         return {
-            "decisions": parse_hedge_fund_response(final_state["messages"][-1].content),
+            "decisions": merged_decisions,
             "analyst_signals": final_state["data"]["analyst_signals"],
         }
     finally:
@@ -148,8 +167,18 @@ def create_workflow(selected_analysts=None):
         node_name = analyst_nodes[analyst_key][0]
         workflow.add_edge(node_name, "risk_management_agent")
 
-    workflow.add_edge("risk_management_agent", "portfolio_management_agent")
-    workflow.add_edge("portfolio_management_agent", END)
+    # Add fixed-income agent if macro OR forward-looking analysis is available
+    include_fixed_income = "macro_analyst" in selected_analysts or "forward_looking_analyst" in selected_analysts
+    
+    if include_fixed_income:
+        workflow.add_node("fixed_income_agent", fixed_income_agent)
+        workflow.add_edge("risk_management_agent", "portfolio_management_agent")
+        workflow.add_edge("risk_management_agent", "fixed_income_agent")
+        workflow.add_edge("portfolio_management_agent", END)
+        workflow.add_edge("fixed_income_agent", END)
+    else:
+        workflow.add_edge("risk_management_agent", "portfolio_management_agent")
+        workflow.add_edge("portfolio_management_agent", END)
 
     workflow.set_entry_point("start_node")
     return workflow
@@ -190,12 +219,15 @@ def create_optimized_workflow():
     # Management nodes - risk management needs macro and forward-looking agent outputs
     workflow.add_node("risk_management_agent", risk_management_agent)
     workflow.add_node("portfolio_management_agent", portfolio_management_agent)
+    workflow.add_node("fixed_income_agent", fixed_income_agent)
     
     workflow.add_edge("bill_ackman_agent", "risk_management_agent")
     workflow.add_edge("macro_agent", "risk_management_agent")
     workflow.add_edge("forward_looking_agent", "risk_management_agent")
     workflow.add_edge("risk_management_agent", "portfolio_management_agent")
+    workflow.add_edge("risk_management_agent", "fixed_income_agent")
     workflow.add_edge("portfolio_management_agent", END)
+    workflow.add_edge("fixed_income_agent", END)
     
     workflow.set_entry_point("start_node")
     return workflow

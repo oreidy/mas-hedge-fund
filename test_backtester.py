@@ -10,11 +10,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from utils.logger import logger, LogLevel, setup_logger
 
 # Configure the global logger instance BEFORE any other imports
-logger.level = LogLevel.DEBUG
-logger.debug_mode = True  # Add this attribute if needed
+logger.level = LogLevel.INFO
+logger.debug_mode = False  # Add this attribute if needed
 
 # Alternative: use setup_logger if it properly configures the global instance
-setup_logger(debug_mode=True, log_to_file=False, log_file=None)
+setup_logger(debug_mode=False, log_to_file=False, log_file=None)
 
 # Verify the logger is configured
 print(f"Logger level after setup: {logger.level}")
@@ -29,8 +29,8 @@ from main import run_hedge_fund
 def test_backtester():
     """Test the backtester with minimal configuration"""
     
-    # Force logger reconfiguration to ensure all imported modules use debug level
-    logger.set_level('DEBUG')
+    # Force logger reconfiguration to ensure all imported modules use info level
+    logger.set_level('INFO')
     
     # Add these debug messages to verify logger is working
     logger.debug("🔍 TEST: Debug logging is working in test_backtester.py", module="test_backtester")
