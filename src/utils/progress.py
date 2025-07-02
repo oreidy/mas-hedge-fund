@@ -47,12 +47,12 @@ class AgentProgress:
         self.table.columns.clear()
         self.table.add_column(width=100)
 
-        # Sort agents with Risk Management and Portfolio Management at the bottom
+        # Sort agents with Risk Management and Equity Agent at the bottom
         def sort_key(item):
             agent_name = item[0]
             if "risk_management" in agent_name:
                 return (2, agent_name)
-            elif "portfolio_management" in agent_name:
+            elif "equity_agent" in agent_name:
                 return (3, agent_name)
             else:
                 return (1, agent_name)

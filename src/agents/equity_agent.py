@@ -11,31 +11,31 @@ from utils.logger import logger
 
 
 
-class PortfolioDecision(BaseModel):
+class EquityDecision(BaseModel):
     action: Literal["buy", "sell", "short", "cover", "hold"]
     quantity: int = Field(description="Number of shares to trade")
     confidence: float = Field(description="Confidence in the decision, between 0.0 and 100.0")
     reasoning: str = Field(description="Reasoning for the decision")
 
 
-class PortfolioManagerOutput(BaseModel):
-    decisions: dict[str, PortfolioDecision] = Field(description="Dictionary of ticker to trading decisions")
+class EquityAgentOutput(BaseModel):
+    decisions: dict[str, EquityDecision] = Field(description="Dictionary of ticker to trading decisions")
 
 
-##### Portfolio Management Agent #####
-def portfolio_management_agent(state: AgentState):
+##### Equity Agent #####
+def equity_agent(state: AgentState):
     """Makes final trading decisions and generates orders for multiple tickers"""
 
     # Get verbose_data from metadata or default to False
     verbose_data = state["metadata"].get("verbose_data", False)
-    logger.debug("Accessing Portfolio Management Agent", module="portfolio_management_agent")
+    logger.debug("Accessing Equity Agent", module="equity_agent")
 
     # Get the portfolio and analyst signals
     portfolio = state["data"]["portfolio"]
     analyst_signals = state["data"]["analyst_signals"]
     tickers = state["data"]["tickers"]
 
-    progress.update_status("portfolio_management_agent", None, "Analyzing signals")
+    progress.update_status("equity_agent", None, "Analyzing signals")
 
     # Get position limits, current prices, and signals for every ticker
     position_limits = {}
@@ -43,11 +43,11 @@ def portfolio_management_agent(state: AgentState):
     max_shares = {}
     signals_by_ticker = {}
     for ticker in tickers:
-        progress.update_status("portfolio_management_agent", ticker, "Processing analyst signals")
+        progress.update_status("equity_agent", ticker, "Processing analyst signals")
 
         # Get position limits and current prices for the ticker
         # Asset allocation (stocks vs bonds) is handled upstream by the risk manager.
-        # This portfolio manager focuses purely on individual stock selection and
+        # This equity agent focuses purely on individual stock selection and
         # position sizing within the allocated stock capital.
         risk_data = analyst_signals.get("risk_management_agent", {}).get(ticker, {})
         position_limits[ticker] = risk_data.get("remaining_position_limit", 0)
@@ -66,7 +66,7 @@ def portfolio_management_agent(state: AgentState):
                 ticker_signals[agent] = {"signal": signals[ticker]["signal"], "confidence": signals[ticker]["confidence"]}
         signals_by_ticker[ticker] = ticker_signals
 
-    progress.update_status("portfolio_management_agent", None, "Making trading decisions")
+    progress.update_status("equity_agent", None, "Making trading decisions")
 
     # Generate the trading decision
     result = generate_trading_decision(
@@ -79,17 +79,17 @@ def portfolio_management_agent(state: AgentState):
         model_provider=state["metadata"]["model_provider"],
     )
 
-    # Create the portfolio management message
+    # Create the equity agent message
     message = HumanMessage(
         content=json.dumps({ticker: decision.model_dump() for ticker, decision in result.decisions.items()}),
-        name="portfolio_management",
+        name="equity_agent",
     )
 
     # Print the decision if the flag is set
     if state["metadata"]["show_reasoning"]:
-        show_agent_reasoning({ticker: decision.model_dump() for ticker, decision in result.decisions.items()}, "Portfolio Management Agent")
+        show_agent_reasoning({ticker: decision.model_dump() for ticker, decision in result.decisions.items()}, "Equity Agent")
 
-    progress.update_status("portfolio_management_agent", None, "Done")
+    progress.update_status("equity_agent", None, "Done")
 
     return {
         "messages": state["messages"] + [message],
@@ -105,14 +105,14 @@ def generate_trading_decision(
     portfolio: dict[str, float],
     model_name: str,
     model_provider: str,
-) -> PortfolioManagerOutput:
+) -> EquityAgentOutput:
     """Attempts to get a decision from the LLM with retry logic"""
     # Create the prompt template
     template = ChatPromptTemplate.from_messages(
         [
             (
               "system",
-              """You are a portfolio manager making final trading decisions based on multiple tickers.
+              """You are an equity agent making final trading decisions based on multiple tickers.
 
               Trading Rules:
               - For long positions:
@@ -196,8 +196,8 @@ def generate_trading_decision(
         }
     )
 
-    # Create default factory for PortfolioManagerOutput
-    def create_default_portfolio_output():
-        return PortfolioManagerOutput(decisions={ticker: PortfolioDecision(action="hold", quantity=0, confidence=0.0, reasoning="Error in portfolio management, defaulting to hold") for ticker in tickers})
+    # Create default factory for EquityAgentOutput
+    def create_default_equity_output():
+        return EquityAgentOutput(decisions={ticker: EquityDecision(action="hold", quantity=0, confidence=0.0, reasoning="Error in equity agent, defaulting to hold") for ticker in tickers})
 
-    return call_llm(prompt=prompt, model_name=model_name, model_provider=model_provider, pydantic_model=PortfolioManagerOutput, agent_name="portfolio_management_agent", default_factory=create_default_portfolio_output)
+    return call_llm(prompt=prompt, model_name=model_name, model_provider=model_provider, pydantic_model=EquityAgentOutput, agent_name="equity_agent", default_factory=create_default_equity_output)

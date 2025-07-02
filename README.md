@@ -10,8 +10,11 @@ This system employs several agents working together:
 4. Sentiment Agent - Analyzes market sentiment and generates trading signals
 5. Fundamentals Agent - Analyzes fundamental data and generates trading signals
 6. Technicals Agent - Analyzes technical indicators and generates trading signals
-7. Risk Manager - Calculates risk metrics and sets position limits
-8. Portfolio Manager - Makes final trading decisions and generates orders
+7. Macro Agent - Analyzes macroeconomic indicators and market conditions
+8. Forward-Looking Agent - Analyzes future market outlook and trends
+9. Risk Manager - Calculates risk metrics and sets position limits
+10. Equity Agent - Makes final trading decisions and generates orders for stocks
+11. Fixed-Income Agent - Makes trading decisions for bond ETFs and fixed-income securities
 
 <img width="1117" alt="Screenshot 2025-02-09 at 11 26 14 AM" src="https://github.com/user-attachments/assets/16509cc2-4b64-4c67-8de6-00d224893d58" />
 
@@ -130,7 +133,10 @@ ai-hedge-fund/
 │   ├── agents/                   # Agent definitions and workflow
 │   │   ├── bill_ackman.py        # Bill Ackman agent
 │   │   ├── fundamentals.py       # Fundamental analysis agent
-│   │   ├── portfolio_manager.py  # Portfolio management agent
+│   │   ├── equity_agent.py       # Equity trading agent
+│   │   ├── fixed_income.py       # Fixed-income trading agent
+│   │   ├── forward_looking.py    # Forward-looking analysis agent
+│   │   ├── macro.py              # Macro analysis agent
 │   │   ├── risk_manager.py       # Risk management agent
 │   │   ├── sentiment.py          # Sentiment analysis agent
 │   │   ├── technicals.py         # Technical analysis agent

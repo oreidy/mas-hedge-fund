@@ -337,19 +337,21 @@ class Backtester:
         # Fetch data for stocks (for agents to analyze)
         data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
         
-        # Fetch price data for bond ETFs separately (only prices needed for execution)
-        if self.bond_etfs:
-            logger.info(f"Fetching bond ETF price data for: {self.bond_etfs}", module="prefetch_data")
+        # Fetch data for fixed-income assets and FRED macroeconomic data
+        if self.include_fixed_income:
+            logger.info("Prefetching FRED data and bond ETFs", module="prefetch_data")
+            
+            # Prefetch bond ETF price data
             for bond_etf in self.bond_etfs:
-                bond_prices = get_price_data(bond_etf, historical_start_str, self.end_date, verbose_data=self.verbose_data)
-                if bond_prices is not None:
-                    # Add bond ETF data with minimal structure (only prices needed)
-                    data[bond_etf] = {
-                        "prices": bond_prices,
-                        "metrics": [],  # No financial metrics for ETFs
-                        "insider_trades": [],  # No insider trades for ETFs
-                        "news": []  # Skip news to avoid API rate limits
-                    }
+                get_price_data(bond_etf, historical_start_str, self.end_date, verbose_data=self.verbose_data)
+
+            # Prefetch all FRED macroeconomic data
+            try:
+                from tools.fred_api import get_all_fred_data_for_agents
+                get_all_fred_data_for_agents(historical_start_str, self.end_date, verbose_data=self.verbose_data)
+            except Exception as e:
+                logger.warning(f"Failed to prefetch FRED data: {e}", module="prefetch_data")
+                logger.warning("Agents will fetch FRED data on-demand during backtesting", module="prefetch_data")
 
         # Log a summary of fetched data
         logger.info(f"Checking verbose_data condition: self.verbose_data = {self.verbose_data}", module="prefetch_data")

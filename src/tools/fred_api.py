@@ -168,3 +168,43 @@ def get_macro_indicators_for_allocation(start_date: str, end_date: str, verbose_
         results[name] = get_fred_data(series_id, start_date, end_date, verbose_data)
     
     return results
+
+
+def get_all_fred_data_for_agents(start_date: str, end_date: str, verbose_data: bool = False) -> None:
+    """
+    Prefetch all FRED data needed by macro, forward-looking, and fixed-income agents.
+    Similar to get_data_for_tickers but for FRED macroeconomic data.
+    
+    Args:
+        start_date: Start date string (YYYY-MM-DD)
+        end_date: End date string (YYYY-MM-DD)
+        verbose_data: Optional flag for verbose logging
+        
+    Returns:
+        None - Data is cached for later use by agents
+    """
+    
+    logger.debug(f"Prefetching all FRED data from {start_date} to {end_date}", 
+                module="get_all_fred_data_for_agents")
+    
+    try:
+        # Prefetch macro indicators (for macro agent)
+        macro_indicators = get_macro_indicators_for_allocation(start_date, end_date, verbose_data)
+        
+        # Prefetch VIX data (for forward-looking agent)
+        vix_data = get_vix_data(start_date, end_date, verbose_data)
+        
+        # Prefetch treasury yield data (for fixed-income agent)
+        treasury_2y = get_fred_data("GS2", start_date, end_date, verbose_data)
+        treasury_10y = get_fred_data("GS10", start_date, end_date, verbose_data)
+        
+        if verbose_data:
+            logger.debug("FRED data prefetching summary:", module="get_all_fred_data_for_agents")
+            logger.debug(f"  - Macro indicators: {len(macro_indicators)} series", module="get_all_fred_data_for_agents")
+            logger.debug(f"  - VIX data: {len(vix_data)} observations", module="get_all_fred_data_for_agents")
+            logger.debug(f"  - Treasury 2Y: {len(treasury_2y)} observations", module="get_all_fred_data_for_agents")
+            logger.debug(f"  - Treasury 10Y: {len(treasury_10y)} observations", module="get_all_fred_data_for_agents")
+        
+    except Exception as e:
+        logger.error(f"Error prefetching FRED data: {e}", module="get_all_fred_data_for_agents")
+        raise
