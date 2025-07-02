@@ -16,7 +16,9 @@ This system employs several agents working together:
 10. Equity Agent - Makes final trading decisions and generates orders for stocks
 11. Fixed-Income Agent - Makes trading decisions for bond ETFs and fixed-income securities
 
-<img width="1117" alt="Screenshot 2025-02-09 at 11 26 14 AM" src="https://github.com/user-attachments/assets/16509cc2-4b64-4c67-8de6-00d224893d58" />
+<div align="center">
+  <img src="images/workflow.png" alt="Multi-Agent System Architecture" width="700">
+</div>
 
 
 **Note**: the system simulates trading decisions, it does not actually trade.
