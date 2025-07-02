@@ -128,7 +128,7 @@ poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --start-date 2024-01
 
 ## Project Structure 
 ```
-ai-hedge-fund/
+mas-hedge-fund/
 ├── src/
 │   ├── agents/                   # Agent definitions and workflow
 │   │   ├── bill_ackman.py        # Bill Ackman agent
