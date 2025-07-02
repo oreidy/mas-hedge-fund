@@ -17,7 +17,7 @@ This system employs several agents working together:
 11. Fixed-Income Agent - Makes trading decisions for bond ETFs and fixed-income securities
 
 <div align="center">
-  <img src="images/workflow.png" alt="Multi-Agent System Architecture" width="700">
+  <img src="images/Workflow_Image.png" alt="Multi-Agent System Architecture" width="700">
 </div>
 
 
