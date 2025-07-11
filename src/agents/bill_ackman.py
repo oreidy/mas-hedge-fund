@@ -16,6 +16,10 @@ class BillAckmanSignal(BaseModel):
     reasoning: str
 
 
+class BillAckmanBatchOutput(BaseModel):
+    decisions: dict[str, BillAckmanSignal]
+
+
 def bill_ackman_agent(state: AgentState):
     """
     Analyzes stocks using Bill Ackman's investing principles and LLM reasoning.
@@ -30,13 +34,13 @@ def bill_ackman_agent(state: AgentState):
     end_date = data["end_date"]
     tickers = data["tickers"]
 
+    # Phase 1: Collect all analysis data for all tickers (no LLM calls yet)
     analysis_data = {}
-    ackman_analysis = {}
     
     for ticker in tickers:
         progress.update_status("bill_ackman_agent", ticker, "Fetching financial metrics")
-        # You can adjust these parameters (period="annual"/"ttm", limit=5/10, etc.)
-        metrics = get_financial_metrics(ticker, end_date, period="annual", limit=5, verbose_data = verbose_data)
+        # Reduced to 3 periods for efficiency
+        metrics = get_financial_metrics(ticker, end_date, period="annual", limit=3, verbose_data = verbose_data)
  
         # Debug:
         if verbose_data:
@@ -63,7 +67,7 @@ def bill_ackman_agent(state: AgentState):
             ],
             end_date,
             period="annual",  # or "ttm" if you prefer trailing 12 months
-            limit=5,           # fetch up to 5 annual periods (or more if needed)
+            limit=3,           # fetch up to 3 annual periods for efficiency
             verbose_data = verbose_data
         )
         
@@ -109,20 +113,26 @@ def bill_ackman_agent(state: AgentState):
         logger.debug(f"- Valuation score: {valuation_analysis['score']}", module="bill_ackman_agent", ticker=ticker)
         logger.debug(f"- Valuation details: {valuation_analysis['details']}", module="bill_ackman_agent", ticker=ticker)
         
-        progress.update_status("bill_ackman_agent", ticker, "Generating Ackman analysis")
-        ackman_output = generate_ackman_output(
-            ticker=ticker, 
-            analysis_data=analysis_data,
-            model_name=state["metadata"]["model_name"],
-            model_provider=state["metadata"]["model_provider"],
-        )
-        
+        progress.update_status("bill_ackman_agent", ticker, "Analysis complete")
+    
+    # Phase 2: Process all collected data through batched LLM calls
+    progress.update_status("bill_ackman_agent", None, "Generating batched Ackman analysis")
+    
+    ackman_decisions = generate_ackman_output_batched(
+        analysis_data_by_ticker=analysis_data,
+        model_name=state["metadata"]["model_name"],
+        model_provider=state["metadata"]["model_provider"],
+        batch_size=30  # Process 10 tickers at a time
+    )
+    
+    # Convert decisions to the expected format
+    ackman_analysis = {}
+    for ticker, decision in ackman_decisions.items():
         ackman_analysis[ticker] = {
-            "signal": ackman_output.signal,
-            "confidence": ackman_output.confidence,
-            "reasoning": ackman_output.reasoning
+            "signal": decision.signal,
+            "confidence": decision.confidence,
+            "reasoning": decision.reasoning
         }
-        
         progress.update_status("bill_ackman_agent", ticker, "Done")
     
     # Wrap results in a single message for the chain
@@ -142,6 +152,105 @@ def bill_ackman_agent(state: AgentState):
         "messages": [message],
         "data": state["data"]
     }
+
+
+def generate_ackman_output_batched(
+    analysis_data_by_ticker: dict[str, dict],
+    model_name: str,
+    model_provider: str,
+    batch_size: int = 30,
+) -> dict[str, BillAckmanSignal]:
+    """Process tickers in batches to handle token limits"""
+    
+    all_decisions = {}
+    tickers = list(analysis_data_by_ticker.keys())
+    
+    # Process tickers in batches
+    for i in range(0, len(tickers), batch_size):
+        batch_tickers = tickers[i:i + batch_size]
+        
+        # Filter analysis data for this batch
+        batch_analysis_data = {ticker: analysis_data_by_ticker[ticker] for ticker in batch_tickers}
+        
+        # Process this batch
+        batch_result = generate_ackman_output_batch(
+            analysis_data_by_ticker=batch_analysis_data,
+            model_name=model_name,
+            model_provider=model_provider,
+        )
+        
+        # Merge decisions
+        all_decisions.update(batch_result.decisions)
+    
+    return all_decisions
+
+
+def generate_ackman_output_batch(
+    analysis_data_by_ticker: dict[str, dict],
+    model_name: str,
+    model_provider: str,
+) -> BillAckmanBatchOutput:
+    """Generate investment decisions for multiple tickers in a single LLM call"""
+    # Create the prompt template
+    template = ChatPromptTemplate.from_messages(
+        [
+            (
+            "system",
+            """You are Bill Ackman making investment decisions. Focus on: high-quality businesses with moats, strong free cash flow, reasonable debt, and good value. Provide rational, data-driven recommendations for multiple companies."""
+            ),
+            (
+            "human",
+            """Analyze the following companies and provide investment decisions for each:
+
+            {ticker_analyses}
+
+            Return JSON in this exact format:
+            {{
+                "decisions": {{
+                    "TICKER1": {{"signal": "bullish/bearish/neutral", "confidence": float (0-100), "reasoning": "brief explanation"}},
+                    "TICKER2": {{"signal": "bullish/bearish/neutral", "confidence": float (0-100), "reasoning": "brief explanation"}},
+                    ...
+                }}
+            }}
+            """
+            )
+        ]   
+    )
+
+    # Format ticker analyses for the prompt
+    ticker_analyses_text = []
+    for ticker, data in analysis_data_by_ticker.items():
+        analysis_text = f"""{ticker}:
+- Quality Score: {data["quality_analysis"]["score"]}/7
+- Financial Score: {data["balance_sheet_analysis"]["score"]}/5  
+- Valuation Score: {data["valuation_analysis"]["score"]}/3
+- Quality Details: {data["quality_analysis"]["details"]}
+- Financial Details: {data["balance_sheet_analysis"]["details"]}
+- Valuation Details: {data["valuation_analysis"]["details"]}"""
+        ticker_analyses_text.append(analysis_text)
+    
+    prompt = template.invoke({
+        "ticker_analyses": "\n\n".join(ticker_analyses_text)
+    })
+
+    def create_default_bill_ackman_batch_output():
+        default_decisions = {}
+        for ticker in analysis_data_by_ticker.keys():
+            default_decisions[ticker] = BillAckmanSignal(
+                signal="neutral",
+                confidence=0.0,
+                reasoning="Error in analysis, defaulting to neutral"
+            )
+        return BillAckmanBatchOutput(decisions=default_decisions)
+
+    return call_llm(
+        prompt=prompt, 
+        model_name=model_name, 
+        model_provider=model_provider, 
+        pydantic_model=BillAckmanBatchOutput, 
+        agent_name="bill_ackman_agent", 
+        default_factory=create_default_bill_ackman_batch_output,
+    )
 
 
 def analyze_business_quality(metrics: list, financial_line_items: list, verbose_data: bool = False) -> dict:
@@ -286,14 +395,19 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list, verb
     # Check if the company’s leverage is stable or improving
     debt_to_equity_vals = [item.debt_to_equity for item in financial_line_items if hasattr(item, 'debt_to_equity') and item.debt_to_equity is not None]
     
-    # If we have multi-year data, see if D/E ratio has gone down or stayed <1 across most periods
+    # If we have multi-year data, see if D/E ratio shows healthy leverage (positive equity and low debt)
     if debt_to_equity_vals:
-        below_one_count = sum(1 for d in debt_to_equity_vals if d < 1.0)
-        if below_one_count >= (len(debt_to_equity_vals) // 2 + 1):
+        # Check for healthy leverage: positive equity AND low debt
+        healthy_leverage_count = sum(1 for d in debt_to_equity_vals if d > 0 and d < 1.0)
+        negative_equity_count = sum(1 for d in debt_to_equity_vals if d < 0)
+        
+        if healthy_leverage_count >= (len(debt_to_equity_vals) // 2 + 1):
             score += 2
-            details.append("Debt-to-equity < 1.0 for the majority of periods.")
+            details.append("Healthy leverage (positive equity, D/E < 1.0) for majority of periods.")
+        elif negative_equity_count > 0:
+            details.append(f"Negative stockholders' equity detected in {negative_equity_count} periods which indicates aggressive capital returns.")
         else:
-            details.append("Debt-to-equity >= 1.0 in many periods.")
+            details.append("Debt-to-equity >= 1.0 in many periods, indicating higher leverage.")
     else:
         # Fallback to total_liabilities/total_assets if D/E not available
         logger.debug(f"No debt_to_equity data, falling back to liabilities/assets ratio", 
@@ -462,43 +576,29 @@ def generate_ackman_output(
     template = ChatPromptTemplate.from_messages([
         (
             "system",
-            """You are a Bill Ackman AI agent, making investment decisions using his principles:
-
-            1. Seek high-quality businesses with durable competitive advantages (moats).
-            2. Prioritize consistent free cash flow and growth potential.
-            3. Advocate for strong financial discipline (reasonable leverage, efficient capital allocation).
-            4. Valuation matters: target intrinsic value and margin of safety.
-            5. Invest with high conviction in a concentrated portfolio for the long term.
-            6. Potential activist approach if management or operational improvements can unlock value.
-            
-            Rules:
-            - Evaluate brand strength, market position, or other moats.
-            - Check free cash flow generation, stable or growing earnings.
-            - Analyze balance sheet health (reasonable debt, good ROE).
-            - Buy at a discount to intrinsic value; higher discount => stronger conviction.
-            - Engage if management is suboptimal or if there's a path for strategic improvements.
-            - Provide a rational, data-driven recommendation (bullish, bearish, or neutral)."""
+            """You are Bill Ackman making investment decisions. Focus on: high-quality businesses with moats, strong free cash flow, reasonable debt, and good value. Provide rational, data-driven recommendations."""
         ),
         (
             "human",
-            """Based on the following analysis, create an Ackman-style investment signal.
+            """Analyze {ticker} using scores: Quality={quality_score}/7, Financial={financial_score}/5, Valuation={valuation_score}/3. 
+            
+            Quality: {quality_details}
+            Financial: {financial_details}
+            Valuation: {valuation_details}
 
-            Analysis Data for {ticker}:
-            {analysis_data}
-
-            Return the trading signal in this JSON format:
-            {{
-              "signal": "bullish/bearish/neutral",
-              "confidence": float (0-100),
-              "reasoning": "string"
-            }}
-            """
+            Return JSON: {{"signal": "bullish/bearish/neutral", "confidence": float (0-100), "reasoning": "brief explanation"}}"""
         )
     ])
 
+    ticker_data = analysis_data[ticker]
     prompt = template.invoke({
-        "analysis_data": json.dumps(analysis_data, indent=2),
-        "ticker": ticker
+        "ticker": ticker,
+        "quality_score": ticker_data["quality_analysis"]["score"],
+        "financial_score": ticker_data["balance_sheet_analysis"]["score"],
+        "valuation_score": ticker_data["valuation_analysis"]["score"],
+        "quality_details": ticker_data["quality_analysis"]["details"],
+        "financial_details": ticker_data["balance_sheet_analysis"]["details"],
+        "valuation_details": ticker_data["valuation_analysis"]["details"]
     })
 
     def create_default_bill_ackman_signal():

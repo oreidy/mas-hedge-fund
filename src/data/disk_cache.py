@@ -3,6 +3,13 @@ import time
 from datetime import timedelta
 import os
 from pathlib import Path
+from typing import Optional, List
+from .insider_trades_db import (
+    get_insider_trades,
+    save_insider_trades,
+    is_ticker_cache_valid
+)
+from .models import InsiderTrade
 
 class DiskCache:
     """Enhanced cache with disk persistence and expiration"""
@@ -13,11 +20,12 @@ class DiskCache:
         
         # Different TTLs for different data types
         self.ttls = {
-            "prices": timedelta(hours=1),          # Price data refreshes hourly
-            "financial_metrics": timedelta(days=7), # Financial metrics refresh weekly
-            "insider_trades": timedelta(days=1),    # Insider trade data daily
-            "company_news": timedelta(hours=4),     # News refreshes 4 times daily
-            "fred_data": timedelta(days=1)          # FRED data refreshes daily
+            "prices": timedelta(days=60),           # Price data cached for 2 months
+            "financial_metrics": timedelta(days=60), # Financial metrics cached for 2 months
+            "insider_trades": timedelta(days=60),    # Insider trade data cached for 2 months
+            "company_news": timedelta(days=60),      # News cached for 2 months
+            "fred_data": timedelta(days=60),         # FRED data cached for 2 months
+            "sp500_membership": timedelta(days=60)   # S&P 500 membership data cached for 2 months
         }
         
         # Create separate caches for different data types
@@ -86,19 +94,17 @@ class DiskCache:
             expire=self._get_expiration("financial_metrics")
         )
     
-    def get_insider_trades(self, ticker):
-        """Get cached insider trades"""
-        cache_key = f"insider_trades:{ticker}"
-        return self.caches["insider_trades"].get(cache_key)
+    def get_insider_trades(self, ticker: str, limit: Optional[int] = None) -> List[InsiderTrade]:
+        """Get cached insider trades from SQLite database"""
+        return get_insider_trades(ticker, limit)
     
-    def set_insider_trades(self, ticker, data):
-        """Cache insider trades with expiration"""
-        cache_key = f"insider_trades:{ticker}"
-        self.caches["insider_trades"].set(
-            cache_key, 
-            data, 
-            expire=self._get_expiration("insider_trades")
-        )
+    def set_insider_trades(self, ticker: str, data: List[InsiderTrade]) -> int:
+        """Cache insider trades in SQLite database"""
+        return save_insider_trades(ticker, data)
+    
+    def is_insider_trades_cache_valid(self, ticker: str, max_age_days: int = 1) -> bool:
+        """Check if insider trades cache is still valid"""
+        return is_ticker_cache_valid(ticker, max_age_days)
     
     def get_company_news(self, ticker):
         """Get cached company news"""
@@ -165,6 +171,21 @@ class DiskCache:
                 cache_key, 
                 data, 
                 expire=self._get_expiration("fred_data")
+            )
+
+    def get_sp500_membership_data(self, years_back=4):
+        """Get cached S&P 500 membership data"""
+        cache_key = f"sp500_membership:{years_back}"
+        return self.caches["sp500_membership"].get(cache_key)
+    
+    def set_sp500_membership_data(self, data, years_back=4):
+        """Cache S&P 500 membership data with expiration"""
+        if data:
+            cache_key = f"sp500_membership:{years_back}"
+            self.caches["sp500_membership"].set(
+                cache_key, 
+                data, 
+                expire=self._get_expiration("sp500_membership")
             )
 
     def clear(self, data_type=None):

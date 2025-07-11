@@ -14,7 +14,7 @@ def call_llm(
     model_provider: str,
     pydantic_model: Type[T],
     agent_name: Optional[str] = None,
-    max_retries: int = 3,
+    max_retries: int = 5,
     default_factory = None
 ) -> T:
     """
@@ -26,7 +26,7 @@ def call_llm(
         model_provider: Provider of the model
         pydantic_model: The Pydantic model class to structure the output
         agent_name: Optional name of the agent for progress updates
-        max_retries: Maximum number of retries (default: 3)
+        max_retries: Maximum number of retries (default: 5)
         default_factory: Optional factory function to create default response on failure
         
     Returns:
@@ -68,6 +68,16 @@ def call_llm(
         except Exception as e:
             if agent_name:
                 progress.update_status(agent_name, None, f"Error - retry {attempt + 1}/{max_retries}")
+            
+            # Check if this is a rate limit error for Groq
+            error_str = str(e).lower()
+            if model_provider == ModelProvider.GROQ and ("rate limit" in error_str or "429" in error_str or "rate_limit_exceeded" in error_str):
+                print(f"Rate limit hit during LLM call: {e}")
+                print(f"Retrying (attempt {attempt + 1}/{max_retries})")
+                # Wait a bit before retrying
+                import time
+                time.sleep(1 * (2 ** attempt))  # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                continue
             
             if attempt == max_retries - 1:
                 print(f"Error in LLM call after {max_retries} attempts: {e}")

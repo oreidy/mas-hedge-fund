@@ -58,14 +58,17 @@ def print_trading_output(result: dict) -> None:
         table_data = sort_analyst_signals(table_data)
 
         print(f"\n{Fore.WHITE}{Style.BRIGHT}ANALYST SIGNALS:{Style.RESET_ALL} [{Fore.CYAN}{ticker}{Style.RESET_ALL}]")
-        print(
-            tabulate(
-                table_data,
-                headers=[f"{Fore.WHITE}Analyst", "Signal", "Confidence"],
-                tablefmt="grid",
-                colalign=("left", "center", "right"),
+        if table_data:
+            print(
+                tabulate(
+                    table_data,
+                    headers=[f"{Fore.WHITE}Analyst", "Signal", "Confidence"],
+                    tablefmt="grid",
+                    colalign=("left", "center", "right"),
+                )
             )
-        )
+        else:
+            print("No analyst signals available")
 
         # Print Trading Decision Table
         action = decision.get("action", "").upper()

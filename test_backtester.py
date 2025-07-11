@@ -2,6 +2,7 @@
 
 import sys
 import os
+import time
 
 # Add src to path FIRST
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -10,11 +11,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from utils.logger import logger, LogLevel, setup_logger
 
 # Configure the global logger instance BEFORE any other imports
-logger.level = LogLevel.INFO
-logger.debug_mode = False  # Add this attribute if needed
+logger.level = LogLevel.DEBUG
+logger.debug_mode = True  # Enable debug mode for VTRS analysis
 
 # Alternative: use setup_logger if it properly configures the global instance
-setup_logger(debug_mode=False, log_to_file=False, log_file=None)
+setup_logger(debug_mode=True, log_to_file=False, log_file=None)
 
 # Verify the logger is configured
 print(f"Logger level after setup: {logger.level}")
@@ -29,8 +30,8 @@ from main import run_hedge_fund
 def test_backtester():
     """Test the backtester with minimal configuration"""
     
-    # Force logger reconfiguration to ensure all imported modules use info level
-    logger.set_level('INFO')
+    # Force logger reconfiguration to enable debug logging for VTRS analysis
+    logger.set_level('DEBUG')
     
     # Add these debug messages to verify logger is working
     logger.debug("🔍 TEST: Debug logging is working in test_backtester.py", module="test_backtester")
@@ -42,12 +43,12 @@ def test_backtester():
     from src.utils.logger import LogLevel
     print(f"LogLevel.DEBUG value: {LogLevel.DEBUG.value}")
     
-    # Configuration for CVaR testing
-    tickers = ["AAPL", "MSFT"]  # Two tickers for testing
-    start_date = "2024-06-20"   # Three day span
-    end_date = "2024-06-24"     # Three day span
+    # Configuration for VTRS valuation agent testing
+    tickers = ["VTRS"]  # VTRS ticker to reproduce astronomical confidence issue
+    start_date = "2025-07-10"   # Day before yesterday  
+    end_date = "2025-07-11"     # Yesterday
     initial_capital = 100000
-    selected_analysts = ["technical_analyst", "sentiment_analyst", "macro_analyst", "forward_looking_analyst"]  # Include all for comprehensive test
+    selected_analysts = ["valuation_analyst"]  # Only valuation agent to test extreme confidence issue
     model_name = "llama3-70b-8192"
     model_provider = "Groq"
     
@@ -73,9 +74,23 @@ def test_backtester():
     )
     
     try:
-        # Run the backtest
+        # Run the backtest with timing analysis
         print("Starting backtest...")
+        start_time = time.time()
+        
+        # Track individual component times
+        print("📊 Timing Analysis:")
+        print("=" * 50)
+        
         performance_metrics = backtester.run_backtest()
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        print("=" * 50)
+        print(f"🕐 Total backtest time: {total_time:.2f} seconds")
+        print(f"🕐 Average time per day: {total_time / 3:.2f} seconds")
+        print("=" * 50)
         
         print("Backtest completed successfully!")
         print("Performance metrics:", performance_metrics)

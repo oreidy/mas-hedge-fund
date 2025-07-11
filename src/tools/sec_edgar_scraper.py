@@ -12,6 +12,11 @@ import traceback
 
 from utils.logger import logger
 from data.models import InsiderTrade
+from data.insider_trades_db import (
+    get_insider_trades,
+    save_insider_trades,
+    is_ticker_cache_valid
+)
 
 from bs4 import XMLParsedAsHTMLWarning
 import warnings
@@ -44,9 +49,9 @@ def fetch_multiple_insider_trades(tickers: List[str], end_date: str = None, star
     if not end_date:
         end_date = datetime.now().strftime("%Y-%m-%d")
     
-    # Default start_date to 10 days before end_date if not provided
+    # Default start_date to 2 months before end_date if not provided
     if not start_date:
-        start_date_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=10)
+        start_date_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=60)
         start_date = start_date_dt.strftime("%Y-%m-%d")
     
     # Convert string dates to datetime objects
@@ -60,41 +65,34 @@ def fetch_multiple_insider_trades(tickers: List[str], end_date: str = None, star
     tickers_to_fetch = []
     
     for ticker in tickers:
-        cache_file = SEC_CACHE_DIR / f"{ticker}_insider_trades.json"
-
-        #if verbose_data:
-            #logger.debug(f"Checking cache at {cache_file}", module="sec_edgar_scraper", ticker=ticker)
-        
-        if cache_file.exists():
+        # Check if ticker has valid cached data (within 1 day)
+        if is_ticker_cache_valid(ticker, max_age_days=1):
             try:
-                with open(cache_file, 'r') as f:
-                    cached_data = json.load(f)
+                # Get cached data from database
+                cached_trades = get_insider_trades(ticker)
                 
                 if verbose_data:
-                    logger.debug(f"Found cache file with {len(cached_data)} entries", module="sec_edgar_scraper", ticker=ticker)
+                    logger.debug(f"Found cached data with {len(cached_trades)} entries", module="sec_edgar_scraper", ticker=ticker)
                 
                 # Filter by date range
                 filtered_data = []
-                for trade in cached_data:
-                    trade_date = trade.get("transaction_date") or trade.get("filing_date")
+                for trade in cached_trades:
+                    trade_date = trade.transaction_date or trade.filing_date
                     if trade_date and start_date <= trade_date <= end_date:
-                        filtered_data.append(InsiderTrade(**trade))
+                        filtered_data.append(trade)
                 
-                if filtered_data:
-                    if verbose_data:
-                        logger.debug(f"Found {len(filtered_data)} trades in cache matching date range", module="sec_edgar_scraper", ticker=ticker)
+                results[ticker] = filtered_data
+                cache_hits += 1
+                
+                if verbose_data:
+                    logger.debug(f"Using {len(filtered_data)} cached trades for date range", module="sec_edgar_scraper", ticker=ticker)
                     
-                    results[ticker] = filtered_data
-                    cache_hits += 1
-                    continue
-                elif verbose_data:
-                    logger.debug(f"No trades in cache match the date range", module="sec_edgar_scraper", ticker=ticker)
             except Exception as e:
-                logger.error(f"Error loading cached insider trades for {ticker}: {e}", module="sec_edgar_scraper", ticker=ticker)
-        elif verbose_data:
-            logger.debug(f"No cache file found for {ticker}", module="sec_edgar_scraper", ticker=ticker)
-        
-        tickers_to_fetch.append(ticker)
+                if verbose_data:
+                    logger.warning(f"Cache data invalid: {e}", module="sec_edgar_scraper", ticker=ticker)
+                tickers_to_fetch.append(ticker)
+        else:
+            tickers_to_fetch.append(ticker)
     
     if not tickers_to_fetch:
         if verbose_data:
@@ -159,32 +157,35 @@ def fetch_multiple_insider_trades(tickers: List[str], end_date: str = None, star
                         trades = parse_form4_file(txt_file, ticker)
                         insider_trades.extend(trades)
                 else:
-                    logger.debug(f"No downloaded insider trades found", module="sec_edgar_scraper", ticker=ticker)
+                    logger.info(f"No insider trading filings found for the requested date range", module="sec_edgar_scraper", ticker=ticker)
                 
                 # Sort by transaction date
                 insider_trades.sort(key=lambda x: x.transaction_date or x.filing_date, reverse=True)
                 
-                # Cache the results
-                if insider_trades:
-                    cache_file = SEC_CACHE_DIR / f"{ticker}_insider_trades.json"
-                    with open(cache_file, 'w') as f:
-                        json.dump([trade.model_dump() for trade in insider_trades], f)
-                    logger.debug(f"Cached {len(insider_trades)} insider trades", module="sec_edgar_scraper", ticker=ticker)
-                else:
-                    logger.warning(f"No insider trades to cache", module="sec_edgar_scraper", ticker=ticker)
+                # Cache the results in SQLite database (even if empty to update sync status)
+                saved_count = save_insider_trades(ticker, insider_trades)
+                if verbose_data:
+                    if insider_trades:
+                        logger.debug(f"Saved {saved_count} new insider trades to database", module="sec_edgar_scraper", ticker=ticker)
+                    else:
+                        logger.debug(f"No insider trades found, but updated sync status to prevent repeated downloads", module="sec_edgar_scraper", ticker=ticker)
                 
                 results[ticker] = insider_trades
         
         except Exception as e:
             if "No filings available" in str(e):
-                logger.info(f"No insider trading filings found for the requested date range", 
+                logger.info(f"No insider trading filings found for the requested date range for tickers: {tickers_to_fetch}", 
                         module="sec_edgar_scraper")
             elif "NoFilingsError" in str(type(e).__name__):
-                logger.info(f"No insider trading filings found for the requested date range", 
+                logger.info(f"No insider trading filings found for the requested date range for tickers: {tickers_to_fetch}", 
                         module="sec_edgar_scraper")
             else:
-                logger.error(f"Error fetching insider trades: {e}. Activate verbose_data for detailed error", 
-                            module="sec_edgar_scraper")
+                if "No results were found or the value submitted was not valid" in str(e):
+                    logger.warning(f"No insider trades data found for tickers: {tickers_to_fetch}", 
+                                module="sec_edgar_scraper")
+                else:
+                    logger.error(f"Error fetching insider trades for tickers: {tickers_to_fetch}: {e}. Activate verbose_data for detailed error", 
+                                module="sec_edgar_scraper")
             
             if verbose_data:
                 # Print more detailed error information

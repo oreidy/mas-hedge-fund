@@ -116,7 +116,7 @@ def _garch_cvar_calculation(
         logger.debug(f"  CVaR ({(1-confidence_level)*100:.0f}% confidence): {cvar*100:.4f}%", module="risk_metrics")
     
     # Always log timing for performance monitoring
-    logger.info(f"GARCH(1,1) model fitted in {garch_fit_time:.3f}s for {len(returns)} data points", module="risk_metrics")
+    logger.debug(f"GARCH(1,1) model fitted in {garch_fit_time:.3f}s for {len(returns)} data points", module="risk_metrics")
     
     return float(cvar)
 

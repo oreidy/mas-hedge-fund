@@ -1,10 +1,10 @@
 import os
+from typing import Tuple
 from langchain_anthropic import ChatAnthropic
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from enum import Enum
 from pydantic import BaseModel
-from typing import Tuple
 from langchain_ollama import ChatOllama
 
 
@@ -33,6 +33,8 @@ class LLMModel(BaseModel):
         return self.model_name.startswith("deepseek")
 
 
+
+
 # Define available models
 AVAILABLE_MODELS = [
 
@@ -55,6 +57,11 @@ AVAILABLE_MODELS = [
     LLMModel(
         display_name="[groq] Gemma2-9b-it",
         model_name="gemma2-9b-it",
+        provider=ModelProvider.GROQ
+    ),
+    LLMModel(
+        display_name="[groq] qwen-32b",
+        model_name="qwen/qwen3-32b",
         provider=ModelProvider.GROQ
     ),
 
@@ -119,13 +126,15 @@ def get_model_info(model_name: str) -> LLMModel | None:
     """Get model information by model_name"""
     return next((model for model in AVAILABLE_MODELS if model.model_name == model_name), None)
 
+
+
 def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | ChatGroq | None:
     if model_provider == ModelProvider.GROQ:
+        # Get and validate API key
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            # Print error to console
             print(f"API Key Error: Please make sure GROQ_API_KEY is set in your .env file.")
-            raise ValueError("Groq API key not found.  Please make sure GROQ_API_KEY is set in your .env file.")
+            raise ValueError("Groq API key not found. Please make sure GROQ_API_KEY is set in your .env file.")
         return ChatGroq(model=model_name, api_key=api_key)
     elif model_provider == ModelProvider.OPENAI:
         # Get and validate API key

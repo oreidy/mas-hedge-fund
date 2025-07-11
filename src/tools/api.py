@@ -33,7 +33,8 @@ from utils.logger import logger
 
 # ===== CACHE INITIALIZATION =====
 # Create a global cache instance with disk persistence
-_cache = DiskCache(cache_dir=Path("./cache"))
+# Use absolute path to ensure consistent cache location regardless of execution directory
+_cache = DiskCache(cache_dir=Path(__file__).parent.parent.parent / "cache")
 
 
 # ===== PRICE FUNCTIONS =====
@@ -226,6 +227,17 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
                     # Cache the processed data
                     _cache.set_prices(ticker, df_to_cache_format(ticker_data))
                     results[ticker] = ticker_data
+                else:
+                    # Ticker not available for this date range - log warning and add empty DataFrame
+                    logger.warning(f"No price data available for {ticker} during {start_date} to {end_date} (possibly not listed yet or delisted)", 
+                                module="fetch_prices_batch", ticker=ticker)
+                    results[ticker] = pd.DataFrame(columns=["open", "close", "high", "low", "volume"])
+        else:
+            # No data downloaded for any ticker - add empty DataFrames for all
+            for ticker in tickers_to_fetch:
+                logger.warning(f"No price data available for {ticker} during {start_date} to {end_date} (possibly not listed yet or delisted)", 
+                            module="fetch_prices_batch", ticker=ticker)
+                results[ticker] = pd.DataFrame(columns=["open", "close", "high", "low", "volume"])
 
         # Debug: Before return, preview the downloaded data
         if len(tickers_to_fetch) > 0 and len(results) > 0 and verbose_data:
@@ -297,6 +309,10 @@ def df_to_price_objects(df: pd.DataFrame) -> List[Price]:
 
 def prices_to_df(prices: List[Price]) -> pd.DataFrame:
     """Convert prices to a DataFrame. Same as original function."""
+    if not prices:
+        # Return empty DataFrame with expected columns if no prices
+        return pd.DataFrame(columns=["open", "close", "high", "low", "volume"])
+    
     df = pd.DataFrame([p.model_dump() for p in prices])
     df["Date"] = pd.to_datetime(df["time"])
     df.set_index("Date", inplace=True)
@@ -392,6 +408,11 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                 balance_sheet = ticker_obj.quarterly_balance_sheet
                 cash_flow = ticker_obj.quarterly_cashflow
             
+            # Check if current ratio data is available once before the loop
+            if 'Current Assets' not in balance_sheet.index or 'Current Liabilities' not in balance_sheet.index:
+                logger.warning("Missing data for current_ratio calculation: Current Assets or Current Liabilities not found in balance sheet", 
+                        module="fetch_financial_metrics_async", ticker=ticker)
+            
             # Process the financial data
             for i, col in enumerate(income_stmt.columns):
                 if i >= limit:
@@ -459,11 +480,6 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     # Calculations for current_ratio
                     current_assets = float(balance_sheet.loc['Current Assets', col]) if 'Current Assets' in balance_sheet.index else None
                     current_liabilities = float(balance_sheet.loc['Current Liabilities', col]) if 'Current Liabilities' in balance_sheet.index else None
-
-                    if current_assets is None or current_liabilities is None:
-                        logger.warning(f"Missing data for current_ratio calculation: current_assets={current_assets}, current_liabilities={current_liabilities}", 
-                                module="fetch_financial_metrics_async", ticker=ticker)
-
                     current_ratio = current_assets / current_liabilities if current_assets and current_liabilities else None
 
                     # Get shares outstanding for per-share metrics
@@ -885,12 +901,22 @@ async def get_company_news_async(
 
     logger.debug(f"Running get_company_news_async() from {start_date} to {end_date}", module="get_company_news_async")
 
-    # Get Alpha Vantage API key
-    api_key = os.environ.get("ALPHA_VANTAGE_API_KEY")
-    if not api_key:
-        logger.error("ALPHA_VANTAGE_API_KEY not found in environment variables", 
+    # Get Alpha Vantage API keys (support multiple keys for higher limits)
+    api_keys = []
+    
+    # Try to get multiple API keys from environment variables
+    for i in range(1, 22):  # Support up to 21 API keys
+        key_name = f"ALPHA_VANTAGE_API_KEY_{i}" if i > 1 else "ALPHA_VANTAGE_API_KEY"
+        api_key = os.environ.get(key_name)
+        if api_key:
+            api_keys.append(api_key)
+    
+    if not api_keys:
+        logger.error("No Alpha Vantage API keys found in environment variables", 
                     module="get_company_news_async")
         return {ticker: [] for ticker in tickers}
+    
+    logger.debug(f"Found {len(api_keys)} Alpha Vantage API keys", module="get_company_news_async")
 
     # Initialize variables
     results = {}
@@ -901,17 +927,30 @@ async def get_company_news_async(
     for ticker in tickers:
         cached_data = _cache.get_company_news(ticker)
         if cached_data:
-            # Filter by date range
-            filtered_data = [
-                CompanyNews(**news) for news in cached_data
-                if (start_date is None or news["date"] >= start_date)
-                and news["date"] <= end_date
-            ]
+            logger.debug(f"Found cached data for {ticker}: {len(cached_data)} items", 
+                        module="get_company_news_async", ticker=ticker)
+            
+            # Filter by date range - cached_data contains dictionaries, not CompanyNews objects
+            filtered_data = []
+            for news in cached_data:
+                try:
+                    # Check if news is within date range
+                    if (start_date is None or news["date"] >= start_date) and news["date"] <= end_date:
+                        filtered_data.append(CompanyNews(**news))
+                except Exception as e:
+                    logger.warning(f"Error processing cached news item for {ticker}: {e}", 
+                                  module="get_company_news_async", ticker=ticker)
+                    continue
             
             if filtered_data:
                 results[ticker] = filtered_data
                 cache_hits += 1
+                logger.debug(f"Using {len(filtered_data)} cached news items for {ticker}", 
+                           module="get_company_news_async", ticker=ticker)
                 continue
+            else:
+                logger.debug(f"No cached news items match date range for {ticker}", 
+                           module="get_company_news_async", ticker=ticker)
             
     # Fetch from Alpha Vantage for remaining tickers
     tickers_to_fetch = [ticker for ticker in tickers if ticker not in results]
@@ -925,12 +964,17 @@ async def get_company_news_async(
         logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="get_company_news_async")
         
     
-    # Fetch data with rate limiting
+    # Fetch data with API key rotation and rate limiting
     for i, ticker in enumerate(tickers_to_fetch):
         try:
+            # Select API key using round-robin rotation
+            current_api_key = api_keys[i % len(api_keys)]
+            
             # Add delay between requests to respect rate limits (5 calls per minute for free tier)
+            # With multiple keys, we can reduce the delay proportionally
             if i > 0:
-                await asyncio.sleep(12)  # 12 seconds between requests = 5 requests per minute
+                delay = 12 / len(api_keys)  # Reduce delay based on number of keys
+                await asyncio.sleep(max(0.5, delay))  # Minimum 0.5 seconds between requests
 
             # Alpha Vantage uses format YYYYMMDDTHHMM
             if start_date:
@@ -950,7 +994,7 @@ async def get_company_news_async(
                 'tickers': ticker,
                 "time_from": time_from,  
                 "time_to": time_to,   
-                'apikey': api_key,
+                'apikey': current_api_key,
                 'sort': 'LATEST',
                 'limit': limit
             }
@@ -960,27 +1004,43 @@ async def get_company_news_async(
                         module="get_company_news_async", ticker=ticker)
             
             # Make API request
+            logger.debug(f"Making API request for {ticker} with params: {params}", 
+                        module="get_company_news_async", ticker=ticker)
+            
             response = requests.get(url, params=params)
             
             if response.status_code != 200:
-                logger.error(f"Alpha Vantage API error for {ticker}: {response.status_code}", 
+                logger.error(f"Alpha Vantage HTTP error for {ticker}: {response.status_code} - {response.text[:200]}", 
                            module="get_company_news_async", ticker=ticker)
                 results[ticker] = []
                 continue
                 
-            data = response.json()
+            try:
+                data = response.json()
+            except Exception as e:
+                logger.error(f"Failed to parse JSON response for {ticker}: {e}", 
+                           module="get_company_news_async", ticker=ticker)
+                logger.error(f"Raw response: {response.text[:500]}", 
+                           module="get_company_news_async", ticker=ticker)
+                results[ticker] = []
+                continue
 
-            if verbose_data:
-                feed_count = len(data.get('feed', []))
-                logger.debug(f"Alpha Vantage returned {feed_count} raw news items", module="get_company_news_async", ticker=ticker)
-                if feed_count > 0:
-                    sample_item = data['feed'][0]
-                    logger.debug(f"Sample raw item: title='{sample_item.get('title', 'N/A')}', date='{sample_item.get('time_published', 'N/A')}'", 
-                                 module="get_company_news_async", ticker=ticker)
+            # Debug: Log the raw API response structure
+            logger.debug(f"API response keys for {ticker}: {list(data.keys())}", 
+                        module="get_company_news_async", ticker=ticker)
+            
+            feed_count = len(data.get('feed', []))
+            logger.debug(f"Alpha Vantage returned {feed_count} raw news items for {ticker}", 
+                        module="get_company_news_async", ticker=ticker)
+            
+            if verbose_data and feed_count > 0:
+                sample_item = data['feed'][0]
+                logger.debug(f"Sample raw item: title='{sample_item.get('title', 'N/A')}', date='{sample_item.get('time_published', 'N/A')}'", 
+                             module="get_company_news_async", ticker=ticker)
             
             # Check for API errors
             if 'Error Message' in data:
-                logger.error(f"Alpha Vantage error for {ticker}: {data['Error Message']}", 
+                logger.error(f"Alpha Vantage API error for {ticker}: {data['Error Message']}", 
                            module="get_company_news_async", ticker=ticker)
                 results[ticker] = []
                 continue
@@ -990,6 +1050,13 @@ async def get_company_news_async(
                              module="get_company_news_async", ticker=ticker)
                 results[ticker] = []
                 continue
+                
+            # Check if feed is empty (legitimate no news vs API issue)
+            if feed_count == 0:
+                logger.debug(f"No news articles found for {ticker} in date range {start_date} to {end_date}", 
+                            module="get_company_news_async", ticker=ticker)
+                logger.debug(f"This could be due to: 1) No news published, 2) Date range outside API limits, 3) Ticker not covered", 
+                            module="get_company_news_async", ticker=ticker)
 
             # Process news items
             news_list = []
@@ -1051,10 +1118,12 @@ async def get_company_news_async(
             # Cache the news
             if news_list:
                 _cache.set_company_news(ticker, [news.model_dump() for news in news_list])
-                logger.debug(f"Cached {len(news_list)} news items", 
-                    module="get_company_news_async", ticker=ticker)
+                logger.debug(f"Cached {len(news_list)} news items for {ticker}", 
+                            module="get_company_news_async", ticker=ticker)
             else:
-                logger.warning(f"No valid news found", 
+                # Still cache empty results to avoid re-processing
+                _cache.set_company_news(ticker, [])
+                logger.debug(f"No valid news found for {ticker} - cached empty result", 
                             module="get_company_news_async", ticker=ticker)
                 
             # Add to results
@@ -1261,7 +1330,11 @@ def search_line_items(
                     "revenue": ("Total Revenue", income_stmt),
                     "net_income": ("Net Income", income_stmt),
                     "capital_expenditure": ("Capital Expenditure", cash_flow),
-                    "depreciation_and_amortization": ("Depreciation And Amortization", cash_flow),
+                    "depreciation_and_amortization": ([
+                        "Depreciation And Amortization",
+                        "Depreciation Amortization Depletion",
+                        "Reconciled Depreciation"
+                    ], cash_flow),
                     "outstanding_shares":  ("Ordinary Shares Number", balance_sheet),
                     "total_assets": ("Total Assets", balance_sheet),
                     "total_liabilities": ("Total Liabilities Net Minority Interest", balance_sheet),
@@ -1276,13 +1349,16 @@ def search_line_items(
                 if item == "dividends_and_other_cash_distributions":
                     # Try multiple possible field names
                     dividend_field_names = ["Cash Dividends Paid", "Common Stock Dividend Paid", "Dividends Paid"]
+                    dividend_found = False
                     for field_name in dividend_field_names:
                         if field_name in cash_flow.index:
                             value = cash_flow.loc[field_name, col]
                             setattr(line_item, item, float(value))
+                            dividend_found = True
                             break
-                        else:
-                            logger.warning(f"Missing data for dividends at {report_date}", module="search_line_items", ticker=ticker)
+                    
+                    if not dividend_found:
+                        logger.debug(f"No dividend data found for {report_date}", module="search_line_items", ticker=ticker)
                 
                 elif item == "working_capital":
                     # Working capital = Current Assets - Current Liabilities
@@ -1293,26 +1369,32 @@ def search_line_items(
                     else:
                         logger.warning(f"Missing data for working_capital calculation at {report_date}: current_assets={current_assets}, current_liabilities={current_liabilities}", 
                         module="search_line_items", ticker=ticker)
+                        # Set to None when calculation fails to ensure attribute exists
+                        setattr(line_item, item, None)
                 
                 elif item == "debt_to_equity":
                     # Debt to Equity
                     total_liabilities = balance_sheet.loc["Total Liabilities Net Minority Interest", col] if "Total Liabilities Net Minority Interest" in balance_sheet.index else None
                     stockholders_equity = balance_sheet.loc["Stockholders Equity", col] if "Stockholders Equity" in balance_sheet.index else None
-                    if total_liabilities is not None and stockholders_equity is not None and float(stockholders_equity) > 0:
+                    if total_liabilities is not None and stockholders_equity is not None and float(stockholders_equity) != 0:
                         setattr(line_item, item, float(total_liabilities) / float(stockholders_equity))
                     else:
                         logger.warning(f"Missing data for debt_to_equity calculation at {report_date}: total_liabilities={total_liabilities}, stockholders_equity={stockholders_equity}", 
                         module="search_line_items", ticker=ticker)
                 
                 elif item == "free_cash_flow":
-                    # Free Cash Flow = Operating Cash Flow + Capital Expenditure
-                    operating_cash_flow = cash_flow.loc["Operating Cash Flow", col] if "Operating Cash Flow" in cash_flow.index else None
-                    capital_expenditure = cash_flow.loc["Capital Expenditure", col] if "Capital Expenditure" in cash_flow.index else None
-                    if operating_cash_flow is not None and capital_expenditure is not None:
-                        setattr(line_item, item, float(operating_cash_flow + capital_expenditure))
+                    # First try to get Free Cash Flow directly from the cash flow statement
+                    if "Free Cash Flow" in cash_flow.index:
+                        setattr(line_item, item, float(cash_flow.loc["Free Cash Flow", col]))
                     else:
-                        logger.warning(f"Missing data for free_cash_flow calculation at {report_date}: operating_cash_flow={operating_cash_flow}, capital_expenditure={capital_expenditure}", 
-                        module="search_line_items", ticker=ticker)
+                        # Fallback: Calculate Free Cash Flow = Operating Cash Flow + Capital Expenditure
+                        operating_cash_flow = cash_flow.loc["Operating Cash Flow", col] if "Operating Cash Flow" in cash_flow.index else None
+                        capital_expenditure = cash_flow.loc["Capital Expenditure", col] if "Capital Expenditure" in cash_flow.index else None
+                        if operating_cash_flow is not None and capital_expenditure is not None:
+                            setattr(line_item, item, float(operating_cash_flow + capital_expenditure))
+                        else:
+                            logger.warning(f"Missing data for free_cash_flow calculation at {report_date}: operating_cash_flow={operating_cash_flow}, capital_expenditure={capital_expenditure}", 
+                            module="search_line_items", ticker=ticker)
                 
                 elif item == "operating_margin":
                     # Operating Margin = Operating Income / Revenue
@@ -1325,10 +1407,21 @@ def search_line_items(
                         module="search_line_items", ticker=ticker)
                 
                 elif item_mapping.get(item):
-                    field, df = item_mapping[item]
-                    if field in df.index:
-                        value = df.loc[field, col]
-                        setattr(line_item, item, float(value))
+                    field_data, df = item_mapping[item]
+                    # Handle both single field names and lists of field names
+                    if isinstance(field_data, list):
+                        # Try each field name in the list until one is found
+                        for field in field_data:
+                            if field in df.index:
+                                value = df.loc[field, col]
+                                setattr(line_item, item, float(value))
+                                break
+                    else:
+                        # Single field name (backwards compatibility)
+                        field = field_data
+                        if field in df.index:
+                            value = df.loc[field, col]
+                            setattr(line_item, item, float(value))
             
             results.append(line_item)
 
@@ -1403,7 +1496,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                 # Run price data, financial metrics, and news tasks synchronously
                 price_data = loop.run_until_complete(fetch_prices_batch(batch, start_date, end_date, verbose_data))
                 metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "annual", 10, verbose_data))
-                news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, 1000, verbose_data))
+                # news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, 1000, verbose_data))
             finally:
                 loop.close()
             
@@ -1413,7 +1506,8 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                     "prices": price_data.get(ticker, pd.DataFrame()),
                     "metrics": metrics_data.get(ticker, []),
                     "insider_trades": insider_results.get(ticker, []),
-                    "news": news_data.get(ticker, [])
+                    # "news": news_data.get(ticker, [])
+                    "news": []  # Empty news data to avoid Alpha Vantage warnings
                 }
     except Exception as e:
         logger.error(f"Error fetching data for tickers: {e}", module="get_data_for_tickers")

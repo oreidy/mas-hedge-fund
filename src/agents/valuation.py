@@ -41,6 +41,16 @@ def valuation_agent(state: AgentState):
         
         metrics = financial_metrics[0]
 
+        # Cap earnings growth to prevent extreme valuations
+        raw_earnings_growth = metrics.earnings_growth
+        if raw_earnings_growth is not None:
+            # Cap growth between -95% and +200% to prevent formula explosion
+            capped_earnings_growth = max(-0.95, min(raw_earnings_growth, 2.0))
+            if capped_earnings_growth != raw_earnings_growth:
+                logger.debug(f"Capped extreme earnings growth for {ticker}: {raw_earnings_growth:.1%} -> {capped_earnings_growth:.1%}", 
+                             module="valuation_agent", ticker=ticker)
+            metrics.earnings_growth = capped_earnings_growth
+
         if verbose_data:
             logger.debug(f"Retrieved financial metrics for {ticker}:", module="valuation_agent", ticker=ticker)
             logger.debug(f"Earnings growth: {metrics.earnings_growth}", module="valuation_agent", ticker=ticker)
@@ -86,14 +96,56 @@ def valuation_agent(state: AgentState):
 
 
         progress.update_status("valuation_agent", ticker, "Calculating owner earnings")
+        
+        # Get critical financial metrics with safe attribute access
+        net_income = getattr(current_financial_line_item, 'net_income', None)
+        free_cash_flow = getattr(current_financial_line_item, 'free_cash_flow', None)
+        
+        # Skip valuation if net income is unavailable
+        if net_income is None:
+            logger.warning(f"Net income unavailable for {ticker}, cannot perform valuation analysis", module="valuation_agent", ticker=ticker)
+            valuation_analysis[ticker] = {
+                "signal": "hold",
+                "confidence": 0,
+                "reasoning": {"error": "Insufficient financial data - net income unavailable"}
+            }
+            progress.update_status("valuation_agent", ticker, "Skipped: No net income data")
+            continue
+            
         # Calculate working capital change
-        working_capital_change = current_financial_line_item.working_capital - previous_financial_line_item.working_capital
+        current_wc = getattr(current_financial_line_item, 'working_capital', None)
+        previous_wc = getattr(previous_financial_line_item, 'working_capital', None)
+        
+        # Track if we're using estimated data for confidence adjustment
+        using_estimated_data = False
+        
+        if current_wc is None or previous_wc is None:
+            logger.warning(f"Working capital data unavailable for {ticker}, using 0 for calculation", module="valuation_agent", ticker=ticker)
+            working_capital_change = 0
+            using_estimated_data = True
+        else:
+            working_capital_change = current_wc - previous_wc
+
+        # Get other financial metrics with safe attribute access
+        depreciation = getattr(current_financial_line_item, 'depreciation_and_amortization', None)
+        capex = getattr(current_financial_line_item, 'capital_expenditure', None)
+        
+        # Handle missing optional financial data
+        if depreciation is None:
+            logger.warning(f"Depreciation data unavailable for {ticker}, using 0 for calculation", module="valuation_agent", ticker=ticker)
+            depreciation = 0
+            using_estimated_data = True
+            
+        if capex is None:
+            logger.warning(f"Capital expenditure data unavailable for {ticker}, using 0 for calculation", module="valuation_agent", ticker=ticker)
+            capex = 0
+            using_estimated_data = True
 
         # Owner Earnings Valuation (Buffett Method)
         owner_earnings_value = calculate_owner_earnings_value(
-            net_income=current_financial_line_item.net_income,
-            depreciation=current_financial_line_item.depreciation_and_amortization,
-            capex=current_financial_line_item.capital_expenditure,
+            net_income=net_income,
+            depreciation=depreciation,
+            capex=capex,
             working_capital_change=working_capital_change,
             growth_rate=metrics.earnings_growth,
             required_return=0.15,
@@ -105,9 +157,16 @@ def valuation_agent(state: AgentState):
                 
 
         progress.update_status("valuation_agent", ticker, "Calculating DCF value")
+        
+        # Handle missing free cash flow for DCF
+        if free_cash_flow is None:
+            logger.warning(f"Free cash flow data unavailable for {ticker}, using 0 for calculation", module="valuation_agent", ticker=ticker)
+            free_cash_flow = 0
+            using_estimated_data = True
+        
         # DCF Valuation
         dcf_value = calculate_intrinsic_value(
-            free_cash_flow=current_financial_line_item.free_cash_flow,
+            free_cash_flow=free_cash_flow,
             growth_rate=metrics.earnings_growth,
             discount_rate=0.10,
             terminal_growth_rate=0.03,
@@ -158,7 +217,15 @@ def valuation_agent(state: AgentState):
             "details": f"Owner Earnings Value: ${owner_earnings_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {owner_earnings_gap:.1%}",
         }
 
-        confidence = round(abs(valuation_gap), 2) * 100
+        confidence = min(round(abs(valuation_gap), 2) * 100, 100.0)  # Cap at 100%
+        
+        # Reduce confidence when using estimated data
+        # Working capital change affects Owner Earnings calculation accuracy - when missing,
+        # we assume 0 impact which may not reflect reality, so reduce confidence by 30%
+        if using_estimated_data:
+            confidence = max(confidence * 0.7, 10)  # Reduce by 30%, minimum 10%
+            logger.debug(f"Confidence reduced due to missing working capital data", module="valuation_agent", ticker=ticker)
+        
         valuation_analysis[ticker] = {
             "signal": signal,
             "confidence": confidence,

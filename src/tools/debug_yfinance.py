@@ -568,6 +568,133 @@ def debug_sec_edgar(ticker_symbol, start_date=None, end_date=None, verbose=True)
     
     print("\nSEC EDGAR scraper test complete")
 
+def test_delisted_tickers(years_back: int = 4):
+    """
+    Test all delisted S&P 500 tickers to determine which ones are truly delisted vs just removed from index.
+    
+    Args:
+        years_back: Number of years to look back for delisted tickers (default: 4)
+    """
+    print(f"=== TESTING DELISTED S&P 500 TICKERS (LAST {years_back} YEARS) ===")
+    
+    # Import the tickers function
+    from utils.tickers import get_sp500_delisted_tickers
+    from datetime import datetime, timedelta
+    import yfinance as yf
+    
+    # Get delisted tickers
+    try:
+        delisted_tickers = get_sp500_delisted_tickers(years_back)
+        print(f"Found {len(delisted_tickers)} delisted tickers to test")
+        print(f"Sample tickers: {delisted_tickers[:10]}")
+    except Exception as e:
+        print(f"Error getting delisted tickers: {e}")
+        return
+    
+    # Test each ticker for data availability
+    results = {
+        'truly_delisted': [],      # No data at all
+        'renamed_merged': [],      # Some data but likely renamed/merged  
+        'still_active': [],        # Full data available
+        'limited_data': [],        # Some data but incomplete
+        'error_tickers': []        # Error during testing
+    }
+    
+    test_date = datetime.now().strftime('%Y-%m-%d')
+    test_start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    
+    print(f"\nTesting each ticker for data availability...")
+    print(f"Test period: {test_start} to {test_date}")
+    print("-" * 80)
+    
+    for i, ticker in enumerate(delisted_tickers, 1):
+        print(f"[{i:3d}/{len(delisted_tickers)}] Testing {ticker}...", end=" ")
+        
+        try:
+            stock = yf.Ticker(ticker)
+            
+            # Test 1: Basic info availability
+            info_available = bool(stock.info and len(stock.info) > 5)
+            
+            # Test 2: Recent price data
+            recent_hist = stock.history(period='1mo')
+            has_recent_prices = not recent_hist.empty
+            
+            # Test 3: Historical price data (1 year ago)
+            historical_start = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+            historical_end = (datetime.now() - timedelta(days=335)).strftime('%Y-%m-%d')
+            hist_data = stock.history(start=historical_start, end=historical_end)
+            has_historical_prices = not hist_data.empty
+            
+            # Test 4: Financial data
+            balance_sheet = stock.balance_sheet
+            has_financials = not balance_sheet.empty
+            
+            # Categorize based on test results
+            if not info_available and not has_recent_prices and not has_historical_prices:
+                results['truly_delisted'].append(ticker)
+                status = "DELISTED"
+            elif has_recent_prices and info_available:
+                results['still_active'].append(ticker)
+                status = "ACTIVE"
+            elif has_historical_prices and not has_recent_prices:
+                results['renamed_merged'].append(ticker)
+                status = "RENAMED/MERGED"
+            elif info_available or has_historical_prices or has_financials:
+                results['limited_data'].append(ticker)
+                status = "LIMITED"
+            else:
+                results['truly_delisted'].append(ticker)
+                status = "DELISTED"
+                
+            print(f"{status}")
+            
+        except Exception as e:
+            results['error_tickers'].append((ticker, str(e)))
+            print(f"ERROR: {str(e)[:50]}")
+    
+    # Print summary results
+    print("\n" + "="*80)
+    print("DELISTED TICKER ANALYSIS RESULTS")
+    print("="*80)
+    
+    print(f"\n🔴 TRULY DELISTED ({len(results['truly_delisted'])} tickers):")
+    print("   No recent data, no info, likely completely delisted")
+    for ticker in results['truly_delisted'][:10]:
+        print(f"   {ticker}")
+    if len(results['truly_delisted']) > 10:
+        print(f"   ... and {len(results['truly_delisted']) - 10} more")
+    
+    print(f"\n🟡 RENAMED/MERGED ({len(results['renamed_merged'])} tickers):")
+    print("   Has historical data but no recent data, likely renamed or merged")
+    for ticker in results['renamed_merged']:
+        print(f"   {ticker}")
+    
+    print(f"\n🟢 STILL ACTIVE ({len(results['still_active'])} tickers):")
+    print("   Has recent data, may have been re-added to S&P 500 or still trading")
+    for ticker in results['still_active']:
+        print(f"   {ticker}")
+    
+    print(f"\n🟠 LIMITED DATA ({len(results['limited_data'])} tickers):")
+    print("   Some data available but incomplete")
+    for ticker in results['limited_data']:
+        print(f"   {ticker}")
+    
+    if results['error_tickers']:
+        print(f"\n❌ ERRORS ({len(results['error_tickers'])} tickers):")
+        for ticker, error in results['error_tickers']:
+            print(f"   {ticker}: {error[:60]}")
+    
+    # Recommendations
+    print(f"\n📋 RECOMMENDATIONS:")
+    print(f"   • Skip {len(results['truly_delisted'])} truly delisted tickers in data fetching")
+    print(f"   • Investigate {len(results['renamed_merged'])} renamed/merged tickers for new symbols")
+    print(f"   • Consider including {len(results['still_active'])} still active tickers")
+    print(f"   • Handle {len(results['limited_data'])} limited data tickers case-by-case")
+    
+    return results
+
+
 def debug_sec_edgar_direct(ticker_symbol, start_date=None, end_date=None):
     """
     Debug function that directly checks the SEC website for Form 4 filings.
@@ -693,22 +820,341 @@ def debug_sec_edgar_direct(ticker_symbol, start_date=None, end_date=None):
 
 
 
-if __name__ == "__main__":
-    # Test with a few tickers
-    tickers = ["CROX"]
-
-    start_date = "2023-01-01"
-    end_date = "2024-04-22" 
+def test_meta_fb_transition():
+    """
+    Test META ticker to see if it includes historical data from when it was FB.
+    """
+    print("=== TESTING META TICKER FOR HISTORICAL FB DATA ===")
     
-    #debug_sec_edgar(tickers, start_date, end_date)
-
-    for ticker in tickers:
-        #result = debug_yfinance_data(ticker)
+    import yfinance as yf
+    from datetime import datetime, timedelta
+    
+    ticker = "META"
+    stock = yf.Ticker(ticker)
+    
+    print(f"Testing {ticker} for historical Facebook data...")
+    
+    # Test different time periods
+    periods_to_test = [
+        ("1mo", "1 month"),
+        ("3mo", "3 months"), 
+        ("6mo", "6 months"),
+        ("1y", "1 year"),
+        ("2y", "2 years"),
+        ("5y", "5 years"),
+        ("10y", "10 years"),
+        ("max", "maximum available")
+    ]
+    
+    for period, description in periods_to_test:
+        try:
+            hist = stock.history(period=period)
+            if not hist.empty:
+                start_date = hist.index.min().date()
+                end_date = hist.index.max().date()
+                total_days = len(hist)
+                print(f"  {description:20}: {total_days:4d} days ({start_date} to {end_date})")
+                
+                # Check if data goes back to FB era (before June 2022)
+                fb_era_cutoff = datetime(2022, 6, 1).date()
+                if start_date < fb_era_cutoff:
+                    print(f"    ✓ Includes FB era data (before {fb_era_cutoff})")
+                else:
+                    print(f"    ✗ No FB era data (starts after {fb_era_cutoff})")
+            else:
+                print(f"  {description:20}: No data available")
+        except Exception as e:
+            print(f"  {description:20}: Error - {e}")
+    
+    # Test specific date ranges around the FB->META transition
+    print(f"\n=== TESTING SPECIFIC DATE RANGES AROUND FB->META TRANSITION ===")
+    
+    test_ranges = [
+        ("2021-01-01", "2021-12-31", "Pre-transition (2021)"),
+        ("2022-01-01", "2022-05-31", "Just before transition (early 2022)"),
+        ("2022-06-01", "2022-07-31", "During transition (June-July 2022)"),
+        ("2022-08-01", "2022-12-31", "Post-transition (late 2022)"),
+        ("2023-01-01", "2023-12-31", "Recent data (2023)")
+    ]
+    
+    for start_date, end_date, description in test_ranges:
+        try:
+            hist = stock.history(start=start_date, end=end_date)
+            if not hist.empty:
+                actual_start = hist.index.min().date()
+                actual_end = hist.index.max().date()
+                total_days = len(hist)
+                print(f"  {description:30}: {total_days:3d} days ({actual_start} to {actual_end})")
+            else:
+                print(f"  {description:30}: No data available")
+        except Exception as e:
+            print(f"  {description:30}: Error - {e}")
+    
+    # Get company info
+    print(f"\n=== COMPANY INFORMATION ===")
+    try:
+        info = stock.info
+        print(f"Company name: {info.get('longName', 'N/A')}")
+        print(f"Sector: {info.get('sector', 'N/A')}")
+        print(f"Industry: {info.get('industry', 'N/A')}")
+        print(f"Market cap: ${info.get('marketCap', 0):,.0f}")
+        print(f"Exchange: {info.get('exchange', 'N/A')}")
         
-        #debug_sec_edgar_direct(ticker, start_date, end_date)
-        #sharesinfo = debug_yfinance_shares(ticker)
-        #debug_price_data_fetching(ticker, start_date, end_date)
-        print_financial_statements(ticker, end_date, periods=4)
+        # Check for any references to Facebook in the info
+        fb_related_fields = []
+        for key, value in info.items():
+            if isinstance(value, str) and 'facebook' in value.lower():
+                fb_related_fields.append((key, value))
+        
+        if fb_related_fields:
+            print(f"\nFacebook references in info:")
+            for key, value in fb_related_fields:
+                print(f"  {key}: {value}")
+        else:
+            print(f"\nNo Facebook references found in company info")
+            
+    except Exception as e:
+        print(f"Error getting company info: {e}")
+    
+    return stock
 
-        #print("\n" + "="*50 + "\n")
-    print("\n" + "="*50 + "\n")
+def debug_problematic_tickers():
+    """
+    Debug function to investigate the specific tickers that are failing with period='max'.
+    These tickers: AUD, COG, FRC, NLSN, TWTR
+    """
+    print("=== DEBUGGING PROBLEMATIC TICKERS WITH PERIOD='MAX' ERRORS ===")
+    
+    # The tickers mentioned in your error message
+    problematic_tickers = ['AUD', 'COG', 'FRC', 'NLSN', 'TWTR']
+    
+    for ticker in problematic_tickers:
+        print(f"\n--- INVESTIGATING {ticker} ---")
+        
+        try:
+            stock = yf.Ticker(ticker)
+            
+            # Get basic company info
+            try:
+                info = stock.info
+                company_name = info.get('longName', 'Unknown')
+                sector = info.get('sector', 'Unknown')
+                industry = info.get('industry', 'Unknown')
+                exchange = info.get('exchange', 'Unknown')
+                market_cap = info.get('marketCap', 'Unknown')
+                
+                print(f"Company: {company_name}")
+                print(f"Sector: {sector}")
+                print(f"Industry: {industry}")
+                print(f"Exchange: {exchange}")
+                print(f"Market Cap: {market_cap}")
+                
+                # Check if it's a currency, ETF, or special instrument
+                if 'currency' in company_name.lower() or ticker in ['AUD', 'USD', 'EUR', 'GBP']:
+                    print(f"⚠️  IDENTIFIED: This appears to be a CURRENCY ticker")
+                elif info.get('quoteType') == 'ETF':
+                    print(f"⚠️  IDENTIFIED: This is an ETF")
+                elif 'delisted' in info.get('longBusinessSummary', '').lower():
+                    print(f"⚠️  IDENTIFIED: Company mentions being delisted")
+                
+            except Exception as e:
+                print(f"❌ Could not get company info: {e}")
+            
+            # Test different periods to see what works
+            periods_to_test = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max']
+            print(f"\nTesting different periods for {ticker}:")
+            
+            for period in periods_to_test:
+                try:
+                    hist = stock.history(period=period)
+                    if not hist.empty:
+                        print(f"  ✅ {period:4s}: {len(hist)} days ({hist.index.min().date()} to {hist.index.max().date()})")
+                    else:
+                        print(f"  ⚠️  {period:4s}: No data returned")
+                except Exception as e:
+                    print(f"  ❌ {period:4s}: {str(e)[:60]}...")
+            
+            # Test with date ranges instead
+            print(f"\nTesting with date ranges for {ticker}:")
+            try:
+                # Test recent data
+                recent = stock.history(start="2024-01-01", end="2024-12-31")
+                if not recent.empty:
+                    print(f"  ✅ 2024 data: {len(recent)} days")
+                else:
+                    print(f"  ⚠️  2024 data: No data")
+                    
+                # Test older data
+                old = stock.history(start="2020-01-01", end="2020-12-31")
+                if not old.empty:
+                    print(f"  ✅ 2020 data: {len(old)} days")
+                else:
+                    print(f"  ⚠️  2020 data: No data")
+                    
+            except Exception as e:
+                print(f"  ❌ Date range test failed: {e}")
+                
+            # Check if ticker has been reassigned or changed
+            print(f"\nChecking ticker status for {ticker}:")
+            if ticker == 'TWTR':
+                print("  🔄 TWITTER: Ticker changed to X (private company)")
+            elif ticker == 'FRC':
+                print("  🏦 FIRST REPUBLIC: Bank failed and was acquired by JPMorgan Chase")
+            elif ticker == 'AUD':
+                print("  💱 AUD: This appears to be Australian Dollar currency, not a stock")
+            elif ticker == 'COG':
+                print("  ⛽ CABOT OIL & GAS: May have been acquired or delisted")
+            elif ticker == 'NLSN':
+                print("  📊 NIELSEN: May have gone private or been acquired")
+                
+        except Exception as e:
+            print(f"❌ Major error testing {ticker}: {e}")
+    
+    print(f"\n=== SUMMARY ===")
+    print("The 'period=max' errors are likely occurring because:")
+    print("1. AUD - Currency ticker, not a stock (doesn't support stock periods)")
+    print("2. COG - Delisted/acquired company") 
+    print("3. FRC - Failed bank, delisted")
+    print("4. NLSN - Delisted/privatized company")
+    print("5. TWTR - Ticker no longer exists (company went private)")
+    print("\nThese tickers shouldn't be in your S&P 500 list for current trading.")
+
+def debug_x_ticker():
+    """
+    Debug function to investigate the "X" ticker that's showing up in the system.
+    This is likely related to Twitter going private, but let's see what it actually is.
+    """
+    print("=== DEBUGGING 'X' TICKER ===")
+    
+    ticker = 'X'
+    
+    try:
+        stock = yf.Ticker(ticker)
+        
+        # Get basic company info
+        print(f"\n--- COMPANY INFO FOR {ticker} ---")
+        try:
+            info = stock.info
+            
+            print(f"Long Name: {info.get('longName', 'Unknown')}")
+            print(f"Short Name: {info.get('shortName', 'Unknown')}")
+            print(f"Sector: {info.get('sector', 'Unknown')}")
+            print(f"Industry: {info.get('industry', 'Unknown')}")
+            print(f"Exchange: {info.get('exchange', 'Unknown')}")
+            print(f"Market Cap: {info.get('marketCap', 'Unknown')}")
+            print(f"Quote Type: {info.get('quoteType', 'Unknown')}")
+            print(f"Currency: {info.get('currency', 'Unknown')}")
+            print(f"Country: {info.get('country', 'Unknown')}")
+            
+            # Check business summary
+            business_summary = info.get('longBusinessSummary', '')
+            if business_summary:
+                print(f"\nBusiness Summary (first 200 chars):")
+                print(f"{business_summary[:200]}...")
+            
+            # Look for Twitter/social media keywords
+            twitter_keywords = ['twitter', 'social media', 'social network', 'elon musk', 'microblog']
+            summary_lower = business_summary.lower()
+            name_lower = info.get('longName', '').lower()
+            
+            twitter_related = any(keyword in summary_lower or keyword in name_lower for keyword in twitter_keywords)
+            if twitter_related:
+                print(f"\n⚠️  TWITTER-RELATED: Contains social media/Twitter keywords")
+            
+        except Exception as e:
+            print(f"❌ Could not get company info: {e}")
+        
+        # Test historical data availability
+        print(f"\n--- HISTORICAL DATA TEST FOR {ticker} ---")
+        
+        periods_to_test = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y']
+        
+        for period in periods_to_test:
+            try:
+                hist = stock.history(period=period)
+                if not hist.empty:
+                    start_date = hist.index.min().date()
+                    end_date = hist.index.max().date()
+                    print(f"  ✅ {period:4s}: {len(hist)} days ({start_date} to {end_date})")
+                else:
+                    print(f"  ⚠️  {period:4s}: No data returned")
+            except Exception as e:
+                print(f"  ❌ {period:4s}: {str(e)[:60]}...")
+        
+        # Check specific date ranges
+        print(f"\n--- DATE RANGE TESTS FOR {ticker} ---")
+        
+        test_ranges = [
+            ("2024-01-01", "2024-12-31", "2024 data"),
+            ("2023-01-01", "2023-12-31", "2023 data"), 
+            ("2022-01-01", "2022-12-31", "2022 data (Twitter acquisition year)")
+        ]
+        
+        for start_date, end_date, description in test_ranges:
+            try:
+                hist = stock.history(start=start_date, end=end_date)
+                if not hist.empty:
+                    actual_start = hist.index.min().date()
+                    actual_end = hist.index.max().date()
+                    print(f"  ✅ {description}: {len(hist)} days ({actual_start} to {actual_end})")
+                else:
+                    print(f"  ⚠️  {description}: No data")
+            except Exception as e:
+                print(f"  ❌ {description}: {str(e)[:50]}...")
+        
+        print(f"\n--- ASSESSMENT ---")
+        if twitter_related:
+            print("This appears to be Twitter-related based on company info.")
+        
+        # Check if it has very limited data (suggesting new ticker)
+        try:
+            recent = stock.history(period='1y')
+            if not recent.empty and len(recent) < 200:
+                print(f"Limited historical data ({len(recent)} days) - possibly new ticker or recent IPO")
+            elif recent.empty:
+                print("No recent data available - likely delisted or private")
+        except:
+            print("Cannot determine data availability")
+            
+    except Exception as e:
+        print(f"❌ Major error testing {ticker}: {e}")
+
+if __name__ == "__main__":
+    # Debug the X ticker first
+    debug_x_ticker()
+    
+    print("\n" + "="*80 + "\n")
+    
+    # Debug the problematic tickers
+    debug_problematic_tickers()
+    
+    print("\n" + "="*80 + "\n")
+    
+    # Test META ticker for historical FB data
+    print("Testing META ticker for historical Facebook data...")
+    meta_stock = test_meta_fb_transition()
+    
+    print("\n" + "="*80 + "\n")
+    
+    # Original delisted tickers test (commented out to focus on META test)
+    # print("Testing delisted S&P 500 tickers...")
+    # results = test_delisted_tickers(years_back=4)
+    
+    # Original ticker testing code (commented for later use)
+    # # Test with JPM to check capital_expenditure data
+    # tickers = ["JPM"]
+    # start_date = "2023-01-01"
+    # end_date = "2024-04-22" 
+    # 
+    # #debug_sec_edgar(tickers, start_date, end_date)
+    # 
+    # for ticker in tickers:
+    #     result = debug_yfinance_data(ticker)
+    #     
+    #     #debug_sec_edgar_direct(ticker, start_date, end_date)
+    #     #sharesinfo = debug_yfinance_shares(ticker)
+    #     #debug_price_data_fetching(ticker, start_date, end_date)
+    #     print_financial_statements(ticker, end_date, periods=4)
+    # 
+    #     #print("\n" + "="*50 + "\n")
+    # print("\n" + "="*50 + "\n")

@@ -23,6 +23,7 @@ from utils.analysts import ANALYST_ORDER
 from utils.progress import progress
 from llm.models import LLM_ORDER, get_model_info
 from utils.logger import logger, setup_logger, LogLevel
+from utils.tickers import get_sp500_tickers
 
 import argparse
 from datetime import datetime
@@ -147,9 +148,20 @@ def create_workflow(selected_analysts=None):
     if selected_analysts is None:
         selected_analysts = list(analyst_nodes.keys())
     
-    # If all analysts are selected, use optimized workflow with ticker filtering
-    if set(selected_analysts) == set(analyst_nodes.keys()):
-        return create_optimized_workflow()
+    # Define stock analyst agents only
+    stock_analyst_agents = {
+        "technical_analyst",
+        "fundamentals_analyst", 
+        "sentiment_analyst",
+        "valuation_analyst",
+        "warren_buffett",
+        "bill_ackman"
+    }
+    
+    # Use optimized workflow if all stock analysts are selected (with or without macro/forward-looking)
+    selected_set = set(selected_analysts)
+    if stock_analyst_agents.issubset(selected_set):
+        return create_optimized_workflow(selected_analysts)
     
     # For partial analyst selection, use original workflow
     # Add selected analyst nodes
@@ -184,25 +196,40 @@ def create_workflow(selected_analysts=None):
     return workflow
 
 
-def create_optimized_workflow():
+def create_optimized_workflow(selected_analysts):
     """Create optimized workflow that filters tickers based on signal agreement."""
     workflow = StateGraph(AgentState)
     workflow.add_node("start_node", start)
     
-    # First tier: Macro and Forward-Looking agents (run independently) and Technical/Sentiment agents (run on all tickers)
-    workflow.add_node("macro_agent", macro_agent)
-    workflow.add_node("forward_looking_agent", forward_looking_agent)
+    # Check which asset allocation agents are selected
+    include_macro = "macro_analyst" in selected_analysts
+    include_forward_looking = "forward_looking_analyst" in selected_analysts
+    
+    # First tier: Technical/Sentiment agents (run on all tickers) and conditionally add asset allocation agents
     workflow.add_node("technical_analyst_agent", technical_analyst_agent)
     workflow.add_node("sentiment_agent", sentiment_agent)
-    workflow.add_edge("start_node", "macro_agent")
-    workflow.add_edge("start_node", "forward_looking_agent")
     workflow.add_edge("start_node", "technical_analyst_agent")
     workflow.add_edge("start_node", "sentiment_agent")
+    
+    # Conditionally add asset allocation agents
+    if include_macro:
+        workflow.add_node("macro_agent", macro_agent)
+        workflow.add_edge("start_node", "macro_agent")
+    
+    if include_forward_looking:
+        workflow.add_node("forward_looking_agent", forward_looking_agent)
+        workflow.add_edge("start_node", "forward_looking_agent")
     
     # Ticker filtering node
     workflow.add_node("ticker_filter", ticker_filter_node)
     workflow.add_edge("technical_analyst_agent", "ticker_filter")
     workflow.add_edge("sentiment_agent", "ticker_filter")
+    
+    # Ensure ticker filter waits for all first tier agents including asset allocation agents
+    if include_macro:
+        workflow.add_edge("macro_agent", "ticker_filter")
+    if include_forward_looking:
+        workflow.add_edge("forward_looking_agent", "ticker_filter")
     
     # Second tier: Expensive analysts (run only on filtered tickers)
     workflow.add_node("fundamentals_agent", fundamentals_agent_filtered)
@@ -210,24 +237,37 @@ def create_optimized_workflow():
     workflow.add_node("warren_buffett_agent", warren_buffett_agent_filtered)
     workflow.add_node("bill_ackman_agent", bill_ackman_agent_filtered)
     
-    # Connect filtered agents in sequence
+    # Connect filtered agents in parallel
     workflow.add_edge("ticker_filter", "fundamentals_agent")
-    workflow.add_edge("fundamentals_agent", "valuation_agent")
-    workflow.add_edge("valuation_agent", "warren_buffett_agent")
-    workflow.add_edge("warren_buffett_agent", "bill_ackman_agent")
+    workflow.add_edge("ticker_filter", "valuation_agent")
+    workflow.add_edge("ticker_filter", "warren_buffett_agent")
+    workflow.add_edge("ticker_filter", "bill_ackman_agent")
+    
+    # Second filter node - filters based on 4+ agreeing signals from all 6 agents
+    workflow.add_node("signal_consensus_filter", signal_consensus_filter_node)
+    workflow.add_edge("fundamentals_agent", "signal_consensus_filter")
+    workflow.add_edge("valuation_agent", "signal_consensus_filter")
+    workflow.add_edge("warren_buffett_agent", "signal_consensus_filter")
+    workflow.add_edge("bill_ackman_agent", "signal_consensus_filter")
     
     # Management nodes - risk management needs macro and forward-looking agent outputs
-    workflow.add_node("risk_management_agent", risk_management_agent)
-    workflow.add_node("equity_agent", equity_agent)
-    workflow.add_node("fixed_income_agent", fixed_income_agent)
+    workflow.add_node("risk_management_agent", risk_management_agent_filtered)
+    workflow.add_node("equity_agent", equity_agent_filtered)
     
-    workflow.add_edge("bill_ackman_agent", "risk_management_agent")
-    workflow.add_edge("macro_agent", "risk_management_agent")
-    workflow.add_edge("forward_looking_agent", "risk_management_agent")
+    workflow.add_edge("signal_consensus_filter", "risk_management_agent")
+    
+    # Asset allocation agents now flow through ticker_filter, so no direct connection to risk management needed
+    
     workflow.add_edge("risk_management_agent", "equity_agent")
-    workflow.add_edge("risk_management_agent", "fixed_income_agent")
-    workflow.add_edge("equity_agent", END)
-    workflow.add_edge("fixed_income_agent", END)
+    
+    # Only add fixed-income agent if macro or forward-looking agents are selected
+    if include_macro or include_forward_looking:
+        workflow.add_node("fixed_income_agent", fixed_income_agent)
+        workflow.add_edge("risk_management_agent", "fixed_income_agent")
+        workflow.add_edge("equity_agent", END)
+        workflow.add_edge("fixed_income_agent", END)
+    else:
+        workflow.add_edge("equity_agent", END)
     
     workflow.set_entry_point("start_node")
     return workflow
@@ -264,6 +304,9 @@ def ticker_filter_node(state: AgentState):
     # Store filtered ticker lists in state
     state["data"]["agreeing_tickers"] = agreeing_tickers
     state["data"]["disagreeing_tickers"] = disagreeing_tickers
+    
+    # Log the agreeing tickers for visibility
+    logger.info(f"Found {len(agreeing_tickers)} agreeing tickers: {agreeing_tickers}", module="ticker_filter")
     
     return state
 
@@ -325,6 +368,137 @@ def bill_ackman_agent_filtered(state: AgentState):
     return result
 
 
+def signal_consensus_filter_node(state: AgentState):
+    """Second filter: Only pass tickers where at least 4 out of 6 signals agree (non-neutral)."""
+    analyst_signals = state["data"].get("analyst_signals", {})
+    agreeing_tickers = state["data"].get("agreeing_tickers", [])
+    
+    # Get signals from all 6 agents
+    agent_names = [
+        "technical_analyst_agent",
+        "sentiment_agent", 
+        "fundamentals_agent",
+        "valuation_agent",
+        "warren_buffett_agent",
+        "bill_ackman_agent"
+    ]
+    
+    consensus_tickers = []
+    filtered_out_tickers = []
+    
+    for ticker in agreeing_tickers:
+        signals = []
+        for agent_name in agent_names:
+            signal = analyst_signals.get(agent_name, {}).get(ticker, {}).get("signal", "neutral")
+            if signal != "neutral":  # Only count non-neutral signals
+                signals.append(signal)
+        
+        if len(signals) >= 4:  # Need at least 4 non-neutral signals
+            # Check if at least 4 signals agree on direction
+            bullish_count = signals.count("bullish")
+            bearish_count = signals.count("bearish")
+            
+            if bullish_count >= 4 or bearish_count >= 4:
+                consensus_tickers.append(ticker)
+            else:
+                filtered_out_tickers.append(ticker)
+                # Set all signals to neutral for this ticker
+                for agent_name in agent_names:
+                    if ticker in analyst_signals.get(agent_name, {}):
+                        analyst_signals[agent_name][ticker]["signal"] = "neutral"
+        else:
+            filtered_out_tickers.append(ticker)
+            # Set all signals to neutral for this ticker
+            for agent_name in agent_names:
+                if ticker in analyst_signals.get(agent_name, {}):
+                    analyst_signals[agent_name][ticker]["signal"] = "neutral"
+    
+    # Store consensus results in state
+    state["data"]["consensus_tickers"] = consensus_tickers
+    state["data"]["consensus_filtered_tickers"] = filtered_out_tickers
+    
+    # Log the consensus results
+    logger.info(f"Found {len(consensus_tickers)} consensus tickers: {consensus_tickers}", module="ticker_filter")
+    
+    return state
+
+
+def risk_management_agent_filtered(state: AgentState):
+    """Run risk management only on consensus tickers."""
+    original_tickers = state["data"]["tickers"]
+    consensus_tickers = state["data"].get("consensus_tickers", [])
+    
+    if not consensus_tickers:
+        return state  # Skip if no consensus tickers
+    
+    state["data"]["tickers"] = consensus_tickers
+    result = risk_management_agent(state)
+    state["data"]["tickers"] = original_tickers  # Restore original
+    return result
+
+
+def equity_agent_filtered(state: AgentState):
+    """Run equity agent on consensus tickers, add hold decisions for all other tickers."""
+    import json
+    from langchain_core.messages import HumanMessage
+    
+    original_tickers = state["data"]["tickers"]
+    consensus_tickers = state["data"].get("consensus_tickers", [])
+    disagreeing_tickers = state["data"].get("disagreeing_tickers", [])
+    consensus_filtered_tickers = state["data"].get("consensus_filtered_tickers", [])
+    
+    # Run equity agent on consensus tickers only
+    if consensus_tickers:
+        # Clear previous ticker display for equity agent
+        progress.update_status("equity_agent", None, "Starting analysis")
+        state["data"]["tickers"] = consensus_tickers
+        result = equity_agent(state)
+        state["data"]["tickers"] = original_tickers
+        
+        # Extract decisions from equity agent's message
+        equity_decisions = {}
+        for message in result["messages"]:
+            if hasattr(message, 'name') and message.name == "equity_agent":
+                try:
+                    equity_decisions = json.loads(message.content)
+                except:
+                    pass
+                break
+    else:
+        result = state
+        equity_decisions = {}
+    
+    # Add default hold decisions for all filtered tickers
+    filtered_tickers = disagreeing_tickers + consensus_filtered_tickers
+    for ticker in filtered_tickers:
+        if ticker in disagreeing_tickers:
+            reason = "Filtered out due to disagreement between technical and sentiment signals"
+        else:
+            reason = "Filtered out due to insufficient signal consensus (need 4+ agreeing non-neutral signals)"
+        
+        equity_decisions[ticker] = {
+            "action": "hold",
+            "quantity": 0,
+            "confidence": 0.0,
+            "reasoning": reason
+        }
+    
+    # Create final message with all decisions
+    message = HumanMessage(
+        content=json.dumps(equity_decisions),
+        name="equity_agent",
+    )
+    
+    # Replace the equity agent's message with our merged message
+    messages = [msg for msg in result["messages"] if not (hasattr(msg, 'name') and msg.name == "equity_agent")]
+    
+    return {
+        "messages": messages + [message],
+        "data": result["data"],
+    }
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the hedge fund trading system")
     parser.add_argument(
@@ -339,11 +513,16 @@ if __name__ == "__main__":
         default=0.0,
         help="Initial margin requirement. Defaults to 0.0"
     )
-    parser.add_argument(
+    ticker_group = parser.add_mutually_exclusive_group(required=True)
+    ticker_group.add_argument(
         "--tickers",
         type=str,
-        required=True,
         help="Comma-separated list of stock ticker symbols"
+    )
+    ticker_group.add_argument(
+        "--screen",
+        action="store_true",
+        help="Screen all S&P 500 tickers instead of specifying individual tickers"
     )
     parser.add_argument(
         "--start-date",
@@ -401,10 +580,13 @@ if __name__ == "__main__":
         log_file=args.log_file
     )
 
-    # Parse tickers from comma-separated string
-    tickers = [ticker.strip() for ticker in args.tickers.split(",")]
-
-    logger.info(f"Starting hedge fund with tickers: {tickers}", module="main")
+    # Parse tickers based on the selected mode
+    if args.screen:
+        tickers = get_sp500_tickers()
+        logger.info(f"Using {len(tickers)} S&P 500 tickers for screening (source: Wikipedia)", module="main")
+    else:
+        # Parse tickers from comma-separated string
+        tickers = [ticker.strip() for ticker in args.tickers.split(",")]
 
     # Select analysts
     selected_analysts = None
@@ -483,9 +665,11 @@ if __name__ == "__main__":
     # Set the start and end dates
     end_date = args.end_date or datetime.now().strftime("%Y-%m-%d")
     if not args.start_date:
-        # Calculate 3 months before end_date
+        # Calculate start date to ensure sufficient data for technical analysis
+        # Technical analyst needs 127 trading days for 6-month momentum calculations
+        # Using 200 calendar days to account for weekends and holidays (matches backtester.py)
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-        start_date = (end_date_obj - relativedelta(months=3)).strftime("%Y-%m-%d")
+        start_date = (end_date_obj - relativedelta(days=200)).strftime("%Y-%m-%d")
     else:
         start_date = args.start_date
 

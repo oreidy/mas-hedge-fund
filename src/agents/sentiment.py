@@ -41,20 +41,19 @@ def sentiment_agent(state: AgentState):
         transaction_shares = pd.Series([t.transaction_shares for t in insider_trades]).dropna()
         insider_signals = np.where(transaction_shares < 0, "bearish", "bullish").tolist()
 
-        progress.update_status("sentiment_agent", ticker, "Fetching company news")
+        progress.update_status("sentiment_agent", ticker, "Skipping company news (temporarily disabled)")
 
-        # Get the company news
-        company_news = get_company_news(ticker, end_date, limit=100, verbose_data = verbose_data)
-
-        # Get the sentiment from the company news
-        sentiment = pd.Series([n.sentiment for n in company_news]).dropna()
-        news_signals = np.where(sentiment == "negative", "bearish", 
-                              np.where(sentiment == "positive", "bullish", "neutral")).tolist()
+        # TEMPORARY: Skip company news to avoid Alpha Vantage rate limits
+        # company_news = get_company_news(ticker, end_date, limit=100, verbose_data = verbose_data)
+        # sentiment = pd.Series([n.sentiment for n in company_news]).dropna()
+        # news_signals = np.where(sentiment == "negative", "bearish", 
+        #                       np.where(sentiment == "positive", "bullish", "neutral")).tolist()
+        news_signals = []
         
         progress.update_status("sentiment_agent", ticker, "Combining signals")
         # Combine signals from both sources with weights
-        insider_weight = 0.3
-        news_weight = 0.7
+        insider_weight = 1.0  # Use only insider trades temporarily
+        news_weight = 0.0     # Disable news weight temporarily
         
         # Calculate weighted signal counts
         bullish_signals = (

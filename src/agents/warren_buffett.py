@@ -16,6 +16,10 @@ class WarrenBuffettSignal(BaseModel):
     reasoning: str
 
 
+class WarrenBuffettBatchOutput(BaseModel):
+    decisions: dict[str, WarrenBuffettSignal]
+
+
 def warren_buffett_agent(state: AgentState):
     """Analyzes stocks using Buffett's principles and LLM reasoning."""
 
@@ -27,9 +31,8 @@ def warren_buffett_agent(state: AgentState):
     end_date = data["end_date"]
     tickers = data["tickers"]
 
-    # Collect all analysis for LLM reasoning
+    # Phase 1: Collect all analysis data for all tickers (no LLM calls yet)
     analysis_data = {}
-    buffett_analysis = {}
 
     for ticker in tickers:
         progress.update_status("warren_buffett_agent", ticker, "Fetching financial metrics")
@@ -37,21 +40,31 @@ def warren_buffett_agent(state: AgentState):
         metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5, verbose_data=verbose_data)
 
         progress.update_status("warren_buffett_agent", ticker, "Gathering financial line items")
-        financial_line_items = search_line_items(
-            ticker,
-            [
-                "capital_expenditure",
-                "depreciation_and_amortization",
-                "net_income",
-                "outstanding_shares",
-                "total_assets",
-                "total_liabilities",
-            ],
-            end_date,
-            period="annual",
-            limit=5,
-            verbose_data=verbose_data
-        )
+        try:
+            financial_line_items = search_line_items(
+                ticker,
+                [
+                    "capital_expenditure",
+                    "depreciation_and_amortization",
+                    "net_income",
+                    "outstanding_shares",
+                    "total_assets",
+                    "total_liabilities",
+                ],
+                end_date,
+                period="annual",
+                limit=5,
+                verbose_data=verbose_data
+            )
+        except Exception as e:
+            logger.warning(f"Unable to gather required financial line items for {ticker}. This may be due to company type (e.g., banks have different financial structures): {e}", module="warren_buffett_agent")
+            # Skip this ticker and continue with neutral signal
+            buffett_analysis[ticker] = {
+                "signal": "neutral",
+                "confidence": 0,
+                "reasoning": f"Unable to analyze {ticker} using Warren Buffett methodology - insufficient or incompatible financial data"
+            }
+            continue
 
         # Get current market cap
         progress.update_status("warren_buffett_agent", ticker, "Getting market cap")
@@ -96,7 +109,10 @@ def warren_buffett_agent(state: AgentState):
         analysis_data[ticker] = {
             "signal": signal,
             "score": total_score,
-            "margin_of_safety": margin_of_safety,
+            "max_score": max_possible_score,
+            "margin_of_safety": margin_of_safety or 0.0,
+            "fundamental_score": fundamental_analysis["score"],
+            "consistency_score": consistency_analysis["score"],
             "fundamental_summary": fundamental_analysis["details"],  
             "consistency_summary": consistency_analysis["details"],  
         }
@@ -109,21 +125,26 @@ def warren_buffett_agent(state: AgentState):
         logger.debug(f"- Instrinsic value: {intrinsic_value_analysis['intrinsic_value']}; Owner Earnigns: {intrinsic_value_analysis['owner_earnings']}", module="warren_buffet_agent", ticker=ticker)
         logger.debug(f"- Instrinsic value details: {intrinsic_value_analysis['details']}", module="warren_buffet_agent", ticker=ticker)
 
-        progress.update_status("warren_buffett_agent", ticker, "Generating Buffett analysis")
-        buffett_output = generate_buffett_output(
-            ticker=ticker,
-            analysis_data=analysis_data,
-            model_name=state["metadata"]["model_name"],
-            model_provider=state["metadata"]["model_provider"],
-        )
-
-        # Store analysis in consistent format with other agents
+        progress.update_status("warren_buffett_agent", ticker, "Analysis complete")
+    
+    # Phase 2: Process all collected data through batched LLM calls
+    progress.update_status("warren_buffett_agent", None, "Generating batched Buffett analysis")
+    
+    buffett_decisions = generate_buffett_output_batched(
+        analysis_data_by_ticker=analysis_data,
+        model_name=state["metadata"]["model_name"],
+        model_provider=state["metadata"]["model_provider"],
+        batch_size=30
+    )
+    
+    # Convert decisions to the expected format
+    buffett_analysis = {}
+    for ticker, decision in buffett_decisions.items():
         buffett_analysis[ticker] = {
-            "signal": buffett_output.signal,
-            "confidence": buffett_output.confidence,
-            "reasoning": buffett_output.reasoning,
+            "signal": decision.signal,
+            "confidence": decision.confidence,
+            "reasoning": decision.reasoning
         }
-
         progress.update_status("warren_buffett_agent", ticker, "Done")
 
     # Create the message
@@ -137,6 +158,107 @@ def warren_buffett_agent(state: AgentState):
     state["data"]["analyst_signals"]["warren_buffett_agent"] = buffett_analysis
 
     return {"messages": [message], "data": state["data"]}
+
+
+def generate_buffett_output_batched(
+    analysis_data_by_ticker: dict[str, dict],
+    model_name: str,
+    model_provider: str,
+    batch_size: int = 30,
+) -> dict[str, WarrenBuffettSignal]:
+    """Process tickers in batches to handle token limits"""
+    
+    all_decisions = {}
+    tickers = list(analysis_data_by_ticker.keys())
+    
+    # Process tickers in batches
+    for i in range(0, len(tickers), batch_size):
+        batch_tickers = tickers[i:i + batch_size]
+        
+        # Filter analysis data for this batch
+        batch_analysis_data = {ticker: analysis_data_by_ticker[ticker] for ticker in batch_tickers}
+        
+        # Process this batch
+        batch_result = generate_buffett_output_batch(
+            analysis_data_by_ticker=batch_analysis_data,
+            model_name=model_name,
+            model_provider=model_provider,
+        )
+        
+        # Merge decisions
+        all_decisions.update(batch_result.decisions)
+    
+    return all_decisions
+
+
+def generate_buffett_output_batch(
+    analysis_data_by_ticker: dict[str, dict],
+    model_name: str,
+    model_provider: str,
+) -> WarrenBuffettBatchOutput:
+    """Generate investment decisions for multiple tickers in a single LLM call"""
+    # Create the prompt template
+    template = ChatPromptTemplate.from_messages(
+        [
+            (
+            "system",
+            """You are Warren Buffett making investment decisions. Focus on: strong operating margins (moats), consistent earnings, conservative debt, high ROE, and margin of safety (>30%). Provide rational value-based recommendations for multiple companies."""
+            ),
+            (
+            "human",
+            """Analyze the following companies and provide investment decisions for each:
+
+            {ticker_analyses}
+
+            Return JSON in this exact format:
+            {{
+                "decisions": {{
+                    "TICKER1": {{"signal": "bullish/bearish/neutral", "confidence": float (0-100), "reasoning": "brief explanation"}},
+                    "TICKER2": {{"signal": "bullish/bearish/neutral", "confidence": float (0-100), "reasoning": "brief explanation"}},
+                    ...
+                }}
+            }}
+            """
+            )
+        ]   
+    )
+
+    # Format ticker analyses for the prompt
+    ticker_analyses_text = []
+    for ticker, data in analysis_data_by_ticker.items():
+        margin_safety = data["margin_of_safety"]
+        margin_text = f"{margin_safety:.1%}" if margin_safety else "Not calculated"
+        analysis_text = f"""{ticker}:
+- Total Score: {data["score"]}/{data.get("max_score", 12)}
+- Margin of Safety: {margin_text}
+- Fundamental Score: {data["fundamental_score"]}/7
+- Consistency Score: {data["consistency_score"]}/3
+- Fundamental Details: {data["fundamental_summary"]}
+- Consistency Details: {data["consistency_summary"]}"""
+        ticker_analyses_text.append(analysis_text)
+    
+    prompt = template.invoke({
+        "ticker_analyses": "\n\n".join(ticker_analyses_text)
+    })
+
+    def create_default_warren_buffett_batch_output():
+        default_decisions = {}
+        for ticker in analysis_data_by_ticker.keys():
+            default_decisions[ticker] = WarrenBuffettSignal(
+                signal="neutral",
+                confidence=0.0,
+                reasoning="Error in analysis, defaulting to neutral"
+            )
+        return WarrenBuffettBatchOutput(decisions=default_decisions)
+
+    return call_llm(
+        prompt=prompt, 
+        model_name=model_name, 
+        model_provider=model_provider, 
+        pydantic_model=WarrenBuffettBatchOutput, 
+        agent_name="warren_buffett_agent", 
+        default_factory=create_default_warren_buffett_batch_output,
+    )
 
 
 def analyze_fundamentals(metrics: list, verbose_data: bool = False) -> dict[str, any]:
@@ -191,7 +313,7 @@ def analyze_fundamentals(metrics: list, verbose_data: bool = False) -> dict[str,
         logger.debug(f"Final score: {score}", module="analyze_fundamentals")
         logger.debug(f"Final reasoning: {'; '.join(reasoning)}", module="analyze_fundamentals")
 
-    return {"score": score, "details": "; ".join(reasoning), "metrics": latest_metrics.model_dump()}
+    return {"score": score, "details": "; ".join(reasoning)}
 
 
 def analyze_consistency(financial_line_items: list, verbose_data: bool = False) -> dict[str, any]:
@@ -244,10 +366,14 @@ def calculate_owner_earnings(financial_line_items: list, verbose_data: bool = Fa
 
     latest = financial_line_items[0]
 
-    # Get required components
-    net_income = latest.net_income
-    depreciation = latest.depreciation_and_amortization
-    capex = latest.capital_expenditure
+    # Get required components with error handling for different company types (e.g., banks)
+    try:
+        net_income = getattr(latest, 'net_income', None)
+        depreciation = getattr(latest, 'depreciation_and_amortization', None)
+        capex = getattr(latest, 'capital_expenditure', None)
+    except AttributeError as e:
+        logger.warning(f"Missing financial line items for {latest.ticker}: {e}. This may be due to company type (e.g., banks have different financial structures)", module="calculate_owner_earnings")
+        return {"owner_earnings": None, "details": [f"Missing financial line items: {e}"]}
 
     if verbose_data:
         logger.debug(f"Net Income: {net_income}", module="calculate_owner_earnings")
@@ -256,7 +382,7 @@ def calculate_owner_earnings(financial_line_items: list, verbose_data: bool = Fa
 
 
     if not all([net_income, depreciation, capex]):
-        logger.warning("Missing components for owner earnings calculation", module="calculate_owner_earnings")
+        logger.warning("Missing components for owner earnings calculation", module="calculate_owner_earnings", ticker=latest.ticker)
         return {"owner_earnings": None, "details": ["Missing components for owner earnings calculation"]}
 
     # Estimate maintenance capex (typically 70-80% of total capex)
@@ -295,8 +421,9 @@ def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = 
     # Calculate owner earnings
     earnings_data = calculate_owner_earnings(financial_line_items)
     if not earnings_data["owner_earnings"]:
+        ticker = financial_line_items[0].ticker if financial_line_items else "unknown"
         logger.warning("Owner earnings calculation failed", 
-                       module="calculate_intrinsic_value")
+                       module="calculate_intrinsic_value", ticker=ticker)
         return {
             "intrinsic_value": None,
             "owner_earnings": None,
@@ -378,45 +505,29 @@ def generate_buffett_output(
                 "system",
                 """You are a Warren Buffett AI agent. Decide on investment signals based on Warren Buffett’s principles:
 
-                Circle of Competence: Only invest in businesses you understand
-                Margin of Safety: Buy well below intrinsic value
-                Economic Moat: Prefer companies with lasting advantages
-                Quality Management: Look for conservative, shareholder-oriented teams
-                Financial Strength: Low debt, strong returns on equity
-                Long-term Perspective: Invest in businesses, not just stocks
-
-                Rules:
-                - Buy only if margin of safety > 30%
-                - Focus on owner earnings and intrinsic value
-                - Prefer consistent earnings growth
-                - Avoid high debt or poor management
-                - Hold good businesses long term
-                - Sell when fundamentals deteriorate or the valuation is too high
+                strong operating margins (moats), consistent earnings, conservative debt, high ROE, and margin of safety (>30%). Provide rational value-based recommendations.
                 """,
             ),
             (
                 "human",
-                """Based on the following data, create the investment signal as Warren Buffett would.
+                """Analyze {ticker} as Warren Buffett would using Total Score={total_score}/10, Margin of Safety={margin_of_safety:.1%}.
+                
+                Fundamentals: {fundamental_details}
+                Consistency: {consistency_details}
 
-                Analysis Data for {ticker}:
-                {analysis_data}
-
-                Return the trading signal in the following JSON format:
-                {{
-                  "signal": "bullish/bearish/neutral",
-                  "confidence": float (0-100),
-                  "reasoning": "string"
-                }}
-            """,
+                Return JSON: {{"signal": "bullish/bearish/neutral", "confidence": float (0-100), "reasoning": "brief explanation"}}""",
             ),
         ]
     )
 
-    # Generate the prompt
+    ticker_data = analysis_data[ticker]
     prompt = template.invoke({
-        "analysis_data": json.dumps(analysis_data, indent=2), 
-        "ticker": ticker
-      })
+        "ticker": ticker,
+        "total_score": ticker_data["score"],
+        "margin_of_safety": ticker_data["margin_of_safety"] or 0.0,
+        "fundamental_details": ticker_data["fundamental_summary"],
+        "consistency_details": ticker_data["consistency_summary"]
+    })
 
     # Create default factory for WarrenBuffettSignal
     def create_default_warren_buffett_signal():

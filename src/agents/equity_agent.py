@@ -68,8 +68,8 @@ def equity_agent(state: AgentState):
 
     progress.update_status("equity_agent", None, "Making trading decisions")
 
-    # Generate the trading decision
-    result = generate_trading_decision(
+    # Generate the trading decision with batching to handle token limits
+    result = generate_trading_decision_batched(
         tickers=tickers,
         signals_by_ticker=signals_by_ticker,
         current_prices=current_prices,
@@ -77,6 +77,7 @@ def equity_agent(state: AgentState):
         portfolio=portfolio,
         model_name=state["metadata"]["model_name"],
         model_provider=state["metadata"]["model_provider"],
+        batch_size=15  # Process 15 tickers at a time
     )
 
     # Create the equity agent message
@@ -112,7 +113,7 @@ def generate_trading_decision(
         [
             (
               "system",
-              """You are an equity agent making final trading decisions based on multiple tickers.
+              """You are an equity portfolio manager agent making final trading decisions based on multiple tickers.
 
               Trading Rules:
               - For long positions:
@@ -184,6 +185,7 @@ def generate_trading_decision(
         ]
     )
 
+    
     # Generate the prompt
     prompt = template.invoke(
         {
@@ -201,3 +203,56 @@ def generate_trading_decision(
         return EquityAgentOutput(decisions={ticker: EquityDecision(action="hold", quantity=0, confidence=0.0, reasoning="Error in equity agent, defaulting to hold") for ticker in tickers})
 
     return call_llm(prompt=prompt, model_name=model_name, model_provider=model_provider, pydantic_model=EquityAgentOutput, agent_name="equity_agent", default_factory=create_default_equity_output)
+
+
+def generate_trading_decision_batched(
+    tickers: list[str],
+    signals_by_ticker: dict[str, dict],
+    current_prices: dict[str, float],
+    max_shares: dict[str, int],
+    portfolio: dict[str, float],
+    model_name: str,
+    model_provider: str,
+    batch_size: int = 50,
+) -> EquityAgentOutput:
+    """Process tickers in batches to handle token limits"""
+    
+    all_decisions = {}
+    
+    # Process tickers in batches
+    for i in range(0, len(tickers), batch_size):
+        batch_tickers = tickers[i:i + batch_size]
+        
+        # Filter data for this batch
+        batch_signals = {ticker: signals_by_ticker[ticker] for ticker in batch_tickers}
+        batch_prices = {ticker: current_prices[ticker] for ticker in batch_tickers}
+        batch_max_shares = {ticker: max_shares[ticker] for ticker in batch_tickers}
+        
+        # Filter portfolio positions to only include batch tickers to reduce token usage
+        all_positions = portfolio.get('positions', {})
+        batch_positions = {
+            ticker: all_positions.get(ticker, {
+                'long': 0, 'short': 0, 'long_cost_basis': 0.0, 'short_cost_basis': 0.0
+            }) for ticker in batch_tickers
+        }
+        batch_portfolio = {
+            'cash': portfolio.get('cash', 0),
+            'margin_requirement': portfolio.get('margin_requirement', 0),
+            'positions': batch_positions
+        }
+        
+        # Process this batch
+        batch_result = generate_trading_decision(
+            tickers=batch_tickers,
+            signals_by_ticker=batch_signals,
+            current_prices=batch_prices,
+            max_shares=batch_max_shares,
+            portfolio=batch_portfolio,
+            model_name=model_name,
+            model_provider=model_provider,
+        )
+        
+        # Merge decisions
+        all_decisions.update(batch_result.decisions)
+    
+    return EquityAgentOutput(decisions=all_decisions)

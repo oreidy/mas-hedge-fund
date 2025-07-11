@@ -29,6 +29,7 @@ from utils.display import print_backtest_results, format_backtest_row
 from typing_extensions import Callable
 import time
 from utils.logger import logger
+from utils.tickers import get_sp500_tickers
 
 init(autoreset=True)
 
@@ -47,6 +48,7 @@ class Backtester:
         initial_margin_requirement: float = 0.0,
         debug_mode: bool = False,
         verbose_data: bool = False,
+        screen_mode: bool = False,
     ):
         """
         :param agent: The trading agent (Callable).
@@ -60,8 +62,10 @@ class Backtester:
         :param initial_margin_requirement: The margin ratio (e.g. 0.5 = 50%).
         :param debug_mode: Whether to enable detailed debugging output.
         :param verbose_data: Whether to show detailed data output.
+        :param screen_mode: Whether running in screening mode (vs specific tickers).
         """
         self.agent = agent
+        self._screen_mode = screen_mode
         
         # Keep original tickers for stock agents (don't add bond ETFs to avoid unnecessary analysis)
         self.tickers = tickers
@@ -334,8 +338,21 @@ class Backtester:
 
         logger.info(f"Fetching historical data from {historical_start_str} to {self.end_date}", module="prefetch_data")
 
-        # Fetch data for stocks (for agents to analyze)
-        data = get_data_for_tickers(self.tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
+        # Get all potential tickers that could be eligible during the backtest period
+        # This includes tickers that might not be eligible at the start but become eligible later
+        if self._screen_mode:
+            # When screening, get all potential tickers from WRDS that could be eligible
+            from utils.tickers import get_sp500_tickers_with_dates
+            ticker_dates = get_sp500_tickers_with_dates(years_back=4)
+            all_potential_tickers = list(ticker_dates.keys())
+            logger.info(f"Prefetching data for {len(all_potential_tickers)} potential S&P 500 tickers", module="prefetch_data")
+        else:
+            # When running specific tickers, use the provided list
+            all_potential_tickers = self.tickers
+            logger.info(f"Prefetching data for {len(all_potential_tickers)} specified tickers", module="prefetch_data")
+
+        # Fetch data for all potential stocks
+        data = get_data_for_tickers(all_potential_tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
         
         # Fetch data for fixed-income assets and FRED macroeconomic data
         if self.include_fixed_income:
@@ -399,6 +416,9 @@ class Backtester:
 
         # Pre-fetch all data at the start
         self.prefetch_data()
+        
+        # Filter out tickers with no price data for the analysis period
+        self._filter_available_tickers()
 
         dates = pd.date_range(self.start_date, self.end_date, freq="B")
         table_rows = []
@@ -431,6 +451,15 @@ class Backtester:
             if lookback_start == current_date_str:
                 logger.warning("There is no prior day to look back (i.e., first date in the range)", module="run_backtest")
                 continue
+
+            # Get eligible tickers for this specific date
+            if self._screen_mode:
+                from utils.tickers import get_eligible_tickers_for_date
+                eligible_tickers = get_eligible_tickers_for_date(current_date_str, min_days_listed=200, years_back=4)
+                logger.debug(f"Using {len(eligible_tickers)} eligible tickers for {current_date_str}", module="run_backtest")
+            else:
+                # Use the original ticker list for non-screening mode
+                eligible_tickers = self.tickers
 
             # Get current prices for all tickers
 
@@ -484,7 +513,7 @@ class Backtester:
             logger.info(f"Executing trades on {current_date}", module="run_backtest")
 
             output = self.agent( 
-                tickers=self.tickers,
+                tickers=eligible_tickers,
                 start_date=lookback_start, # Review: Is only needed by technicals and risk manager agent?
                 end_date=current_date_str,
                 portfolio=self.portfolio,
@@ -554,7 +583,7 @@ class Backtester:
             date_rows = []
 
             # For each ticker, record signals/trades
-            for ticker in self.tickers:
+            for ticker in eligible_tickers:
                 ticker_signals = {}
                 for agent_name, signals in analyst_signals.items():
                     if ticker in signals:
@@ -713,7 +742,7 @@ class Backtester:
 
         final_portfolio_value = performance_df["Portfolio Value"].iloc[-1]
         total_realized_gains = sum(
-            self.portfolio["realized_gains"][ticker]["long"] for ticker in self.tickers
+            self.portfolio["realized_gains"][ticker]["long"] for ticker in self.all_tickers
         )
         total_return = ((final_portfolio_value - self.initial_capital) / self.initial_capital) * 100
 
@@ -791,11 +820,16 @@ if __name__ == "__main__":
     from utils.logger import setup_logger, logger
 
     parser = argparse.ArgumentParser(description="Run backtesting simulation")
-    parser.add_argument(
+    ticker_group = parser.add_mutually_exclusive_group(required=True)
+    ticker_group.add_argument(
         "--tickers",
         type=str,
-        required=False,
         help="Comma-separated list of stock ticker symbols (e.g., AAPL,MSFT,GOOGL)",
+    )
+    ticker_group.add_argument(
+        "--screen",
+        action="store_true",
+        help="Screen all S&P 500 tickers instead of specifying individual tickers"
     )
     parser.add_argument(
         "--end-date",
@@ -819,7 +853,7 @@ if __name__ == "__main__":
         "--margin-requirement",
         type=float,
         default=0.0,
-        help="Margin ratio for short positions, e.g. 0.5 for 50% (default: 0.0)",
+        help="Margin ratio for short positions, e.g. 0.5 for 50 percent (default: 0.0)",
     )
 
     # Debugging options
@@ -861,8 +895,13 @@ if __name__ == "__main__":
     # Set a global flag for verbose data output
     verbose_data = args.verbose_data and args.debug and not args.quiet
 
-    # Parse tickers from comma-separated string
-    tickers = [ticker.strip() for ticker in args.tickers.split(",")] if args.tickers else []
+    # Parse tickers based on the selected mode
+    if args.screen:
+        tickers = get_sp500_tickers()
+        logger.info(f"Using {len(tickers)} S&P 500 tickers for screening (source: Wikipedia)", module="backtester")
+    else:
+        # Parse tickers from comma-separated string
+        tickers = [ticker.strip() for ticker in args.tickers.split(",")]
 
     # Choose analysts
     selected_analysts = None
@@ -929,6 +968,7 @@ if __name__ == "__main__":
         initial_margin_requirement=args.margin_requirement,
         debug_mode=args.debug and not args.quiet,
         verbose_data=args.verbose_data and args.debug and not args.quiet,
+        screen_mode=args.screen,
     )
 
     # Start the timer after LLM and analysts are selected
