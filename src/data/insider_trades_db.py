@@ -316,37 +316,25 @@ def get_tickers_needing_update(tickers: List[str], max_age_days: int = 30) -> Li
     return [ticker for ticker in tickers if ticker not in up_to_date_tickers]
 
 
-def get_most_recent_trade_dates(tickers: List[str]) -> dict:
+def get_global_most_recent_trade_date() -> Optional[str]:
     """
-    Get the most recent trade date for each ticker from the database.
+    Get the most recent transaction date across all tickers in the database.
     
-    Args:
-        tickers: List of ticker symbols to check
-        
     Returns:
-        Dictionary mapping ticker to most recent trade date (or None if no trades)
+        Most recent transaction date as string (YYYY-MM-DD) or None if no trades exist
     """
-    if not tickers:
-        return {}
-        
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Create placeholders for SQL IN clause
-    placeholders = ','.join('?' * len(tickers))
+    cursor.execute('''
+        SELECT MAX(transaction_date) FROM insider_trades
+        WHERE transaction_date IS NOT NULL
+    ''')
     
-    cursor.execute(f'''
-        SELECT ticker, MAX(transaction_date) as latest_trade_date
-        FROM insider_trades 
-        WHERE ticker IN ({placeholders})
-        GROUP BY ticker
-    ''', tickers)
-    
-    results = dict(cursor.fetchall())
+    result = cursor.fetchone()
     conn.close()
     
-    # Ensure all tickers are in the result (with None for missing ones)
-    return {ticker: results.get(ticker) for ticker in tickers}
+    return result[0] if result and result[0] else None
 
 
 def get_database_stats() -> dict:

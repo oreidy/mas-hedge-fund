@@ -30,6 +30,7 @@ from typing_extensions import Callable
 import time
 from utils.logger import logger
 from utils.tickers import get_sp500_tickers
+from utils.progress import progress
 
 init(autoreset=True)
 
@@ -282,7 +283,7 @@ class Backtester:
         """
         total_value = self.portfolio["cash"]
 
-        for ticker in self.all_tickers:
+        for ticker in evaluation_prices.keys():
             position = self.portfolio["positions"][ticker]
             current_price = evaluation_prices[ticker]
 
@@ -341,11 +342,10 @@ class Backtester:
         # Get all potential tickers that could be eligible during the backtest period
         # This includes tickers that might not be eligible at the start but become eligible later
         if self._screen_mode:
-            # When screening, get all potential tickers from WRDS that could be eligible
-            from utils.tickers import get_sp500_tickers_with_dates
-            ticker_dates = get_sp500_tickers_with_dates(years_back=4)
-            all_potential_tickers = list(ticker_dates.keys())
-            logger.info(f"Prefetching data for {len(all_potential_tickers)} potential S&P 500 tickers", module="prefetch_data")
+            # When screening, get tickers that were listed on stock exchange during backtesting period
+            from utils.tickers import get_tickers_for_prefetch
+            all_potential_tickers = get_tickers_for_prefetch(self.start_date, self.end_date, years_back=4)
+            logger.info(f"Prefetching data for {len(all_potential_tickers)} tickers listed during backtest period", module="prefetch_data")
         else:
             # When running specific tickers, use the provided list
             all_potential_tickers = self.tickers
@@ -416,9 +416,6 @@ class Backtester:
 
         # Pre-fetch all data at the start
         self.prefetch_data()
-        
-        # Filter out tickers with no price data for the analysis period
-        self._filter_available_tickers()
 
         dates = pd.date_range(self.start_date, self.end_date, freq="B")
         table_rows = []
@@ -455,8 +452,9 @@ class Backtester:
             # Get eligible tickers for this specific date
             if self._screen_mode:
                 from utils.tickers import get_eligible_tickers_for_date
-                eligible_tickers = get_eligible_tickers_for_date(current_date_str, min_days_listed=200, years_back=4)
-                logger.debug(f"Using {len(eligible_tickers)} eligible tickers for {current_date_str}", module="run_backtest")
+                eligible_tickers = get_eligible_tickers_for_date(current_date_str, min_days_listed=200)
+                logger.info(f"Using {len(eligible_tickers)} eligible tickers for {current_date_str}.", module="run_backtest")
+                #logger.debug(f"Ticker list: {eligible_tickers}", module="run_backtest")
             else:
                 # Use the original ticker list for non-screening mode
                 eligible_tickers = self.tickers
@@ -467,8 +465,9 @@ class Backtester:
                 execution_prices = {} # Prices for trade execution
                 evaluation_prices = {} # Prices for portfolio value evaluation
                 
-                # Fetch prices for all tickers (stocks + bond ETFs) for execution and portfolio evaluation
-                for ticker in self.all_tickers:
+                # Fetch prices for eligible tickers + bond ETFs for execution and portfolio evaluation
+                tickers_to_fetch = eligible_tickers + self.bond_etfs
+                for ticker in tickers_to_fetch:
 
                     price_df = get_price_data(ticker, previous_date_str, current_date_str, self.verbose_data)
                     if self.verbose_data:
@@ -535,7 +534,7 @@ class Backtester:
 
             # Execute trades for each ticker (stocks + bond ETFs)
             executed_trades = {}
-            for ticker in self.all_tickers:
+            for ticker in tickers_to_fetch:
                 decision = decisions.get(ticker, {"action": "hold", "quantity": 0})
                 action, quantity = decision.get("action", "hold"), decision.get("quantity", 0)
 
@@ -552,11 +551,11 @@ class Backtester:
             # Also compute long/short exposures for final post‐trade state
             long_exposure = sum(
                 self.portfolio["positions"][t]["long"] * evaluation_prices[t]
-                for t in self.all_tickers
+                for t in tickers_to_fetch
             )
             short_exposure = sum(
                 self.portfolio["positions"][t]["short"] * evaluation_prices[t]
-                for t in self.all_tickers
+                for t in tickers_to_fetch
             )
 
             # Calculate gross and net exposures
@@ -689,6 +688,9 @@ class Backtester:
             # Update performance metrics if we have enough data
             if len(self.portfolio_values) > 3:
                 self._update_performance_metrics(performance_metrics)
+            
+            # Clear progress display after each day of backtest
+            progress.clear()
 
         return performance_metrics
 

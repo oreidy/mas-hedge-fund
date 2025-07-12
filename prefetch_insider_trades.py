@@ -24,7 +24,7 @@ from data.insider_trades_db import (
     save_insider_trades,
     get_database_stats,
     get_tickers_needing_update,
-    get_most_recent_trade_dates
+    get_global_most_recent_trade_date
 )
 from utils.logger import logger
 
@@ -35,6 +35,9 @@ def prefetch_all_insider_trades(batch_size: int = 10, max_retries: int = 3):
     """
     Prefetch insider trades for all S&P 500 tickers from the last 5 years.
     Only downloads missing or outdated data.
+    
+    Note: The progress bars show Form 4 filings downloaded, but only those containing
+    actual stock transactions are saved. Many filings are administrative and filtered out.
     
     Args:
         batch_size: Number of tickers to process in each batch
@@ -56,26 +59,19 @@ def prefetch_all_insider_trades(batch_size: int = 10, max_retries: int = 3):
     # Get tickers needing update (max 1 day old)
     tickers_to_update = get_tickers_needing_update(all_tickers, max_age_days=1)
     
-    # Get most recent trade dates for tickers that need updates
-    recent_trade_dates = get_most_recent_trade_dates(tickers_to_update)
-    
-    # Calculate dynamic date ranges for each ticker
+    # Use global most recent trade date for efficiency (avoids downloading old Form 4s)
+    global_most_recent_trade = get_global_most_recent_trade_date()
     end_date = datetime.now().strftime("%Y-%m-%d")
-    ticker_date_ranges = {}
     
-    for ticker in tickers_to_update:
-        most_recent_trade = recent_trade_dates.get(ticker)
-        if most_recent_trade:
-            # Start from day after most recent trade
-            start_date_dt = datetime.strptime(most_recent_trade, "%Y-%m-%d") + timedelta(days=1)
-            start_date = start_date_dt.strftime("%Y-%m-%d")
-            logger.info(f"{ticker}: Fetching from {start_date} to {end_date} (last trade: {most_recent_trade})")
-        else:
-            # No previous trades, fetch last 5 years
-            start_date = (datetime.now() - timedelta(days=5*365)).strftime("%Y-%m-%d")
-            logger.info(f"{ticker}: No previous trades, fetching from {start_date} to {end_date}")
-        
-        ticker_date_ranges[ticker] = (start_date, end_date)
+    if global_most_recent_trade:
+        # Start from day after the most recent trade across all tickers
+        start_date_dt = datetime.strptime(global_most_recent_trade, "%Y-%m-%d") + timedelta(days=1)
+        start_date = start_date_dt.strftime("%Y-%m-%d")
+        logger.info(f"Using global date range: {start_date} to {end_date} (last trade across all tickers: {global_most_recent_trade})")
+    else:
+        # No previous trades at all, fetch last 5 years
+        start_date = (datetime.now() - timedelta(days=5*365)).strftime("%Y-%m-%d")
+        logger.info(f"No previous trades found, fetching from {start_date} to {end_date}")
     
     # Log status
     up_to_date_count = len(all_tickers) - len(tickers_to_update)
@@ -101,19 +97,14 @@ def prefetch_all_insider_trades(batch_size: int = 10, max_retries: int = 3):
         logger.info(f"Current batch: {batch}")
         
         try:
-            # Fetch insider trades for this batch with individual date ranges
-            trades_dict = {}
-            for ticker in batch:
-                start_date, end_date = ticker_date_ranges[ticker]
-                logger.info(f"Fetching {ticker} from {start_date} to {end_date}")
-                
-                ticker_trades = fetch_multiple_insider_trades(
-                    tickers=[ticker],
-                    start_date=start_date,
-                    end_date=end_date,
-                    verbose_data=True
-                )
-                trades_dict.update(ticker_trades)
+            # Fetch insider trades for this batch using global date range
+            logger.info(f"Fetching batch from {start_date} to {end_date}")
+            trades_dict = fetch_multiple_insider_trades(
+                tickers=batch,
+                start_date=start_date,
+                end_date=end_date,
+                verbose_data=True
+            )
             
             # Save to database
             for ticker in batch:
@@ -138,7 +129,6 @@ def prefetch_all_insider_trades(batch_size: int = 10, max_retries: int = 3):
             for retry in range(max_retries):
                 try:
                     logger.info(f"Retrying {ticker} (attempt {retry + 1}/{max_retries})")
-                    start_date, end_date = ticker_date_ranges[ticker]
                     trades_dict = fetch_multiple_insider_trades(
                         tickers=[ticker],
                         start_date=start_date,

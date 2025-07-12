@@ -127,6 +127,8 @@ def fetch_multiple_insider_trades(tickers: List[str], end_date: str = None, star
                 logger.debug(f"Created filing object: {type(my_filings)}", module="sec_edgar_scraper")
 
             # Download the filings
+            # Note: This downloads ALL Form 4 filings for the date range, but only those
+            # containing actual stock transactions will be saved as insider trades
             my_filings.save(directory=str(temp_dir))
             if verbose_data:
                 logger.debug(f"Saved filings to {temp_dir}", module="sec_edgar_scraper")

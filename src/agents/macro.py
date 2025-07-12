@@ -25,7 +25,7 @@ def macro_agent(state: AgentState):
     start_date = data["start_date"]
     end_date = data["end_date"]
     
-    progress.update_status("macro_agent", "MACRO", "Fetching macroeconomic indicators")
+    progress.update_status("macro_agent", "CPI", "Fetching macroeconomic indicators")
     
     # Get macro indicators
     macro_data = get_macro_indicators_for_allocation(start_date, end_date, verbose_data)
@@ -47,14 +47,13 @@ def macro_agent(state: AgentState):
                 logger.debug(f"{indicator_name.upper()} data: EMPTY OR NONE", module="macro_agent")
     
     if not any(not df.empty for df in macro_data.values()):
-        progress.update_status("macro_agent", "MACRO", "Failed: No macro data found")
+        progress.update_status("macro_agent", "CPI", "Failed: No macro data found")
         logger.warning("No macro data available for allocation decision", module="macro_agent")
         allocation = {"stock_allocation": 0.6, "bond_allocation": 0.4, "reasoning": "No data available, using neutral allocation"}
     else:
-        progress.update_status("macro_agent", "MACRO", "Analyzing macro indicators")
         allocation = analyze_macro_indicators(macro_data, verbose_data)
     
-    progress.update_status("macro_agent", "MACRO", "Done")
+    progress.update_status("macro_agent", "GDP", "Done")
     
     message = HumanMessage(
         content=json.dumps(allocation),
@@ -85,16 +84,19 @@ def analyze_macro_indicators(macro_data, verbose_data=False):
     reasoning = {}
     
     # 1. Inflation Analysis (CPI and PCE)
+    progress.update_status("macro_agent", "CPI", "Analyzing CPI inflation")
     inflation_signal = analyze_inflation(macro_data, verbose_data)
     signals.append(inflation_signal["signal"])
     reasoning["inflation"] = inflation_signal
     
     # 2. Interest Rate Analysis (Federal Funds Rate)
+    progress.update_status("macro_agent", "Fed Funds", "Analyzing Fed Funds rate")
     interest_rate_signal = analyze_interest_rates(macro_data, verbose_data)
     signals.append(interest_rate_signal["signal"])
     reasoning["interest_rates"] = interest_rate_signal
     
     # 3. Economic Growth Analysis (GDP)
+    progress.update_status("macro_agent", "GDP", "Analyzing GDP growth")
     growth_signal = analyze_economic_growth(macro_data, verbose_data)
     signals.append(growth_signal["signal"])
     reasoning["economic_growth"] = growth_signal
@@ -131,6 +133,7 @@ def analyze_inflation(macro_data, verbose_data=False):
     """Analyze inflation indicators (CPI and PCE)"""
     
     cpi_data = macro_data.get('cpi', None)
+    progress.update_status("macro_agent", "PCE", "Analyzing PCE inflation")
     pce_data = macro_data.get('pce', None)
     
     if (cpi_data is None or cpi_data.empty) and (pce_data is None or pce_data.empty):

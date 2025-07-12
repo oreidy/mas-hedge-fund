@@ -203,8 +203,8 @@ def get_sp500_tickers_with_dates(years_back: int = 4) -> Dict[str, Dict]:
         ticker_dates = {}
         for _, row in result.iterrows():
             ticker = normalize_ticker(row['ticker'])
-            sp500_start = row['sp500_start']
-            sp500_end = row['sp500_end']  # Can be None for current members
+            sp500_start = pd.to_datetime(row['sp500_start'])
+            sp500_end = pd.to_datetime(row['sp500_end']) if row['sp500_end'] is not None else None
             
             # If ticker already exists, keep the earliest start date and latest end date
             if ticker in ticker_dates:
@@ -234,6 +234,189 @@ def get_sp500_tickers_with_dates(years_back: int = 4) -> Dict[str, Dict]:
         return {}
 
 
+
+
+def get_exchange_listing_date(ticker: str) -> Optional[datetime]:
+    """
+    Gets the stock exchange listing date (IPO date) for a ticker using yfinance.
+    
+    Args:
+        ticker (str): Ticker symbol
+        
+    Returns:
+        Optional[datetime]: IPO date if available, None if not found
+    """
+    import yfinance as yf
+    
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # Try to get first trade date from info
+        if 'firstTradeDateEpochUtc' in info and info['firstTradeDateEpochUtc']:
+            import datetime as dt
+            ipo_date = dt.datetime.fromtimestamp(info['firstTradeDateEpochUtc'])
+            # Convert to naive datetime to avoid timezone issues
+            if ipo_date.tzinfo is not None:
+                ipo_date = ipo_date.replace(tzinfo=None)
+            logger.debug(f"Found IPO date for {ticker}: {ipo_date.strftime('%Y-%m-%d')}")
+            return ipo_date
+        
+        # Fallback: try to get from history (earliest available date)
+        try:
+            hist = stock.history(period="max")
+            if not hist.empty:
+                earliest_date = hist.index[0].to_pydatetime()
+                # Convert to naive datetime to avoid timezone issues
+                if earliest_date.tzinfo is not None:
+                    earliest_date = earliest_date.replace(tzinfo=None)
+                logger.debug(f"Using earliest price date for {ticker}: {earliest_date.strftime('%Y-%m-%d')}")
+                return earliest_date
+        except Exception:
+            pass
+            
+        logger.debug(f"No IPO date found for {ticker}")
+        return None
+        
+    except Exception as e:
+        logger.debug(f"Error fetching IPO date for {ticker}: {e}")
+        return None
+
+
+def get_exchange_listing_dates(tickers: List[str]) -> Dict[str, datetime]:
+    """
+    Gets stock exchange listing dates (IPO dates) for multiple tickers with caching.
+    
+    Args:
+        tickers (List[str]): List of ticker symbols
+        
+    Returns:
+        Dict[str, datetime]: Mapping of ticker to IPO date (only includes tickers with valid dates)
+    """
+    # Initialize cache for IPO dates
+    cache = DiskCache()
+    
+    # Add IPO dates cache type with 30 day refresh (IPO dates don't change)
+    if "ipo_dates" not in cache.ttls:
+        from diskcache import Cache
+        cache.ttls["ipo_dates"] = timedelta(days=30)
+        cache.caches["ipo_dates"] = Cache("./cache/ipo_dates")
+    
+    ipo_dates = {}
+    tickers_to_fetch = []
+    
+    # Check cache first
+    for ticker in tickers:
+        cached_date = cache.caches["ipo_dates"].get(f"ipo:{ticker}")
+        if cached_date:
+            ipo_dates[ticker] = cached_date
+        else:
+            tickers_to_fetch.append(ticker)
+    
+    if tickers_to_fetch:
+        logger.info(f"Fetching IPO dates for {len(tickers_to_fetch)} tickers (cache miss)")
+        
+        # Fetch missing IPO dates
+        for ticker in tickers_to_fetch:
+            ipo_date = get_exchange_listing_date(ticker)
+            if ipo_date:
+                ipo_dates[ticker] = ipo_date
+                # Cache the result
+                cache.caches["ipo_dates"].set(
+                    f"ipo:{ticker}", 
+                    ipo_date, 
+                    expire=cache._get_expiration("ipo_dates")
+                )
+    
+    return ipo_dates
+
+
+def get_tickers_for_prefetch(backtest_start: str, backtest_end: str, years_back: int = 4) -> List[str]:
+    """
+    Gets tickers that should be included in prefetch for a backtesting period.
+    Only includes tickers that were listed on the stock exchange during the backtesting period.
+    
+    Args:
+        backtest_start (str): Start date of backtesting period (YYYY-MM-DD)
+        backtest_end (str): End date of backtesting period (YYYY-MM-DD)
+        years_back (int): Number of years to look back for S&P 500 historical data (default: 4)
+    
+    Returns:
+        List[str]: Tickers that were listed on exchange during backtesting period
+    """
+    # Get all filtered S&P 500 tickers from last N years (removes problematic currencies/delisted)
+    filtered_tickers = get_sp500_tickers_filtered(years_back)
+    if not filtered_tickers:
+        logger.warning("No filtered S&P 500 tickers available")
+        return []
+    
+    # Get IPO dates for all tickers
+    ipo_dates = get_exchange_listing_dates(filtered_tickers)
+    
+    # Filter: only include tickers that were listed on exchange during backtesting period
+    backtest_end_dt = datetime.strptime(backtest_end, '%Y-%m-%d')
+    
+    eligible_tickers = []
+    excluded_count = 0
+    
+    for ticker in filtered_tickers:
+        if ticker in ipo_dates:
+            ipo_date = ipo_dates[ticker]
+            # Normalize datetime objects for comparison (remove timezone info if present)
+            if ipo_date.tzinfo is not None:
+                ipo_date = ipo_date.replace(tzinfo=None)
+            # Include if IPO was before or during backtesting period
+            if ipo_date <= backtest_end_dt:
+                eligible_tickers.append(ticker)
+            else:
+                excluded_count += 1
+                logger.debug(f"Excluding {ticker}: IPO {ipo_date.strftime('%Y-%m-%d')} after backtest end {backtest_end}")
+        else:
+            # If no IPO date available, include to be safe (probably old ticker)
+            eligible_tickers.append(ticker)
+    
+    logger.info(f"Prefetching data for {len(eligible_tickers)} tickers", module="tickers")
+    
+    return sorted(eligible_tickers)
+
+
+def get_sp500_tickers_with_dates_filtered(years_back: int = 4) -> Dict[str, Dict]:
+    """
+    Gets S&P 500 tickers with their listing date information, filtered to remove problematic tickers.
+    Combines the filtered ticker list with S&P 500 membership dates.
+    
+    Args:
+        years_back (int): Number of years to look back (default: 4).
+    
+    Returns:
+        Dict[str, Dict]: {ticker: {'sp500_start': datetime, 'sp500_end': datetime|None}}
+                        Only includes filtered (valid) tickers.
+    """
+    # Get filtered ticker list (removes problematic tickers like currencies, truly delisted companies)
+    filtered_tickers = get_sp500_tickers_filtered(years_back)
+    if not filtered_tickers:
+        logger.warning("No filtered tickers available")
+        return {}
+    
+    # Get ticker membership data (includes all tickers with dates)
+    all_ticker_dates = get_sp500_tickers_with_dates(years_back)
+    if not all_ticker_dates:
+        logger.warning("No ticker membership data available")
+        return {}
+    
+    # Return intersection: only filtered tickers with their S&P 500 membership dates
+    filtered_ticker_dates = {
+        ticker: dates for ticker, dates in all_ticker_dates.items() 
+        if ticker in filtered_tickers
+    }
+    
+    logger.debug(f"Filtered ticker dates: {len(filtered_ticker_dates)} valid tickers "
+                f"(removed {len(all_ticker_dates) - len(filtered_ticker_dates)} problematic)", 
+                module="get_sp500_tickers_with_dates_filtered")
+    
+    return filtered_ticker_dates
+
+
 def get_eligible_tickers_for_date(target_date: str, min_days_listed: int = 200, years_back: int = 4) -> List[str]:
     """
     Gets tickers that were eligible for analysis on a specific date.
@@ -241,7 +424,7 @@ def get_eligible_tickers_for_date(target_date: str, min_days_listed: int = 200, 
     
     Args:
         target_date (str): Date to check eligibility for (YYYY-MM-DD format).
-        min_days_listed (int): Minimum days a ticker must be listed (default: 200).
+        min_days_listed (int): Minimum days a ticker must be listed (default: 200) becasue of the lookback period.
         years_back (int): Number of years to look back for historical data (default: 4).
     
     Returns:
@@ -249,8 +432,12 @@ def get_eligible_tickers_for_date(target_date: str, min_days_listed: int = 200, 
     """
     target_dt = datetime.strptime(target_date, "%Y-%m-%d")
     
-    # Get ticker membership data
-    ticker_dates = get_sp500_tickers_with_dates(years_back)
+    # Get filtered S&P 500 tickers and their membership data (excludes problematic tickers)
+    ticker_dates = get_sp500_tickers_with_dates_filtered(years_back)
+    filtered_tickers = list(ticker_dates.keys())
+    
+    # Get IPO dates for all filtered tickers
+    ipo_dates = get_exchange_listing_dates(filtered_tickers)
     
     eligible_tickers = []
     
@@ -260,10 +447,20 @@ def get_eligible_tickers_for_date(target_date: str, min_days_listed: int = 200, 
         
         # Check if ticker was in S&P 500 on target date
         if sp500_start <= target_dt and (sp500_end is None or sp500_end >= target_dt):
-            # Check if ticker has been listed for at least min_days_listed
-            days_listed = (target_dt - sp500_start).days
-            if days_listed >= min_days_listed:
-                eligible_tickers.append(ticker)
+            # Check if ticker has been listed on exchange for at least min_days_listed
+            if ticker in ipo_dates:
+                ipo_date = ipo_dates[ticker]
+                days_listed = (target_dt - ipo_date).days
+                if days_listed >= min_days_listed:
+                    eligible_tickers.append(ticker)
+                else:
+                    logger.debug(f"Excluding {ticker}: only {days_listed} days listed on exchange (need {min_days_listed})")
+            else:
+                # If no IPO date available, fall back to S&P 500 start date
+                days_listed = (target_dt - sp500_start).days
+                if days_listed >= min_days_listed:
+                    eligible_tickers.append(ticker)
+                    logger.debug(f"Using S&P 500 start date for {ticker} (no IPO date available)")
     
     logger.debug(f"Found {len(eligible_tickers)} eligible tickers for {target_date} "
                 f"(min {min_days_listed} days listed)", module="get_eligible_tickers_for_date")
@@ -326,14 +523,15 @@ def get_problematic_tickers(tickers: List[str]) -> List[str]:
     
     # Known problematic tickers to exclude
     excluded_tickers = {
-        'FB',    # Facebook -> META (now ProShares ETF)
+        'FB',    # Facebook -> META (FB is now ProShares ETF)
         'EGG',   # Cal-Maine Foods -> Enigmatig Limited
-        'AUD',   # Australian Dollar currency (not a stock)
-        'COG',   # Cabot Oil & Gas (delisted/acquired)
-        'FRC',   # First Republic Bank (failed, acquired by JPMorgan)
-        'NLSN',  # Nielsen (went private/acquired)
-        'TWTR',  # Twitter (went private, now X)
+        'AUD',   # Australian Dollar currency 
+        'COG',   # Cabot Oil & Gas (acquired and delisted)
+        'FRC',   # First Republic Bank (failed and acquired by JPMorgan)
+        'NLSN',  # Nielsen (acquired and went private)
+        'TWTR',  # Twitter (went private)
         'X',     # United States Steel Corporation (delisted June 30, 2025)
+        'INFO',     # IHS Markit (delisted and no more data available)
     }
     
     problematic = []
@@ -475,7 +673,6 @@ def get_sp500_tickers_filtered(years_back: int = 4) -> List[str]:
     cached_filtered = cache.caches["filtered_tickers"].get(cache_key)
     
     if cached_filtered:
-        logger.info(f"Using cached filtered S&P 500 tickers: {len(cached_filtered)} tickers")
         return cached_filtered
     
     # Cache miss - need to fetch and filter
@@ -547,4 +744,8 @@ if __name__ == "__main__":
     #logger.info(f"First 10 NYSE tickers: {nyse_tickers[:10]}")
     
     sp500_tickers = get_sp500_tickers()
-    logger.info(f"First 10 S&P 500 tickers: {sp500_tickers}")
+    logger.info(f"{len(sp500_tickers)} S&P 500 tickers: {sp500_tickers}")
+    
+    # Download and cache IPO dates for all filtered S&P 500 tickers
+    ipo_dates = get_exchange_listing_dates(sp500_tickers)
+    logger.info(f"Downloaded IPO dates for {len(ipo_dates)} tickers")

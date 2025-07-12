@@ -43,17 +43,19 @@ def test_backtester():
     from src.utils.logger import LogLevel
     print(f"LogLevel.DEBUG value: {LogLevel.DEBUG.value}")
     
-    # Configuration for VTRS valuation agent testing
-    tickers = ["VTRS"]  # VTRS ticker to reproduce astronomical confidence issue
-    start_date = "2025-07-10"   # Day before yesterday  
-    end_date = "2025-07-11"     # Yesterday
+    # Configuration for testing prefetch fix with screening mode
+    # Use the same date range that caused the original errors
+    tickers = ["AAPL"]  # Not used in screen mode, just for compatibility
+    start_date = "2022-01-01"   
+    end_date = "2022-01-31"     
     initial_capital = 100000
-    selected_analysts = ["valuation_analyst"]  # Only valuation agent to test extreme confidence issue
+    selected_analysts = ["valuation_analyst"]  # Just use one analyst for testing
     model_name = "llama3-70b-8192"
     model_provider = "Groq"
+    screen_mode = True  # Enable screening mode to test the prefetch fix
     
-    print(f"Testing backtester from {start_date} to {end_date}")
-    print(f"Tickers: {tickers}")
+    print(f"Testing backtester prefetch fix in screening mode from {start_date} to {end_date}")
+    print(f"Using screening mode: {screen_mode}")
     print(f"Initial capital: ${initial_capital:,}")
     print(f"Analysts: {selected_analysts}")
     print()
@@ -70,22 +72,26 @@ def test_backtester():
         selected_analysts=selected_analysts,
         initial_margin_requirement=0.0,
         debug_mode=True,
-        verbose_data=True,
+        verbose_data=False,  # Disable verbose to focus on prefetch messages
+        screen_mode=screen_mode
     )
     
     try:
-        # Run the backtest with timing analysis
-        print("Starting backtest...")
+        # Test just the prefetch phase first to check our fix
+        print("Testing prefetch phase with data validation...")
         start_time = time.time()
         
-        # Track individual component times
-        print("📊 Timing Analysis:")
-        print("=" * 50)
+        # Run prefetch only to test our fix
+        backtester.prefetch_data()
         
-        performance_metrics = backtester.run_backtest()
+        prefetch_time = time.time() - start_time
+        print(f"✅ Prefetch completed successfully in {prefetch_time:.2f} seconds")
+        print("If no errors above, the fix is working!")
         
-        end_time = time.time()
-        total_time = end_time - start_time
+        # Optionally run the full backtest (commented out for faster testing)
+        # performance_metrics = backtester.run_backtest()
+        
+        total_time = prefetch_time
         
         print("=" * 50)
         print(f"🕐 Total backtest time: {total_time:.2f} seconds")

@@ -30,6 +30,12 @@ class AgentProgress:
             self.live.stop()
             self.started = False
 
+    def clear(self):
+        """Clear all agent status and refresh display."""
+        self.agent_status.clear()
+        if self.started:
+            self._refresh_display()
+
     def update_status(self, agent_name: str, ticker: Optional[str] = None, status: str = ""):
         """Update the status of an agent."""
         if agent_name not in self.agent_status:

@@ -39,7 +39,7 @@ def fixed_income_agent(state: AgentState):
         logger.debug(f"  Stock allocation: {stock_allocation*100:.1f}%", module="fixed_income_agent")
         logger.debug(f"  Bond allocation: {bond_allocation*100:.1f}%", module="fixed_income_agent")
     
-    progress.update_status("fixed_income_agent", None, "Fetching yield curve data")
+    progress.update_status("fixed_income_agent", "SHY, TLT", "Fetching yield curve data")
     
     # Get yield curve data for algorithmic decision
     yield_curve_data = get_yield_curve_data(end_date, verbose_data)
@@ -49,7 +49,7 @@ def fixed_income_agent(state: AgentState):
         for key, value in yield_curve_data.items():
             logger.debug(f"  {key}: {value}", module="fixed_income_agent")
     
-    progress.update_status("fixed_income_agent", None, "Making algorithmic bond decisions")
+    progress.update_status("fixed_income_agent", "SHY, TLT", "Making bond decisions")
     
     # Algorithmic bond selection based on yield curve
     bond_decisions = make_bond_decisions(
@@ -71,7 +71,7 @@ def fixed_income_agent(state: AgentState):
     # Add the signal to analyst_signals
     state["data"]["analyst_signals"]["fixed_income_agent"] = bond_decisions
     
-    progress.update_status("fixed_income_agent", None, "Done")
+    progress.update_status("fixed_income_agent", "SHY, TLT", "Done")
     
     return {
         "messages": state["messages"] + [message],

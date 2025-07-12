@@ -99,7 +99,7 @@ async def get_prices_async(tickers: List[str], start_date: str, end_date: str, v
     df_results = await fetch_prices_batch(tickers, start_date, end_date, verbose_data) # Review: Why do I need "await" here?
     if verbose_data:
         logger.debug(f"df_results: {df_results}", module="get_prices_async", ticker=tickers)
-    return {ticker: df_to_price_objects(df) for ticker, df in df_results.items()}
+    return {ticker: df_to_price_objects(df, ticker) for ticker, df in df_results.items()}
 
 
 async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, pd.DataFrame]:
@@ -291,16 +291,41 @@ def df_to_cache_format(df: pd.DataFrame) -> List[Dict]:
     return result
 
 
-def df_to_price_objects(df: pd.DataFrame) -> List[Price]:
+def df_to_price_objects(df: pd.DataFrame, ticker: str = "UNKNOWN") -> List[Price]:
     """Convert DataFrame to a list of Price objects"""
+    
+    # Handle MultiIndex DataFrames (flatten to regular DataFrame)
+    if isinstance(df.columns, pd.MultiIndex):
+        try:
+            # Try to extract data for this specific ticker
+            if ticker in df.columns.levels[0]:
+                df = df[ticker].copy()
+            else:
+                # Single ticker case - flatten MultiIndex by taking price level
+                df = df.copy()
+                df.columns = df.columns.get_level_values(1)  # Get price types
+            logger.debug(f"Handled MultiIndex DataFrame for ticker {ticker}", 
+                          module="df_to_price_objects", ticker=ticker)
+        except Exception as e:
+            logger.debug(f"Failed to handle MultiIndex for ticker {ticker}: {e}", 
+                          module="df_to_price_objects", ticker=ticker)
+    
     prices = []
     for _, row in df.iterrows():
+        # Handle volume conversion with fallback for NaN values
+        try:
+            volume = int(row['volume'])
+        except (ValueError, TypeError):
+            volume = 0
+            logger.critical(f"Volume conversion failed for ticker {ticker} on date {row.name.strftime('%Y-%m-%d')} - value: {row['volume']}, setting to 0", 
+                          module="df_to_price_objects", ticker=ticker)
+        
         price = Price(
             open=float(row['open']),
             high=float(row['high']),
             low=float(row['low']),
             close=float(row['close']),
-            volume=int(row['volume']),
+            volume=volume,
             time=row.name.strftime('%Y-%m-%d')
         )
         prices.append(price)
