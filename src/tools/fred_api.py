@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from fredapi import Fred
 
-from data.disk_cache import DiskCache
-from utils.logger import logger
+from src.data.disk_cache import DiskCache
+from src.utils.logger import logger
 
 # Create a global cache instance with disk persistence
 _cache = DiskCache(cache_dir=Path("./cache"))

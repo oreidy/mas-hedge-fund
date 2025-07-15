@@ -50,6 +50,8 @@ class Backtester:
         debug_mode: bool = False,
         verbose_data: bool = False,
         screen_mode: bool = False,
+        max_positions: int = 30,
+        transaction_cost: float = 0.005,
     ):
         """
         :param agent: The trading agent (Callable).
@@ -64,6 +66,8 @@ class Backtester:
         :param debug_mode: Whether to enable detailed debugging output.
         :param verbose_data: Whether to show detailed data output.
         :param screen_mode: Whether running in screening mode (vs specific tickers).
+        :param max_positions: Maximum number of active positions allowed.
+        :param transaction_cost: Transaction cost as percentage of trade value (e.g. 0.005 = 50 basis points).
         """
         self.agent = agent
         self._screen_mode = screen_mode
@@ -85,6 +89,8 @@ class Backtester:
         self.selected_analysts = selected_analysts
         self.debug_mode = debug_mode
         self.verbose_data = verbose_data
+        self.max_positions = max_positions
+        self.transaction_cost = transaction_cost
 
         # Store the margin ratio (e.g. 0.5 means 50% margin required).
         self.margin_ratio = initial_margin_requirement
@@ -125,7 +131,10 @@ class Backtester:
 
         if action == "buy":
             cost = quantity * execution_price
-            if cost <= self.portfolio["cash"]:
+            transaction_fee = cost * self.transaction_cost
+            total_cost = cost + transaction_fee
+            
+            if total_cost <= self.portfolio["cash"]:
                 # Weighted average cost basis for the new total
                 old_shares = position["long"]
                 old_cost_basis = position["long_cost_basis"]
@@ -138,13 +147,16 @@ class Backtester:
                     position["long_cost_basis"] = (total_old_cost + total_new_cost) / total_shares
 
                 position["long"] += quantity
-                self.portfolio["cash"] -= cost
+                self.portfolio["cash"] -= total_cost
                 return quantity
             else:
-                # Calculate maximum affordable quantity
-                max_quantity = int(self.portfolio["cash"] / execution_price)
+                # Calculate maximum affordable quantity including transaction costs
+                max_quantity = int(self.portfolio["cash"] / (execution_price * (1 + self.transaction_cost)))
                 if max_quantity > 0:
                     cost = max_quantity * execution_price
+                    transaction_fee = cost * self.transaction_cost
+                    total_cost = cost + transaction_fee
+                    
                     old_shares = position["long"]
                     old_cost_basis = position["long_cost_basis"]
                     total_shares = old_shares + max_quantity
@@ -155,7 +167,7 @@ class Backtester:
                         position["long_cost_basis"] = (total_old_cost + total_new_cost) / total_shares
 
                     position["long"] += max_quantity
-                    self.portfolio["cash"] -= cost
+                    self.portfolio["cash"] -= total_cost
                     return max_quantity
                 return 0
 
@@ -163,13 +175,17 @@ class Backtester:
             # You can only sell as many as you own
             quantity = min(quantity, position["long"])
             if quantity > 0:
+                proceeds = quantity * execution_price
+                transaction_fee = proceeds * self.transaction_cost
+                net_proceeds = proceeds - transaction_fee
+                
                 # Realized gain/loss using average cost basis
                 avg_cost_per_share = position["long_cost_basis"] if position["long"] > 0 else 0
-                realized_gain = (execution_price - avg_cost_per_share) * quantity
+                realized_gain = (execution_price - avg_cost_per_share) * quantity - transaction_fee
                 self.portfolio["realized_gains"][ticker]["long"] += realized_gain
 
                 position["long"] -= quantity
-                self.portfolio["cash"] += quantity * execution_price
+                self.portfolio["cash"] += net_proceeds
 
                 if position["long"] == 0:
                     position["long_cost_basis"] = 0.0
@@ -180,12 +196,16 @@ class Backtester:
             """
             Typical short sale flow:
               1) Receive proceeds = execution_price * quantity
-              2) Post margin_required = proceeds * margin_ratio
-              3) Net effect on cash = +proceeds - margin_required
+              2) Pay transaction fee = proceeds * transaction_cost
+              3) Post margin_required = proceeds * margin_ratio
+              4) Net effect on cash = +proceeds - transaction_fee - margin_required
             """
             proceeds = execution_price * quantity
+            transaction_fee = proceeds * self.transaction_cost
             margin_required = proceeds * self.margin_ratio
-            if margin_required <= self.portfolio["cash"]:
+            net_cash_needed = margin_required + transaction_fee
+            
+            if net_cash_needed <= self.portfolio["cash"]:
                 # Weighted average short cost basis
                 old_short_shares = position["short"]
                 old_cost_basis = position["short_cost_basis"]
@@ -203,19 +223,21 @@ class Backtester:
                 position["short_margin_used"] += margin_required
                 self.portfolio["margin_used"] += margin_required
 
-                # Increase cash by proceeds, then subtract the required margin
+                # Increase cash by proceeds, then subtract transaction fee and required margin
                 self.portfolio["cash"] += proceeds
+                self.portfolio["cash"] -= transaction_fee
                 self.portfolio["cash"] -= margin_required
                 return quantity
             else:
-                # Calculate maximum shortable quantity
+                # Calculate maximum shortable quantity including transaction costs
                 if self.margin_ratio > 0:
-                    max_quantity = int(self.portfolio["cash"] / (execution_price * self.margin_ratio))
+                    max_quantity = int(self.portfolio["cash"] / (execution_price * (self.margin_ratio + self.transaction_cost)))
                 else:
-                    max_quantity = 0
+                    max_quantity = int(self.portfolio["cash"] / (execution_price * self.transaction_cost))
 
                 if max_quantity > 0:
                     proceeds = execution_price * max_quantity
+                    transaction_fee = proceeds * self.transaction_cost
                     margin_required = proceeds * self.margin_ratio
 
                     old_short_shares = position["short"]
@@ -232,6 +254,7 @@ class Backtester:
                     self.portfolio["margin_used"] += margin_required
 
                     self.portfolio["cash"] += proceeds
+                    self.portfolio["cash"] -= transaction_fee
                     self.portfolio["cash"] -= margin_required
                     return max_quantity
                 return 0
@@ -240,14 +263,18 @@ class Backtester:
             """
             When covering shares:
               1) Pay cover cost = execution_price * quantity
-              2) Release a proportional share of the margin
-              3) Net effect on cash = -cover_cost + released_margin
+              2) Pay transaction fee = cover_cost * transaction_cost
+              3) Release a proportional share of the margin
+              4) Net effect on cash = -cover_cost - transaction_fee + released_margin
             """
             quantity = min(quantity, position["short"])
             if quantity > 0:
                 cover_cost = quantity * execution_price
+                transaction_fee = cover_cost * self.transaction_cost
+                total_cost = cover_cost + transaction_fee
+                
                 avg_short_price = position["short_cost_basis"] if position["short"] > 0 else 0
-                realized_gain = (avg_short_price - execution_price) * quantity
+                realized_gain = (avg_short_price - execution_price) * quantity - transaction_fee
 
                 if position["short"] > 0:
                     portion = quantity / position["short"]
@@ -260,9 +287,9 @@ class Backtester:
                 position["short_margin_used"] -= margin_to_release
                 self.portfolio["margin_used"] -= margin_to_release
 
-                # Pay the cost to cover, but get back the released margin
+                # Pay the cost to cover plus transaction fee, but get back the released margin
                 self.portfolio["cash"] += margin_to_release
-                self.portfolio["cash"] -= cover_cost
+                self.portfolio["cash"] -= total_cost
 
                 self.portfolio["realized_gains"][ticker]["short"] += realized_gain
 
@@ -273,6 +300,96 @@ class Backtester:
                 return quantity
 
         return 0
+
+    def get_open_positions(self):
+        """Get all tickers with open positions (long or short)."""
+        open_positions = set()
+        for ticker, position in self.portfolio["positions"].items():
+            if position["long"] != 0 or position["short"] != 0:
+                open_positions.add(ticker)
+        return open_positions
+
+    def get_position_count(self):
+        """Get the current number of active positions."""
+        return len(self.get_open_positions())
+
+    def calculate_signal_strength(self, analyst_signals, ticker):
+        """Calculate signal strength for a ticker based on analyst signals."""
+        signals = []
+        for agent_name, agent_signals in analyst_signals.items():
+            if ticker in agent_signals:
+                signal = agent_signals[ticker].get("signal", "neutral")
+                if signal == "bullish":
+                    signals.append(1.0)
+                elif signal == "bearish":
+                    signals.append(-1.0)
+                else:
+                    signals.append(0.0)
+        
+        if not signals:
+            return 0.0
+        
+        # Calculate signal strength as consensus strength
+        avg_signal = sum(signals) / len(signals)
+        consensus_strength = abs(avg_signal)
+        
+        # Boost strength based on number of agreeing signals
+        agreeing_count = sum(1 for s in signals if (s > 0 and avg_signal > 0) or (s < 0 and avg_signal < 0))
+        agreement_factor = agreeing_count / len(signals) if signals else 0
+        
+        # Final strength combines consensus and agreement
+        return consensus_strength * agreement_factor
+
+    def find_weakest_position(self, analyst_signals):
+        """Find the weakest open position based on current signal strength."""
+        open_positions = self.get_open_positions()
+        
+        if not open_positions:
+            return None, 0.0
+        
+        weakest_ticker = None
+        weakest_strength = float('inf')
+        
+        for ticker in open_positions:
+            strength = self.calculate_signal_strength(analyst_signals, ticker)
+            if strength < weakest_strength:
+                weakest_strength = strength
+                weakest_ticker = ticker
+        
+        return weakest_ticker, weakest_strength
+
+    def should_open_position(self, ticker, signal_strength, analyst_signals):
+        """Determine if a new position should be opened given current constraints."""
+        current_positions = self.get_position_count()
+        
+        # If under position limit, open normally
+        if current_positions < self.max_positions:
+            return True, None
+        
+        # At position limit - need to compare with existing positions
+        weakest_ticker, weakest_strength = self.find_weakest_position(analyst_signals)
+        
+        if weakest_ticker is None:
+            return False, None
+        
+        # If new signal is stronger than weakest position, replace it
+        if signal_strength > weakest_strength:
+            logger.info(f"Replacing weak position {weakest_ticker} (strength: {weakest_strength:.3f}) with {ticker} (strength: {signal_strength:.3f})", module="backtester")
+            return True, weakest_ticker
+        else:
+            return False, None
+
+    def create_hybrid_ticker_list(self, screened_tickers):
+        """Create hybrid ticker list combining screened tickers with open positions."""
+        open_positions = self.get_open_positions()
+        screened_set = set(screened_tickers)
+        
+        # Combine screened tickers with open positions
+        hybrid_tickers = list(screened_set.union(open_positions))
+        
+        logger.info(f"Hybrid ticker list: {len(screened_tickers)} screened + {len(open_positions)} open positions = {len(hybrid_tickers)} total", module="backtester")
+        
+        return hybrid_tickers
 
     def calculate_portfolio_value(self, evaluation_prices):
         """
@@ -452,9 +569,10 @@ class Backtester:
             # Get eligible tickers for this specific date
             if self._screen_mode:
                 from utils.tickers import get_eligible_tickers_for_date
-                eligible_tickers = get_eligible_tickers_for_date(current_date_str, min_days_listed=200)
-                logger.info(f"Using {len(eligible_tickers)} eligible tickers for {current_date_str}.", module="run_backtest")
-                #logger.debug(f"Ticker list: {eligible_tickers}", module="run_backtest")
+                screened_tickers = get_eligible_tickers_for_date(current_date_str, min_days_listed=200)
+                # Create hybrid list combining screened tickers with open positions
+                eligible_tickers = self.create_hybrid_ticker_list(screened_tickers)
+                logger.info(f"Using {len(eligible_tickers)} eligible tickers for {current_date_str} (screened: {len(screened_tickers)}, open positions: {len(self.get_open_positions())}).", module="run_backtest")
             else:
                 # Use the original ticker list for non-screening mode
                 eligible_tickers = self.tickers
@@ -531,15 +649,52 @@ class Backtester:
                 logger.debug(f"  {ticker}: {decision.get('action', 'hold')} {decision.get('quantity', 0)} shares", 
                             module="run_backtest", 
                             ticker=ticker)
+            
+            # Log position summary
+            current_position_count = self.get_position_count()
+            logger.info(f"Current position count: {current_position_count}/{self.max_positions}", module="run_backtest")
 
             # Execute trades for each ticker (stocks + bond ETFs)
             executed_trades = {}
+            position_replacements = {}  # Track which positions were replaced
+            
             for ticker in tickers_to_fetch:
                 decision = decisions.get(ticker, {"action": "hold", "quantity": 0})
                 action, quantity = decision.get("action", "hold"), decision.get("quantity", 0)
-
-                executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
-                executed_trades[ticker] = executed_quantity
+                
+                # For buy actions, check position limits
+                if action == "buy" and quantity > 0:
+                    # Calculate signal strength for this ticker
+                    signal_strength = self.calculate_signal_strength(analyst_signals, ticker)
+                    
+                    # Check if we should open this position
+                    should_open, ticker_to_close = self.should_open_position(ticker, signal_strength, analyst_signals)
+                    
+                    if should_open:
+                        # If we need to close a position to make room, do it first
+                        if ticker_to_close:
+                            close_position = self.portfolio["positions"][ticker_to_close]
+                            if close_position["long"] > 0:
+                                close_quantity = self.execute_trade(ticker_to_close, "sell", close_position["long"], execution_prices[ticker_to_close])
+                                executed_trades[ticker_to_close] = close_quantity
+                                position_replacements[ticker] = ticker_to_close
+                                logger.info(f"Closed position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                            elif close_position["short"] > 0:
+                                close_quantity = self.execute_trade(ticker_to_close, "cover", close_position["short"], execution_prices[ticker_to_close])
+                                executed_trades[ticker_to_close] = close_quantity
+                                position_replacements[ticker] = ticker_to_close
+                                logger.info(f"Covered position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                        
+                        # Now execute the new trade
+                        executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
+                        executed_trades[ticker] = executed_quantity
+                    else:
+                        logger.info(f"Rejected opening position for {ticker} (signal strength: {signal_strength:.3f}) - position limit reached", module="backtester")
+                        executed_trades[ticker] = 0
+                else:
+                    # For non-buy actions or existing positions, execute normally
+                    executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
+                    executed_trades[ticker] = executed_quantity
 
             # ---------------------------------------------------------------
             # 2) Now that trades have been executed, recalculate the final
@@ -879,6 +1034,18 @@ if __name__ == "__main__":
         default=0.0,
         help="Margin ratio for short positions, e.g. 0.5 for 50 percent (default: 0.0)",
     )
+    parser.add_argument(
+        "--max-positions",
+        type=int,
+        default=30,
+        help="Maximum number of active positions allowed (default: 30)",
+    )
+    parser.add_argument(
+        "--transaction-cost",
+        type=float,
+        default=0.005,
+        help="Transaction cost as a percentage of trade value (default: 0.005 = 50 basis points)",
+    )
 
     # Debugging options
     parser.add_argument(
@@ -993,6 +1160,8 @@ if __name__ == "__main__":
         debug_mode=args.debug and not args.quiet,
         verbose_data=args.verbose_data and args.debug and not args.quiet,
         screen_mode=args.screen,
+        max_positions=args.max_positions,
+        transaction_cost=args.transaction_cost,
     )
 
     # Start the timer after LLM and analysts are selected
