@@ -449,8 +449,8 @@ def analyze_financial_discipline(metrics: list, financial_line_items: list, verb
         else:
             details.append("No dividend data found across periods.")
     else:
-        logger.warning(f"No dividend attribute found in line items", 
-                   module="analyze_financial_discipline", ticker=ticker)
+        logger.warning(f"analyze_financial_discipline: No dividend attribute found in line items", 
+                   module="bill_ackman_agent", ticker=ticker)
         details.append("No dividend data found across periods.")
     
     # Check for decreasing share count:

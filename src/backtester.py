@@ -276,10 +276,8 @@ class Backtester:
 
     def calculate_portfolio_value(self, evaluation_prices):
         """
-        Calculate total portfolio value, including:
-          - cash
-          - market value of long positions
-          - unrealized gains/losses for short positions
+        Calculate total portfolio value using NPV formula:
+        NPV = cash + long position value - short position value + margin
         """
         total_value = self.portfolio["cash"]
 
@@ -292,10 +290,13 @@ class Backtester:
                 long_market_value = position["long"] * current_price
                 total_value += long_market_value
 
-            # Short position unrealized PnL = short_shares * (short_cost_basis - evaluation_prices)
+            # Short positions: Subtract current market value (like long but negative)
             if position["short"] > 0:
-                short_unrealized_pnl = position["short"] * (position["short_cost_basis"] - current_price)
-                total_value += short_unrealized_pnl
+                short_market_value = position["short"] * current_price
+                total_value -= short_market_value
+
+        # Add back margin that was deducted from cash (it's still part of portfolio value)
+        total_value += self.portfolio["margin_used"]
 
         return total_value
 
@@ -371,7 +372,6 @@ class Backtester:
                 logger.warning("Agents will fetch FRED data on-demand during backtesting", module="prefetch_data")
 
         # Log a summary of fetched data
-        logger.info(f"Checking verbose_data condition: self.verbose_data = {self.verbose_data}", module="prefetch_data")
         if self.verbose_data:
             logger.debug("=== DATA FETCHED SUMMARY from prefetch_data ===", module="prefetch_data")
             logger.debug(f"Stock tickers: {self.tickers}", module="prefetch_data")
@@ -597,27 +597,39 @@ class Backtester:
                 long_val = pos["long"] * evaluation_prices[ticker]
                 short_val = pos["short"] * evaluation_prices[ticker]
                 net_position_value = long_val - short_val
+                shares_owned = pos["long"] - pos["short"]  # net shares
+
+                # Calculate total returns percentage
+                position_return_pct = None
+                if pos["long"] > 0 and pos["long_cost_basis"] > 0:
+                    # Long position returns: (current_price - cost_basis) / cost_basis * 100
+                    position_return_pct = ((evaluation_prices[ticker] - pos["long_cost_basis"]) / pos["long_cost_basis"]) * 100
+                elif pos["short"] > 0 and pos["short_cost_basis"] > 0:
+                    # Short position returns: (cost_basis - current_price) / cost_basis * 100
+                    position_return_pct = ((pos["short_cost_basis"] - evaluation_prices[ticker]) / pos["short_cost_basis"]) * 100
 
                 # Get the action and quantity from the decisions
                 action = decisions.get(ticker, {}).get("action", "hold")
                 quantity = executed_trades.get(ticker, 0)
                 
-                # Append the agent action to the table rows
-                date_rows.append(
-                    format_backtest_row(
-                        date=current_date_str,
-                        ticker=ticker,
-                        action=action,
-                        quantity=quantity,
-                        open_price=execution_prices[ticker],
-                        close_price=evaluation_prices[ticker],
-                        shares_owned=pos["long"] - pos["short"],  # net shares
-                        position_value=net_position_value,
-                        bullish_count=bullish_count,
-                        bearish_count=bearish_count,
-                        neutral_count=neutral_count,
+                # Only show tickers with open positions (non-zero shares) or current trading activity
+                if shares_owned != 0 or quantity != 0:
+                    date_rows.append(
+                        format_backtest_row(
+                            date=current_date_str,
+                            ticker=ticker,
+                            action=action,
+                            quantity=quantity,
+                            open_price=execution_prices[ticker],
+                            close_price=evaluation_prices[ticker],
+                            shares_owned=shares_owned,
+                            position_value=net_position_value,
+                            bullish_count=bullish_count,
+                            bearish_count=bearish_count,
+                            neutral_count=neutral_count,
+                            position_return_pct=position_return_pct,
+                        )
                     )
-                )
             
             # Add bond ETF positions to display (no analyst signals for bonds)
             for bond_etf in self.bond_etfs:
@@ -625,6 +637,15 @@ class Backtester:
                 long_val = pos["long"] * evaluation_prices[bond_etf]
                 short_val = pos["short"] * evaluation_prices[bond_etf]
                 net_position_value = long_val - short_val
+                
+                # Calculate total returns percentage for bond ETF
+                position_return_pct = None
+                if pos["long"] > 0 and pos["long_cost_basis"] > 0:
+                    # Long position returns: (current_price - cost_basis) / cost_basis * 100
+                    position_return_pct = ((evaluation_prices[bond_etf] - pos["long_cost_basis"]) / pos["long_cost_basis"]) * 100
+                elif pos["short"] > 0 and pos["short_cost_basis"] > 0:
+                    # Short position returns: (cost_basis - current_price) / cost_basis * 100
+                    position_return_pct = ((pos["short_cost_basis"] - evaluation_prices[bond_etf]) / pos["short_cost_basis"]) * 100
                 
                 # Get the action and quantity from the decisions
                 action = decisions.get(bond_etf, {}).get("action", "hold")
@@ -643,6 +664,7 @@ class Backtester:
                         bullish_count=0,  # No analyst signals for bonds
                         bearish_count=0,
                         neutral_count=0,
+                        position_return_pct=position_return_pct,
                     )
                 )
             # ---------------------------------------------------------------
@@ -655,7 +677,7 @@ class Backtester:
             )
 
             # Calculate cumulative return vs. initial capital
-            portfolio_return = ((total_value + total_realized_gains) / self.initial_capital - 1) * 100
+            portfolio_return = ((total_value) / self.initial_capital - 1) * 100
 
             # Add summary row for this day
             date_rows.append(

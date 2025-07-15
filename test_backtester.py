@@ -43,18 +43,18 @@ def test_backtester():
     from src.utils.logger import LogLevel
     print(f"LogLevel.DEBUG value: {LogLevel.DEBUG.value}")
     
-    # Configuration for testing prefetch fix with screening mode
-    # Use the same date range that caused the original errors
-    tickers = ["AAPL"]  # Not used in screen mode, just for compatibility
-    start_date = "2022-01-01"   
-    end_date = "2022-01-31"     
+    # Configuration for testing growth metrics issue
+    tickers = ['ADSK','BBY','COF','COP','CRWD','CSX']  # Specific tickers to test
+    start_date = "2025-04-01"   
+    end_date = "2025-04-02"     # Just two days in April 2025
     initial_capital = 100000
-    selected_analysts = ["valuation_analyst"]  # Just use one analyst for testing
+    selected_analysts = ["fundamentals_analyst"]  # Only fundamentals agent
     model_name = "llama3-70b-8192"
     model_provider = "Groq"
-    screen_mode = True  # Enable screening mode to test the prefetch fix
+    screen_mode = False  # Disable screening mode to use specific tickers
     
-    print(f"Testing backtester prefetch fix in screening mode from {start_date} to {end_date}")
+    print(f"Testing growth metrics issue with fundamentals agent from {start_date} to {end_date}")
+    print(f"Using tickers: {tickers}")
     print(f"Using screening mode: {screen_mode}")
     print(f"Initial capital: ${initial_capital:,}")
     print(f"Analysts: {selected_analysts}")
@@ -72,7 +72,7 @@ def test_backtester():
         selected_analysts=selected_analysts,
         initial_margin_requirement=0.0,
         debug_mode=True,
-        verbose_data=False,  # Disable verbose to focus on prefetch messages
+        verbose_data=True,  # Enable verbose to see detailed logs
         screen_mode=screen_mode
     )
     
@@ -88,14 +88,15 @@ def test_backtester():
         print(f"✅ Prefetch completed successfully in {prefetch_time:.2f} seconds")
         print("If no errors above, the fix is working!")
         
-        # Optionally run the full backtest (commented out for faster testing)
-        # performance_metrics = backtester.run_backtest()
+        # Run the full backtest to test fundamentals agent
+        print("\nRunning full backtest to test fundamentals agent...")
+        performance_metrics = backtester.run_backtest()
         
-        total_time = prefetch_time
+        total_time = time.time() - start_time
         
         print("=" * 50)
         print(f"🕐 Total backtest time: {total_time:.2f} seconds")
-        print(f"🕐 Average time per day: {total_time / 3:.2f} seconds")
+        print(f"🕐 Average time per day: {total_time / 2:.2f} seconds")  # 2 days
         print("=" * 50)
         
         print("Backtest completed successfully!")

@@ -55,7 +55,7 @@ def fundamentals_agent(state: AgentState):
                 missing_metrics.append(metric_name)
 
         if missing_metrics:
-            logger.warning(f"Missing financial metrics: {', '.join(missing_metrics)}. Signals default to neutral.", 
+            logger.warning(f"Missing financial metrics: {', '.join(missing_metrics)}. Some signals might default to neutral.", 
                         module="fundamentals_agent", ticker=ticker)
 
         # Initialize signals list for different fundamental aspects

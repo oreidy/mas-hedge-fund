@@ -168,7 +168,7 @@ def print_backtest_results(table_rows: list) -> None:
             ticker_rows,
             headers=[
                 "Date",
-                "Time",
+                # "Time",  # Commented out - always shows 00:00:00
                 "Ticker",
                 "Action",
                 "Quantity",
@@ -176,6 +176,7 @@ def print_backtest_results(table_rows: list) -> None:
                 "Close",
                 "Shares",
                 "Position Value",
+                "Total Returns %",
                 "Bullish",
                 "Bearish",
                 "Neutral",
@@ -183,7 +184,7 @@ def print_backtest_results(table_rows: list) -> None:
             tablefmt="grid",
             colalign=(
                 "left",  # Date
-                "left",  # Time
+                # "left",  # Time (commented out)
                 "left",  # Ticker
                 "center",  # Action
                 "right",  # Quantity
@@ -191,6 +192,7 @@ def print_backtest_results(table_rows: list) -> None:
                 "right",  # Close Price
                 "right",  # Shares
                 "right",  # Position Value
+                "right",  # Total Returns %
                 "right",  # Bullish
                 "right",  # Bearish
                 "right",  # Neutral
@@ -222,6 +224,7 @@ def format_backtest_row(
     sharpe_ratio: float = None,
     sortino_ratio: float = None,
     max_drawdown: float = None,
+    position_return_pct: float = None,
 ) -> list[any]:
     """Format a row for the backtest results table"""
     # Color the action
@@ -253,10 +256,18 @@ def format_backtest_row(
             f"{Fore.RED}{max_drawdown:.2f}%{Style.RESET_ALL}" if max_drawdown is not None else "",  # Max Drawdown
         ]
     else:
-        time_str = date.split(" ")[1] if " " in date else "00:00:00"
+        # time_str = date.split(" ")[1] if " " in date else "00:00:00"  # Commented out
+        
+        # Format returns percentage with color
+        if position_return_pct is not None:
+            return_color = Fore.GREEN if position_return_pct >= 0 else Fore.RED
+            returns_str = f"{return_color}{position_return_pct:+.2f}%{Style.RESET_ALL}"
+        else:
+            returns_str = f"{Fore.WHITE}N/A{Style.RESET_ALL}"
+        
         return [
             date,
-            time_str,
+            # time_str,  # Commented out - always shows 00:00:00
             f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
             f"{action_color}{action.upper()}{Style.RESET_ALL}",
             f"{action_color}{quantity:,.0f}{Style.RESET_ALL}",
@@ -264,6 +275,7 @@ def format_backtest_row(
             f"{Fore.WHITE}{close_price:,.2f}{Style.RESET_ALL}",
             f"{Fore.WHITE}{shares_owned:,.0f}{Style.RESET_ALL}",
             f"{Fore.YELLOW}{position_value:,.2f}{Style.RESET_ALL}",
+            returns_str,
             f"{Fore.GREEN}{bullish_count}{Style.RESET_ALL}",
             f"{Fore.RED}{bearish_count}{Style.RESET_ALL}",
             f"{Fore.BLUE}{neutral_count}{Style.RESET_ALL}",

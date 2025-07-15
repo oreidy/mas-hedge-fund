@@ -220,7 +220,10 @@ def get_sp500_tickers_with_dates(years_back: int = 4) -> Dict[str, Dict]:
                 'sp500_end': sp500_end
             }
         
-        logger.info(f"Retrieved S&P 500 membership data for {len(ticker_dates)} tickers from WRDS")
+        logger.debug(f"Retrieved S&P 500 membership data for {len(ticker_dates)} tickers from WRDS")
+        
+        # Apply manual fixes for 2025 S&P 500 changes
+        ticker_dates = apply_manual_sp500_fixes(ticker_dates)
         
         # Cache the data for future use
         cache.set_sp500_membership_data(ticker_dates, years_back)
@@ -234,6 +237,63 @@ def get_sp500_tickers_with_dates(years_back: int = 4) -> Dict[str, Dict]:
         return {}
 
 
+
+def apply_manual_sp500_fixes(ticker_dates: Dict[str, Dict]) -> Dict[str, Dict]:
+    """
+    Apply manual fixes for 2025 S&P 500 membership changes.
+    
+    WRDS data has all tickers ending at 2024-12-31, but many are still in the index.
+    This function sets sp500_end=None for currently active tickers and sets specific
+    end dates for tickers that were actually removed in 2025.
+    
+    2025 S&P 500 Changes:
+    - July 9, 2025: DDOG (Datadog) replaced JNPR (Juniper Networks) - HPE acquired Juniper
+    - May 19, 2025: COIN (Coinbase) replaced DFS (Discover Financial) - Capital One acquired Discover
+    - March 24, 2025: DASH (DoorDash) replaced BWA (BorgWarner) - Market cap change
+    - March 24, 2025: TKO (TKO Group Holdings) replaced TFX (Teleflex) - Market cap change  
+    - March 24, 2025: WSM (Williams-Sonoma) replaced CE (Celanese) - Market cap change
+    - March 24, 2025: EXE (Expand Energy) replaced FMC (FMC Corporation) - Market cap change
+    
+    Args:
+        ticker_dates: Dictionary of ticker membership data from WRDS
+        
+    Returns:
+        Updated ticker_dates with manual fixes applied
+    """
+    # Tickers removed from S&P 500 in 2025 with their actual removal dates
+    removed_tickers_2025 = {
+        'JNPR': datetime(2025, 7, 9),   # Juniper Networks - acquired by HPE
+        'DFS': datetime(2025, 5, 19),   # Discover Financial - acquired by Capital One
+        'BWA': datetime(2025, 3, 24),   # BorgWarner - market cap change
+        'TFX': datetime(2025, 3, 24),   # Teleflex - market cap change
+        'CE': datetime(2025, 3, 24),    # Celanese - market cap change
+        'FMC': datetime(2025, 3, 24),   # FMC Corporation - market cap change
+    }
+    
+    # Count fixes applied
+    fixed_active = 0
+    fixed_removed = 0
+    
+    for ticker, dates in ticker_dates.items():
+        # If ticker has sp500_end = 2024-12-31
+        if (dates['sp500_end'] is not None and 
+            dates['sp500_end'].strftime('%Y-%m-%d') == '2024-12-31'):
+            
+            if ticker in removed_tickers_2025:
+                # Set actual removal date for tickers removed in 2025
+                dates['sp500_end'] = removed_tickers_2025[ticker]
+                fixed_removed += 1
+                logger.debug(f"Fixed {ticker}: set sp500_end={removed_tickers_2025[ticker].strftime('%Y-%m-%d')} (actually removed)")
+            else:
+                # Set sp500_end to None for tickers still active
+                dates['sp500_end'] = None
+                fixed_active += 1
+                logger.debug(f"Fixed {ticker}: set sp500_end=None (still active)")
+    
+    logger.debug(f"Applied manual S&P 500 fixes: {fixed_active} tickers set to active, "
+               f"{fixed_removed} tickers updated with actual removal dates")
+    
+    return ticker_dates
 
 
 def get_exchange_listing_date(ticker: str) -> Optional[datetime]:
@@ -531,7 +591,8 @@ def get_problematic_tickers(tickers: List[str]) -> List[str]:
         'NLSN',  # Nielsen (acquired and went private)
         'TWTR',  # Twitter (went private)
         'X',     # United States Steel Corporation (delisted June 30, 2025)
-        'INFO',     # IHS Markit (delisted and no more data available)
+        'INFO',  # IHS Markit (delisted and no more data available)
+        'SPC',   # CrossingBridge Pre-Merger SPAC ETF (ETF, not stock)
     }
     
     problematic = []

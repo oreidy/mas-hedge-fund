@@ -33,14 +33,16 @@ class Cache:
             key_field="time"
         )
 
-    def get_financial_metrics(self, ticker: str) -> list[dict[str, any]]:
+    def get_financial_metrics(self, ticker: str, monthly_period: str, period: str) -> list[dict[str, any]]:
         """Get cached financial metrics if available."""
-        return self._financial_metrics_cache.get(ticker)
+        cache_key = f"{ticker}:{monthly_period}:{period}"
+        return self._financial_metrics_cache.get(cache_key)
 
-    def set_financial_metrics(self, ticker: str, data: list[dict[str, any]]):
+    def set_financial_metrics(self, ticker: str, monthly_period: str, period: str, data: list[dict[str, any]]):
         """Append new financial metrics to cache."""
-        self._financial_metrics_cache[ticker] = self._merge_data(
-            self._financial_metrics_cache.get(ticker),
+        cache_key = f"{ticker}:{monthly_period}:{period}"
+        self._financial_metrics_cache[cache_key] = self._merge_data(
+            self._financial_metrics_cache.get(cache_key),
             data,
             key_field="report_period"
         )

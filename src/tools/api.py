@@ -1,8 +1,8 @@
 import os
 import pandas as pd
 import yfinance as yf
-import asyncio
-import aiohttp
+# import asyncio  # No longer needed
+# import aiohttp  # No longer needed
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import List, Dict, Optional, Any, Union
@@ -28,7 +28,20 @@ from data.models import (
 # Import other functions
 from utils.market_calendar import is_trading_day, adjust_date_range, adjust_yfinance_date_range, get_previous_trading_day, get_next_trading_day
 from tools.sec_edgar_scraper import fetch_multiple_insider_trades
+from data.company_news_db import (
+    save_company_news,
+    get_company_news as get_company_news_from_db,
+    get_multiple_company_news,
+    is_news_cache_valid
+)
 from utils.logger import logger
+
+
+def get_monthly_cache_period(end_date: str) -> str:
+    """Convert end_date to monthly cache period (YYYY-MM format)"""
+    from datetime import datetime
+    date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+    return f"{date_obj.year}-{date_obj.month:02d}"
 
 
 # ===== CACHE INITIALIZATION =====
@@ -192,7 +205,8 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
             end=yf_end_date, 
             group_by='ticker',
             auto_adjust=True,
-            progress=False
+            progress=False,
+            timeout=20
         )
         
         # Process the results
@@ -363,7 +377,7 @@ def get_financial_metrics(
     Args:
         ticker: Stock ticker symbol
         end_date: End date string (YYYY-MM-DD)
-        period: Period type ("ttm", "annual", etc.)
+        period: Period type ("quaterly", "annual", etc.)
         limit: Maximum number of periods to return
         verbose_data: Optional flag for verbose logging
         
@@ -401,7 +415,10 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
     async def fetch_ticker_metrics(ticker):
         nonlocal cache_hits, results_dict
 
-        cached_data = _cache.get_financial_metrics(ticker)
+        # Get monthly cache period for this request
+        monthly_period = get_monthly_cache_period(end_date)
+        
+        cached_data = _cache.get_financial_metrics(ticker, monthly_period, period)
         if cached_data:
             filtered_data = [metric for metric in cached_data if metric["report_period"] <= end_date]
             filtered_data.sort(key=lambda x: x["report_period"], reverse=True)
@@ -455,8 +472,14 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     total_liabilities = float(balance_sheet.loc['Total Liabilities Net Minority Interest', col]) if 'Total Liabilities Net Minority Interest' in balance_sheet.index else None
                     stockholders_equity = float(balance_sheet.loc['Stockholders Equity', col]) if 'Stockholders Equity' in balance_sheet.index else None
                     
-                    # Get the market cap
-                    market_cap = get_historical_market_cap(ticker, report_date, verbose_data=verbose_data)
+                    # Get the market cap (with separate error handling)
+                    market_cap = None
+                    try:
+                        market_cap = get_historical_market_cap(ticker, report_date, verbose_data=verbose_data)
+                    except Exception as market_cap_error:
+                        logger.warning(f"Could not get market cap for {ticker} at {report_date}: {market_cap_error}", 
+                                     module="fetch_financial_metrics_async", ticker=ticker)
+                        market_cap = None
                     
                     # ROE, margins, etc.
                     return_on_equity = net_income / stockholders_equity if stockholders_equity and net_income else None
@@ -558,9 +581,10 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                                 module="fetch_financial_metrics_async", ticker=ticker)
                     continue
             
-            # Cache the results
+            # Cache the results using monthly period
             if financial_metrics:
-                _cache.set_financial_metrics(ticker, [metric.model_dump() for metric in financial_metrics])
+                monthly_period = get_monthly_cache_period(end_date)
+                _cache.set_financial_metrics(ticker, monthly_period, period, [metric.model_dump() for metric in financial_metrics])
             
             results_dict[ticker] = {'source': 'download', 'data': financial_metrics}
             return ticker, financial_metrics
@@ -614,7 +638,7 @@ def get_outstanding_shares(
     ticker: str, 
     date: str = None,   
     verbose_data: bool = False
-) -> Optional[float]:
+    ) -> Optional[float]:
     """
     Get historical outstanding shares count for a company. 
     Companies already adjust their balance sheets to stock splits.
@@ -643,57 +667,58 @@ def get_outstanding_shares(
     try:
         ticker_obj = yf.Ticker(ticker)
         
-        # Get quarterly balance sheets
-        quarters = ticker_obj.balance_sheet
-        if quarters.empty:
-            logger.warning(f"No quarterly data available", 
+        # Get annual balance sheets
+        annual_balance_sheet = ticker_obj.balance_sheet
+        if annual_balance_sheet.empty:
+            logger.warning(f"No annual data available", 
                           module="get_outstanding_shares", ticker=ticker)
             return None
         else:
             if verbose_data:
-                logger.debug(f"Available fields in balance sheet: {quarters.index.tolist()}", module="get_outstanding_shares", ticker=ticker)
-                logger.debug(f"We got data: {quarters}", module="get_outstanding_shares", ticker=ticker)
+                logger.debug(f"Available fields in balance sheet: {annual_balance_sheet.index.tolist()}", module="get_outstanding_shares", ticker=ticker)
+                logger.debug(f"We got data: {annual_balance_sheet}", module="get_outstanding_shares", ticker=ticker)
         
 
-        # Convert all quarter dates to strings for easier comparison
-        quarter_dates = [(q_date, q_date.strftime('%Y-%m-%d')) for q_date in quarters.columns]
+        # Convert all annual dates to strings for easier comparison
+        annual_dates = [(a_date, a_date.strftime('%Y-%m-%d')) for a_date in annual_balance_sheet.columns]
 
         # Sort by date string (newer dates first)
-        quarter_dates.sort(key=lambda x: x[1], reverse=True)
+        annual_dates.sort(key=lambda x: x[1], reverse=True)
 
-        # Find the most recent quarter before or equal to the specified date
-        quarter_date = None
-        for q_date, q_date_str in quarter_dates:
-            if q_date_str <= date:
-                quarter_date = q_date
+        # Find the most recent annual report before or equal to the specified date
+        annual_date = None
+        for a_date, a_date_str in annual_dates:
+            if a_date_str <= date:
+                annual_date = a_date
                 break
 
-        if not quarter_date:
-            logger.warning(f"No quarterly data before {date} for {ticker}", 
+        if not annual_date:
+            logger.warning(f"No annual data before {date} for {ticker}", 
                           module="get_outstanding_shares", ticker=ticker)
             return None
         else:
             if verbose_data:
-                logger.debug(f"Selected quarter date: {quarter_date} for target date: {date}",
+                logger.debug(f"Selected annual date: {annual_date} for target date: {date}",
                 module="get_outstanding_shares", ticker=ticker)
         
-        # Get shares from that quarter by checking multiple potential field names
+        # Get shares from that annual report by checking multiple potential field names
         shares = None
         share_field_names = [
-            'Ordinary Shares Number',
+            'Ordinary Shares Number',        # Primary field - most common
+            'Share Issued',                  # First fallback - total shares issued
         ]
         
         for field in share_field_names:
-            if field in quarters.index:
-                shares = quarters[quarter_date].get(field)
+            if field in annual_balance_sheet.index:
+                shares = annual_balance_sheet[annual_date].get(field)
                 if shares and shares > 0:
                     if verbose_data:
-                        logger.debug(f"Found shares ({shares:,.0f}) using field '{field}' for quarter ending {quarter_date.strftime('%Y-%m-%d')}",
+                        logger.debug(f"Found shares ({shares:,.0f}) using field '{field}' for annual report ending {annual_date.strftime('%Y-%m-%d')}",
                                    module="get_outstanding_shares", ticker=ticker)
                     break
         
         if not shares or shares <= 0:
-            logger.warning(f"No valid shares data in quarter ending {quarter_date.strftime('%Y-%m-%d')} for {ticker}",
+            logger.warning(f"No valid shares data in annual report ending {annual_date.strftime('%Y-%m-%d')} for {ticker}",
                           module="get_outstanding_shares", ticker=ticker)
             return None
         
@@ -867,140 +892,93 @@ def get_insider_trades(
 
 # ===== COMPANY NEWS =====
 def get_company_news(
-    ticker: str, # Review: Since there is only a string here, does it mean it loads the news individually and the setting up a loop doesnt bring any advantage?
+    tickers: Union[str, List[str]],
     end_date: str,
     start_date: str = None,
     limit: int = 1000,
     verbose_data: bool = False
-    ) -> List[CompanyNews]:
+    ) -> Union[List[CompanyNews], Dict[str, List[CompanyNews]]]:
     """
-    Fetch company news sentiment from Alpha Vantage Intelligence API.
+    Fetch company news sentiment from database or Alpha Vantage API.
+    Unified function that handles both single ticker and multiple tickers.
     
     Args:
-        ticker: Stock ticker symbol
+        tickers: Single ticker string or list of ticker symbols
         end_date: End date string (YYYY-MM-DD) 
         start_date: Optional start date (YYYY-MM-DD)
-        limit: Maximum number of news items to return
+        limit: Maximum number of news items to return per ticker
         verbose_data: Optional flag for verbose logging
         
     Returns:
-        List of CompanyNews objects with sentiment data
+        If single ticker: List of CompanyNews objects
+        If multiple tickers: Dictionary mapping tickers to lists of CompanyNews objects
     """
-
-    logger.debug(f"Running get_company_news() from {start_date} to {end_date}", module="get_company_news", ticker=ticker)
-
-    if start_date is None:
-        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-        start_dt = end_dt - timedelta(days=30)
-        start_date = start_dt.strftime('%Y-%m-%d')
-
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(get_company_news_async([ticker], end_date, start_date, limit, verbose_data))
-        return results.get(ticker, [])[:limit]
-    finally:
-        loop.close()
-
-
-async def get_company_news_async(
-        tickers: List[str],
-        end_date: str,
-        start_date: str = None,
-        limit: int = 50,
-        verbose_data: bool = False
-    ) -> Dict[str, List[CompanyNews]]:
-    """
-    Fetch company news sentiment from Alpha Vantage Intelligence API.
     
-    Args:
-        tickers: List of stock ticker symbols
-        end_date: End date string (YYYY-MM-DD)
-        start_date: Optional start date (YYYY-MM-DD)
-        limit: Maximum number of news items to return. Free tier Alpha Vantage might cap at limit = 50.
-        verbose_data: Optional flag for verbose logging
-        
-    Returns:
-        Dictionary mapping tickers to lists of CompanyNews objects
-    """
+    # Handle single ticker vs multiple tickers
+    is_single_ticker = isinstance(tickers, str)
+    ticker_list = [tickers] if is_single_ticker else tickers
+    
+    logger.debug(f"Running get_company_news() from {start_date} to {end_date} for {len(ticker_list)} tickers", 
+                module="get_company_news")
 
-    logger.debug(f"Running get_company_news_async() from {start_date} to {end_date}", module="get_company_news_async")
-
-    # Get Alpha Vantage API keys (support multiple keys for higher limits)
-    api_keys = []
-    
-    # Try to get multiple API keys from environment variables
-    for i in range(1, 22):  # Support up to 21 API keys
-        key_name = f"ALPHA_VANTAGE_API_KEY_{i}" if i > 1 else "ALPHA_VANTAGE_API_KEY"
-        api_key = os.environ.get(key_name)
-        if api_key:
-            api_keys.append(api_key)
-    
-    if not api_keys:
-        logger.error("No Alpha Vantage API keys found in environment variables", 
-                    module="get_company_news_async")
-        return {ticker: [] for ticker in tickers}
-    
-    logger.debug(f"Found {len(api_keys)} Alpha Vantage API keys", module="get_company_news_async")
+    # Get Alpha Vantage API key
+    api_key = os.environ.get("ALPHA_VANTAGE_API_KEY")
+    if not api_key:
+        logger.error("No Alpha Vantage API key found in environment variable ALPHA_VANTAGE_API_KEY", 
+                    module="get_company_news")
+        empty_result = [] if is_single_ticker else {ticker: [] for ticker in ticker_list}
+        return empty_result
 
     # Initialize variables
     results = {}
     cache_hits = 0
-    total_tickers = len(tickers)
+    total_tickers = len(ticker_list)
     
-    # Check cache first
-    for ticker in tickers:
-        cached_data = _cache.get_company_news(ticker)
-        if cached_data:
-            logger.debug(f"Found cached data for {ticker}: {len(cached_data)} items", 
-                        module="get_company_news_async", ticker=ticker)
-            
-            # Filter by date range - cached_data contains dictionaries, not CompanyNews objects
-            filtered_data = []
-            for news in cached_data:
-                try:
-                    # Check if news is within date range
-                    if (start_date is None or news["date"] >= start_date) and news["date"] <= end_date:
-                        filtered_data.append(CompanyNews(**news))
-                except Exception as e:
-                    logger.warning(f"Error processing cached news item for {ticker}: {e}", 
-                                  module="get_company_news_async", ticker=ticker)
+    # Check database cache first
+    for ticker in ticker_list:
+        if is_news_cache_valid(ticker, max_age_days=1):
+            cached_news = get_company_news_from_db(ticker)
+            if cached_news:
+                # Filter by date range
+                filtered_data = []
+                for news in cached_news:
+                    try:
+                        # Check if news is within date range
+                        if (start_date is None or news.date >= start_date) and news.date <= end_date:
+                            filtered_data.append(news)
+                    except Exception as e:
+                        logger.warning(f"Error processing cached news item for {ticker}: {e}", 
+                                      module="get_company_news", ticker=ticker)
+                        continue
+                
+                if filtered_data:
+                    results[ticker] = filtered_data[:limit]
+                    cache_hits += 1
+                    logger.debug(f"Using {len(filtered_data)} cached news items from database for {ticker}", 
+                               module="get_company_news", ticker=ticker)
                     continue
-            
-            if filtered_data:
-                results[ticker] = filtered_data
-                cache_hits += 1
-                logger.debug(f"Using {len(filtered_data)} cached news items for {ticker}", 
-                           module="get_company_news_async", ticker=ticker)
-                continue
-            else:
-                logger.debug(f"No cached news items match date range for {ticker}", 
-                           module="get_company_news_async", ticker=ticker)
+                else:
+                    logger.debug(f"No cached news items match date range for {ticker}", 
+                               module="get_company_news", ticker=ticker)
             
     # Fetch from Alpha Vantage for remaining tickers
-    tickers_to_fetch = [ticker for ticker in tickers if ticker not in results]
+    tickers_to_fetch = [ticker for ticker in ticker_list if ticker not in results]
     
     # Log cache statistics
     if verbose_data:
         cache_percentage = (cache_hits / total_tickers * 100) if total_tickers > 0 else 0
         download_percentage = 100 - cache_percentage
-        logger.debug(f"COMPANY NEWS CACHE STATS:", module="get_company_news_async")
-        logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="get_company_news_async")   
-        logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="get_company_news_async")
-        
+        logger.debug(f"COMPANY NEWS CACHE STATS:", module="get_company_news")
+        logger.debug(f"  - From cache: {cache_hits}/{total_tickers} tickers ({cache_percentage:.1f}%)", module="get_company_news")   
+        logger.debug(f"  - To download: {len(tickers_to_fetch)}/{total_tickers} tickers ({download_percentage:.1f}%)", module="get_company_news")
     
-    # Fetch data with API key rotation and rate limiting
+    # Fetch data with rate limiting
     for i, ticker in enumerate(tickers_to_fetch):
         try:
-            # Select API key using round-robin rotation
-            current_api_key = api_keys[i % len(api_keys)]
-            
-            # Add delay between requests to respect rate limits (5 calls per minute for free tier)
-            # With multiple keys, we can reduce the delay proportionally
+            # Add delay between requests to respect rate limits
             if i > 0:
-                delay = 12 / len(api_keys)  # Reduce delay based on number of keys
-                await asyncio.sleep(max(0.5, delay))  # Minimum 0.5 seconds between requests
-
+                time.sleep(2)  # Conservative rate limiting
+            
             # Alpha Vantage uses format YYYYMMDDTHHMM
             if start_date:
                 time_from = datetime.strptime(start_date, '%Y-%m-%d').strftime('%Y%m%dT0000')
@@ -1019,24 +997,23 @@ async def get_company_news_async(
                 'tickers': ticker,
                 "time_from": time_from,  
                 "time_to": time_to,   
-                'apikey': current_api_key,
+                'apikey': api_key,
                 'sort': 'LATEST',
                 'limit': limit
             }
             
-
             logger.debug(f"Fetching news sentiment from Alpha Vantage", 
-                        module="get_company_news_async", ticker=ticker)
+                        module="get_company_news", ticker=ticker)
             
             # Make API request
             logger.debug(f"Making API request for {ticker} with params: {params}", 
-                        module="get_company_news_async", ticker=ticker)
+                        module="get_company_news", ticker=ticker)
             
             response = requests.get(url, params=params)
             
             if response.status_code != 200:
                 logger.error(f"Alpha Vantage HTTP error for {ticker}: {response.status_code} - {response.text[:200]}", 
-                           module="get_company_news_async", ticker=ticker)
+                           module="get_company_news", ticker=ticker)
                 results[ticker] = []
                 continue
                 
@@ -1044,44 +1021,44 @@ async def get_company_news_async(
                 data = response.json()
             except Exception as e:
                 logger.error(f"Failed to parse JSON response for {ticker}: {e}", 
-                           module="get_company_news_async", ticker=ticker)
+                           module="get_company_news", ticker=ticker)
                 logger.error(f"Raw response: {response.text[:500]}", 
-                           module="get_company_news_async", ticker=ticker)
+                           module="get_company_news", ticker=ticker)
                 results[ticker] = []
                 continue
 
             # Debug: Log the raw API response structure
             logger.debug(f"API response keys for {ticker}: {list(data.keys())}", 
-                        module="get_company_news_async", ticker=ticker)
+                        module="get_company_news", ticker=ticker)
             
             feed_count = len(data.get('feed', []))
             logger.debug(f"Alpha Vantage returned {feed_count} raw news items for {ticker}", 
-                        module="get_company_news_async", ticker=ticker)
+                        module="get_company_news", ticker=ticker)
             
             if verbose_data and feed_count > 0:
                 sample_item = data['feed'][0]
                 logger.debug(f"Sample raw item: title='{sample_item.get('title', 'N/A')}', date='{sample_item.get('time_published', 'N/A')}'", 
-                             module="get_company_news_async", ticker=ticker)
+                             module="get_company_news", ticker=ticker)
             
             # Check for API errors
             if 'Error Message' in data:
                 logger.error(f"Alpha Vantage API error for {ticker}: {data['Error Message']}", 
-                           module="get_company_news_async", ticker=ticker)
+                           module="get_company_news", ticker=ticker)
                 results[ticker] = []
                 continue
                 
             if 'Information' in data:
-                logger.warning(f"Alpha Vantage rate limit hit for {ticker}: {data['Information']}", 
-                             module="get_company_news_async", ticker=ticker)
+                logger.warning(f"Alpha Vantage API response: {data}", 
+                             module="get_company_news", ticker=ticker)
                 results[ticker] = []
                 continue
                 
             # Check if feed is empty (legitimate no news vs API issue)
             if feed_count == 0:
                 logger.debug(f"No news articles found for {ticker} in date range {start_date} to {end_date}", 
-                            module="get_company_news_async", ticker=ticker)
+                            module="get_company_news", ticker=ticker)
                 logger.debug(f"This could be due to: 1) No news published, 2) Date range outside API limits, 3) Ticker not covered", 
-                            module="get_company_news_async", ticker=ticker)
+                            module="get_company_news", ticker=ticker)
 
             # Process news items
             news_list = []
@@ -1137,69 +1114,30 @@ async def get_company_news_async(
 
                 except Exception as e:
                     logger.warning(f"Error processing news item for {ticker}: {e}", 
-                                    module="get_company_news_async", ticker=ticker)
+                                    module="get_company_news", ticker=ticker)
                     continue
                 
-            # Cache the news
-            if news_list:
-                _cache.set_company_news(ticker, [news.model_dump() for news in news_list])
-                logger.debug(f"Cached {len(news_list)} news items for {ticker}", 
-                            module="get_company_news_async", ticker=ticker)
-            else:
-                # Still cache empty results to avoid re-processing
-                _cache.set_company_news(ticker, [])
-                logger.debug(f"No valid news found for {ticker} - cached empty result", 
-                            module="get_company_news_async", ticker=ticker)
+            # Save to database
+            saved_count = save_company_news(ticker, news_list)
+            logger.debug(f"Saved {saved_count} new news items to database for {ticker} (total fetched: {len(news_list)})", 
+                        module="get_company_news", ticker=ticker)
                 
             # Add to results
             results[ticker] = news_list
                 
         except Exception as e:
             logger.error(f"Error fetching news for {ticker}: {str(e)}", 
-                module="get_company_news_async", ticker=ticker)
+                module="get_company_news", ticker=ticker)
             logger.error(f"Traceback: {traceback.format_exc()}", 
-                        module="get_company_news_async", ticker=ticker)
+                        module="get_company_news", ticker=ticker)
             results[ticker] = []
     
-    # Debug: Data preview before return
-    if verbose_data: 
-    # Preview cached data
-        if cache_hits > 0:
-            for ticker, news_items in results.items():
-                if len(news_items) > 0 and ticker not in tickers_to_fetch:
-                    logger.debug(f"=== CACHED COMPANY NEWS FOR {ticker} ===", module="get_company_news_async", ticker=ticker)
-                    logger.debug(f"Total news items: {len(news_items)}", module="get_company_news_async", ticker=ticker)
-                    logger.debug(f"Most recent news: ({news_items[0]})", module="get_company_news_async", ticker=ticker)
-                    logger.debug(f"Oldest news: {news_items[-1].title} at {news_items[-1].date}", module="get_company_news_async", ticker=ticker)
-                    
-                    break
-        
-        # Preview downloaded data
-        if tickers_to_fetch and any(ticker in results for ticker in tickers_to_fetch):
-            for ticker in tickers_to_fetch:
-                if ticker in results and results[ticker]:
-                    ticker_news = results[ticker]
-                    logger.debug(f"=== DOWNLOADED COMPANY NEWS FOR {ticker} ===", module="get_company_news_async", ticker=ticker)
-                    logger.debug(f"Total news items: {len(results[ticker])}", module="get_company_news_async", ticker=ticker)
-                    
-                    # Show first news items with full details
-                    for i, news_item in enumerate(ticker_news[:1]):
-                        logger.debug(f"--- Downloaded News Item #{i+1} ---", module="get_company_news_async", ticker=ticker)
-                        logger.debug(f"Date: {news_item.date}", module="get_company_news_async", ticker=ticker)
-                        logger.debug(f"Title: {news_item.title}", module="get_company_news_async", ticker=ticker)
-                        logger.debug(f"Source: {news_item.source}", module="get_company_news_async", ticker=ticker)
-                        logger.debug(f"Sentiment: {news_item.sentiment}", module="get_company_news_async", ticker=ticker)
-                        logger.debug("", module="get_company_news_async", ticker=ticker)
-                    
-                    # Show date range for downloaded data
-                    dates = [item.date for item in ticker_news]
-                    oldest_date = min(dates) if dates else "Unknown"
-                    newest_date = max(dates) if dates else "Unknown"
-                    logger.debug(f"Downloaded news date range: {oldest_date} to {newest_date}", module="get_company_news_async", ticker=ticker)
-                    break
-    
-    return results # Review: Do I need to use return results.get(ticker, [])
-    
+    # Return appropriate format based on input
+    if is_single_ticker:
+        return results.get(tickers, [])
+    else:
+        return results
+
 
 # ===== USED BY AGENTS =====
 def search_line_items(
@@ -1392,7 +1330,7 @@ def search_line_items(
                     if current_assets is not None and current_liabilities is not None:
                         setattr(line_item, item, float(current_assets - current_liabilities))
                     else:
-                        logger.warning(f"Missing data for working_capital calculation at {report_date}: current_assets={current_assets}, current_liabilities={current_liabilities}", 
+                        logger.debug(f"Missing data for working_capital calculation at {report_date}: current_assets={current_assets}, current_liabilities={current_liabilities}", 
                         module="search_line_items", ticker=ticker)
                         # Set to None when calculation fails to ensure attribute exists
                         setattr(line_item, item, None)
@@ -1404,7 +1342,7 @@ def search_line_items(
                     if total_liabilities is not None and stockholders_equity is not None and float(stockholders_equity) != 0:
                         setattr(line_item, item, float(total_liabilities) / float(stockholders_equity))
                     else:
-                        logger.warning(f"Missing data for debt_to_equity calculation at {report_date}: total_liabilities={total_liabilities}, stockholders_equity={stockholders_equity}", 
+                        logger.debug(f"Missing data for debt_to_equity calculation at {report_date}: total_liabilities={total_liabilities}, stockholders_equity={stockholders_equity}", 
                         module="search_line_items", ticker=ticker)
                 
                 elif item == "free_cash_flow":
@@ -1418,7 +1356,7 @@ def search_line_items(
                         if operating_cash_flow is not None and capital_expenditure is not None:
                             setattr(line_item, item, float(operating_cash_flow + capital_expenditure))
                         else:
-                            logger.warning(f"Missing data for free_cash_flow calculation at {report_date}: operating_cash_flow={operating_cash_flow}, capital_expenditure={capital_expenditure}", 
+                            logger.debug(f"Missing data for free_cash_flow calculation at {report_date}: operating_cash_flow={operating_cash_flow}, capital_expenditure={capital_expenditure}", 
                             module="search_line_items", ticker=ticker)
                 
                 elif item == "operating_margin":
@@ -1428,7 +1366,7 @@ def search_line_items(
                     if operating_income is not None and total_revenue is not None and float(total_revenue) > 0:
                         setattr(line_item, item, float(operating_income) / float(total_revenue))
                     else:
-                        logger.warning(f"Missing data for operating_margin calculation at {report_date}: operating_income={operating_income}, total_revenue={total_revenue}", 
+                        logger.debug(f"Missing data for operating_margin calculation at {report_date}: operating_income={operating_income}, total_revenue={total_revenue}", 
                         module="search_line_items", ticker=ticker)
                 
                 elif item_mapping.get(item):
@@ -1521,7 +1459,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                 # Run price data, financial metrics, and news tasks synchronously
                 price_data = loop.run_until_complete(fetch_prices_batch(batch, start_date, end_date, verbose_data))
                 metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "annual", 10, verbose_data))
-                # news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, 1000, verbose_data))
+                news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, 1000, verbose_data))
             finally:
                 loop.close()
             
@@ -1531,8 +1469,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                     "prices": price_data.get(ticker, pd.DataFrame()),
                     "metrics": metrics_data.get(ticker, []),
                     "insider_trades": insider_results.get(ticker, []),
-                    # "news": news_data.get(ticker, [])
-                    "news": []  # Empty news data to avoid Alpha Vantage warnings
+                    "news": news_data.get(ticker, [])
                 }
     except Exception as e:
         logger.error(f"Error fetching data for tickers: {e}", module="get_data_for_tickers")

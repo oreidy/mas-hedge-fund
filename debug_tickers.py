@@ -78,7 +78,7 @@ def check_yfinance_volume():
         
         try:
             # Download data
-            data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            data = yf.download(ticker, start=start_date, end=end_date, progress=False, timeout=20)
             
             if data.empty:
                 print(f"   ❌ No data returned")

@@ -361,7 +361,7 @@ def calculate_owner_earnings(financial_line_items: list, verbose_data: bool = Fa
     """Calculate owner earnings (Buffett's preferred measure of true earnings power).
     Owner Earnings = Net Income + Depreciation - Maintenance CapEx"""
     if not financial_line_items or len(financial_line_items) < 1:
-        logger.warning("Insufficient data for owner earnings calculation", module="calculate_owner_earnings")
+        logger.warning("calculate_owner_earnings: Insufficient data for owner earnings calculation", module="warren_buffett_agent")
         return {"owner_earnings": None, "details": ["Insufficient data for owner earnings calculation"]}
 
     latest = financial_line_items[0]
@@ -372,7 +372,7 @@ def calculate_owner_earnings(financial_line_items: list, verbose_data: bool = Fa
         depreciation = getattr(latest, 'depreciation_and_amortization', None)
         capex = getattr(latest, 'capital_expenditure', None)
     except AttributeError as e:
-        logger.warning(f"Missing financial line items for {latest.ticker}: {e}. This may be due to company type (e.g., banks have different financial structures)", module="calculate_owner_earnings")
+        logger.warning(f"calculate_owner_earnings: Missing financial line items for {latest.ticker}: {e}. This may be due to company type (e.g., banks have different financial structures)", module="warren_buffett_agent")
         return {"owner_earnings": None, "details": [f"Missing financial line items: {e}"]}
 
     if verbose_data:
@@ -382,7 +382,7 @@ def calculate_owner_earnings(financial_line_items: list, verbose_data: bool = Fa
 
 
     if not all([net_income, depreciation, capex]):
-        logger.warning("Missing components for owner earnings calculation", module="calculate_owner_earnings", ticker=latest.ticker)
+        logger.warning("calculate_owner_earnings: Missing components for owner earnings calculation", module="warren_buffett_agent", ticker=latest.ticker)
         return {"owner_earnings": None, "details": ["Missing components for owner earnings calculation"]}
 
     # Estimate maintenance capex (typically 70-80% of total capex)
@@ -422,8 +422,8 @@ def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = 
     earnings_data = calculate_owner_earnings(financial_line_items)
     if not earnings_data["owner_earnings"]:
         ticker = financial_line_items[0].ticker if financial_line_items else "unknown"
-        logger.warning("Owner earnings calculation failed", 
-                       module="calculate_intrinsic_value", ticker=ticker)
+        logger.warning("calculate_intrinsic_value: Owner earnings calculation failed", 
+                       module="warren_buffett_agent", ticker=ticker)
         return {
             "intrinsic_value": None,
             "owner_earnings": None,

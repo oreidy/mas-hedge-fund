@@ -244,7 +244,7 @@ def debug_price_data_fetching(ticker_symbol, start_date=None, end_date=None):
     print("\n1. TESTING DIRECT YFINANCE DOWNLOAD:")
     try:
         # Download with yfinance directly
-        yf_data = yf.download(ticker_symbol, start=start_date, end=end_date, progress=False)
+        yf_data = yf.download(ticker_symbol, start=start_date, end=end_date, progress=False, timeout=20)
         print(f"yfinance direct download result:")
         print(f"  - Shape: {yf_data.shape}")
         print(f"  - Date range: {yf_data.index.min()} to {yf_data.index.max()}")
@@ -275,7 +275,7 @@ def debug_price_data_fetching(ticker_symbol, start_date=None, end_date=None):
     print(f"\n3. TESTING WITH SINGLE DAY RANGE ({single_day_start} to {single_day_end}):")
     try:
         # Direct yfinance
-        yf_single_data = yf.download(ticker_symbol, start=single_day_start, end=single_day_end, progress=False)
+        yf_single_data = yf.download(ticker_symbol, start=single_day_start, end=single_day_end, progress=False, timeout=20)
         print(f"yfinance direct download for single day:")
         print(f"  - Shape: {yf_single_data.shape}")
         print(f"  - Number of rows: {len(yf_single_data)}")
@@ -297,7 +297,7 @@ def debug_price_data_fetching(ticker_symbol, start_date=None, end_date=None):
     print(f"\n4. TESTING WITH TWO DAY RANGE ({two_day_start} to {two_day_end}):")
     try:
         # Direct yfinance
-        yf_two_data = yf.download(ticker_symbol, start=two_day_start, end=two_day_end, progress=False)
+        yf_two_data = yf.download(ticker_symbol, start=two_day_start, end=two_day_end, progress=False, timeout=20)
         print(f"yfinance direct download for two days:")
         print(f"  - Shape: {yf_two_data.shape}")
         print(f"  - Number of rows: {len(yf_two_data)}")
@@ -318,7 +318,7 @@ def debug_price_data_fetching(ticker_symbol, start_date=None, end_date=None):
     extended_end = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     print(f"\n5. TESTING WITH EXTENDED RANGE ({extended_start} to {extended_end}):")
     try:
-        yf_extended = yf.download(ticker_symbol, start=extended_start, end=extended_end, progress=False)
+        yf_extended = yf.download(ticker_symbol, start=extended_start, end=extended_end, progress=False, timeout=20)
         print(f"yfinance direct download with extended range:")
         print(f"  - Shape: {yf_extended.shape}")
         print(f"  - Number of rows: {len(yf_extended)}")
@@ -1119,42 +1119,229 @@ def debug_x_ticker():
     except Exception as e:
         print(f"❌ Major error testing {ticker}: {e}")
 
+def check_financial_data_summary(ticker_symbol, end_date="2021-12-31"):
+    """
+    Enhanced function to show ALL financial statement dates and specific revenue/earnings/book value data for growth analysis.
+    """
+    print(f"\n=== {ticker_symbol} FINANCIAL DATA SUMMARY ===")
+    
+    ticker = yf.Ticker(ticker_symbol)
+    
+    # Get financial statements
+    balance_sheet = ticker.balance_sheet
+    income_stmt = ticker.income_stmt
+    cashflow = ticker.cashflow
+    
+    # Show ALL available dates first
+    print(f"\n--- ALL AVAILABLE DATES ---")
+    for statement, name in [(income_stmt, "Income Statement"), (balance_sheet, "Balance Sheet"), (cashflow, "Cash Flow")]:
+        if not statement.empty:
+            all_dates = [col.strftime('%Y-%m-%d') for col in statement.columns]
+            print(f"{name}: {len(all_dates)} periods - {all_dates}")
+        else:
+            print(f"{name}: No data available")
+    
+    # Filter by end_date and show detailed financial data
+    print(f"\n--- FILTERED DATA (≤ {end_date}) ---")
+    for statement, name in [(income_stmt, "Income Statement"), (balance_sheet, "Balance Sheet"), (cashflow, "Cash Flow")]:
+        if not statement.empty:
+            date_strs = [col.strftime('%Y-%m-%d') for col in statement.columns]
+            valid_cols = [i for i, date_str in enumerate(date_strs) if date_str <= end_date]
+            if valid_cols:
+                # Show ALL valid periods, not just 3
+                filtered_statement = statement.iloc[:, valid_cols]
+                dates = [filtered_statement.columns[i].strftime('%Y-%m-%d') for i in range(len(filtered_statement.columns))]
+                print(f"\n{name}: {len(filtered_statement.columns)} periods - {dates}")
+                
+                # Show key items with values across ALL periods
+                if name == "Income Statement":
+                    key_items = ['Total Revenue', 'Net Income']
+                elif name == "Balance Sheet":
+                    key_items = ['Stockholders Equity']
+                else:  # Cash Flow
+                    key_items = ['Operating Cash Flow', 'Capital Expenditure', 'Free Cash Flow']
+                
+                for item in key_items:
+                    if item in filtered_statement.index:
+                        print(f"  {item}:")
+                        for col in filtered_statement.columns:
+                            value = filtered_statement.loc[item, col]
+                            date_str = col.strftime('%Y-%m-%d')
+                            if pd.isna(value) or value == 0:
+                                print(f"    {date_str}: No data")
+                            else:
+                                # Format large numbers in billions/millions
+                                if abs(value) >= 1e9:
+                                    formatted_value = f"${value/1e9:.1f}B"
+                                elif abs(value) >= 1e6:
+                                    formatted_value = f"${value/1e6:.1f}M"
+                                else:
+                                    formatted_value = f"${value:,.0f}"
+                                print(f"    {date_str}: {formatted_value}")
+                    else:
+                        print(f"  ✗ {item}: Not found in statement")
+                        
+                # Show growth calculation potential
+                if name == "Income Statement" and len(filtered_statement.columns) > 1:
+                    print(f"\n  Growth Calculation Analysis:")
+                    print(f"    Available periods for growth calc: {len(filtered_statement.columns)-1} (excludes most recent)")
+                    print(f"    Most recent period: {filtered_statement.columns[0].strftime('%Y-%m-%d')} (no growth calc)")
+                    if len(filtered_statement.columns) > 1:
+                        print(f"    Growth calc periods: {[col.strftime('%Y-%m-%d') for col in filtered_statement.columns[1:]]}")
+            else:
+                print(f"{name}: 0 periods (no data before {end_date})")
+        else:
+            print(f"{name}: No data available")
+
+def test_financial_statement_availability_by_year(tickers_list=None, years_to_test=None):
+    """
+    Test financial statement availability for specific tickers across different years.
+    This will help determine the optimal backtest start year.
+    
+    Args:
+        tickers_list: List of ticker symbols to test. If None, uses problematic tickers from logs.
+        years_to_test: List of years to test. If None, tests 2019-2023.
+    """
+    if tickers_list is None:
+        # Use 20 tickers from the logs that had issues
+        tickers_list = ['ADBE', 'AKAM', 'AMGN', 'AON', 'BEN', 'CAH', 'CI', 'CVS', 'DXCM', 'ED', 
+                       'ENPH', 'GILD', 'IFF', 'INCY', 'IPGP', 'MDT', 'MNST', 'MPWR', 'MRK', 'NEM']
+    
+    if years_to_test is None:
+        years_to_test = [2019, 2020, 2021, 2022, 2023]
+    
+    print(f"=== TESTING FINANCIAL STATEMENT AVAILABILITY BY YEAR ===")
+    print(f"Testing {len(tickers_list)} tickers across years {years_to_test}")
+    print(f"Tickers: {', '.join(tickers_list)}")
+    print("="*80)
+    
+    # Results storage
+    results = {}
+    for year in years_to_test:
+        results[year] = {
+            'tickers_with_data': [],
+            'tickers_without_data': [],
+            'tickers_with_errors': []
+        }
+    
+    # Test each ticker
+    for i, ticker in enumerate(tickers_list, 1):
+        print(f"\n[{i:2d}/{len(tickers_list)}] Testing {ticker}...")
+        
+        try:
+            stock = yf.Ticker(ticker)
+            
+            # Get all financial statements
+            balance_sheet = stock.balance_sheet
+            income_stmt = stock.income_stmt
+            cashflow = stock.cashflow
+            
+            print(f"  Available financial statements:")
+            print(f"    Balance Sheet: {not balance_sheet.empty} ({balance_sheet.shape[1] if not balance_sheet.empty else 0} periods)")
+            print(f"    Income Statement: {not income_stmt.empty} ({income_stmt.shape[1] if not income_stmt.empty else 0} periods)")
+            print(f"    Cash Flow: {not cashflow.empty} ({cashflow.shape[1] if not cashflow.empty else 0} periods)")
+            
+            # Check each year
+            for year in years_to_test:
+                year_str = f"{year}-12-31"
+                has_data = False
+                
+                # Check if any financial statement has data for this year
+                for statement, name in [(balance_sheet, "BS"), (income_stmt, "IS"), (cashflow, "CF")]:
+                    if not statement.empty:
+                        # Check if any column date matches this year
+                        for col_date in statement.columns:
+                            if col_date.year == year:
+                                has_data = True
+                                break
+                    if has_data:
+                        break
+                
+                if has_data:
+                    results[year]['tickers_with_data'].append(ticker)
+                    print(f"    {year}: ✅ Has data")
+                else:
+                    results[year]['tickers_without_data'].append(ticker)
+                    print(f"    {year}: ❌ No data")
+            
+        except Exception as e:
+            print(f"  ❌ Error testing {ticker}: {str(e)[:60]}...")
+            for year in years_to_test:
+                results[year]['tickers_with_errors'].append(ticker)
+    
+    # Print summary results
+    print("\n" + "="*80)
+    print("FINANCIAL STATEMENT AVAILABILITY SUMMARY")
+    print("="*80)
+    
+    for year in years_to_test:
+        with_data = len(results[year]['tickers_with_data'])
+        without_data = len(results[year]['tickers_without_data'])
+        with_errors = len(results[year]['tickers_with_errors'])
+        total = len(tickers_list)
+        
+        coverage_pct = (with_data / total) * 100
+        
+        print(f"\n📅 YEAR {year}:")
+        print(f"   ✅ With Data: {with_data:2d}/{total} ({coverage_pct:5.1f}%)")
+        print(f"   ❌ No Data:   {without_data:2d}/{total}")
+        print(f"   🚨 Errors:    {with_errors:2d}/{total}")
+        
+        if with_data > 0:
+            print(f"   Tickers with data: {', '.join(results[year]['tickers_with_data'][:10])}")
+            if len(results[year]['tickers_with_data']) > 10:
+                print(f"   ... and {len(results[year]['tickers_with_data']) - 10} more")
+    
+    # Find the best year
+    best_year = max(years_to_test, key=lambda y: len(results[y]['tickers_with_data']))
+    best_coverage = len(results[best_year]['tickers_with_data'])
+    best_pct = (best_coverage / len(tickers_list)) * 100
+    
+    print(f"\n🎯 RECOMMENDATION:")
+    print(f"   Best year for backtest start: {best_year}")
+    print(f"   Coverage: {best_coverage}/{len(tickers_list)} tickers ({best_pct:.1f}%)")
+    
+    # Show trend
+    print(f"\n📈 TREND ANALYSIS:")
+    for year in years_to_test:
+        coverage = len(results[year]['tickers_with_data'])
+        pct = (coverage / len(tickers_list)) * 100
+        bar_length = int(pct / 2)  # Scale for display
+        bar = "█" * bar_length + "░" * (50 - bar_length)
+        print(f"   {year}: {bar} {pct:5.1f}% ({coverage:2d}/{len(tickers_list)})")
+    
+    return results
+
 if __name__ == "__main__":
-    # Debug the X ticker first
-    debug_x_ticker()
+    # Test financial data summary for problematic tickers
+    tickers_to_test = ['ADSK'] #, 'ALLE', 'AVY', 'CLX', 'CMG', 'BK', 'COR', 'CSCO']
     
-    print("\n" + "="*80 + "\n")
+    for ticker in tickers_to_test:
+        check_financial_data_summary(ticker, end_date="2021-12-31")
     
-    # Debug the problematic tickers
-    debug_problematic_tickers()
+    print("\n" + "="*60)
+    print("TESTING DIFFERENT YEARS")
+    print("="*60)
     
-    print("\n" + "="*80 + "\n")
-    
-    # Test META ticker for historical FB data
-    print("Testing META ticker for historical Facebook data...")
-    meta_stock = test_meta_fb_transition()
-    
-    print("\n" + "="*80 + "\n")
-    
-    # Original delisted tickers test (commented out to focus on META test)
-    # print("Testing delisted S&P 500 tickers...")
-    # results = test_delisted_tickers(years_back=4)
+    # Test key problematic tickers for different years
+    for year in [2020, 2021, 2022]:
+        print(f"\n--- YEAR {year} ---")
+        for ticker in tickers_to_test:
+            check_financial_data_summary(ticker, end_date=f"{year}-12-31")
     
     # Original ticker testing code (commented for later use)
-    # # Test with JPM to check capital_expenditure data
+    # Test with JPM to check capital_expenditure data
     # tickers = ["JPM"]
     # start_date = "2023-01-01"
     # end_date = "2024-04-22" 
-    # 
-    # #debug_sec_edgar(tickers, start_date, end_date)
-    # 
+    
     # for ticker in tickers:
     #     result = debug_yfinance_data(ticker)
-    #     
+        
     #     #debug_sec_edgar_direct(ticker, start_date, end_date)
     #     #sharesinfo = debug_yfinance_shares(ticker)
     #     #debug_price_data_fetching(ticker, start_date, end_date)
-    #     print_financial_statements(ticker, end_date, periods=4)
-    # 
+    #     #print_financial_statements(ticker, end_date, periods=4)
+    
     #     #print("\n" + "="*50 + "\n")
     # print("\n" + "="*50 + "\n")

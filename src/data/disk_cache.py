@@ -64,14 +64,14 @@ class DiskCache:
             expire=self._get_expiration("prices")
         )
     
-    def get_financial_metrics(self, ticker):
-        """Get cached financial metrics"""
-        cache_key = f"financial_metrics:{ticker}"
+    def get_financial_metrics(self, ticker, monthly_period, period):
+        """Get cached financial metrics using monthly cache period"""
+        cache_key = f"financial_metrics:{ticker}:{monthly_period}:{period}"
         return self.caches["financial_metrics"].get(cache_key)
     
-    def set_financial_metrics(self, ticker, data):
-        """Cache financial metrics with expiration"""
-        cache_key = f"financial_metrics:{ticker}"
+    def set_financial_metrics(self, ticker, monthly_period, period, data):
+        """Cache financial metrics with expiration using monthly cache period"""
+        cache_key = f"financial_metrics:{ticker}:{monthly_period}:{period}"
         self.caches["financial_metrics"].set(
             cache_key, 
             data, 
