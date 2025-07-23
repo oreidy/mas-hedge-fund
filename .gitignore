@@ -49,3 +49,6 @@ CLAUDE.md
 
 # Database files
 *.db
+
+# Cache directories
+cache/
