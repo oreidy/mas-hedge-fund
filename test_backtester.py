@@ -43,17 +43,17 @@ def test_backtester():
     from src.utils.logger import LogLevel
     print(f"LogLevel.DEBUG value: {LogLevel.DEBUG.value}")
     
-    # Configuration for testing growth metrics issue
-    tickers = ['ADSK','BBY','COF','COP','CRWD','CSX']  # Specific tickers to test
-    start_date = "2025-04-01"   
-    end_date = "2025-04-02"     # Just two days in April 2025
+    # Configuration for testing the actual problem date range
+    tickers = ['SHW', 'ETSY', 'DPZ']  # Tickers that had the issue
+    start_date = "2022-04-05"   
+    end_date = "2022-04-06"     # Date range where the error occurred
     initial_capital = 100000
-    selected_analysts = ["fundamentals_analyst"]  # Only fundamentals agent
-    model_name = "llama3-70b-8192"
-    model_provider = "Groq"
+    selected_analysts = ["bill_ackman_agent"]  # Test bill ackman fallback
+    model_name = "gpt-4o"
+    model_provider = "OpenAI"
     screen_mode = False  # Disable screening mode to use specific tickers
     
-    print(f"Testing growth metrics issue with fundamentals agent from {start_date} to {end_date}")
+    print(f"Testing sentiment agent from {start_date} to {end_date}")
     print(f"Using tickers: {tickers}")
     print(f"Using screening mode: {screen_mode}")
     print(f"Initial capital: ${initial_capital:,}")
@@ -73,7 +73,10 @@ def test_backtester():
         initial_margin_requirement=0.0,
         debug_mode=True,
         verbose_data=True,  # Enable verbose to see detailed logs
-        screen_mode=screen_mode
+        screen_mode=screen_mode,
+        collect_training_data=True,  # Enable training data collection
+        training_data_dir="test_training_data",  # Directory for test data
+        training_data_format="json"  # JSON format for easy inspection
     )
     
     try:

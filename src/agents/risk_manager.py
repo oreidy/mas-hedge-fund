@@ -5,6 +5,7 @@ from tools.api import get_prices, prices_to_df
 from utils.risk_metrics import calculate_cvar
 from datetime import datetime, timedelta
 import json
+import pandas as pd
 from utils.logger import logger
 
 
@@ -93,7 +94,15 @@ def risk_management_agent(state: AgentState):
         progress.update_status("risk_management_agent", ticker, "Calculating position limits")
 
         # Calculate portfolio value
+        if len(prices_df) == 0 or prices_df["close"].empty:
+            logger.warning(f"No price data available for {ticker}, skipping", module="risk_management_agent", ticker=ticker)
+            continue
+            
         current_price = prices_df["close"].iloc[-1]
+        if pd.isna(current_price) or current_price <= 0:
+            logger.warning(f"Invalid current price for {ticker}: {current_price}, skipping", module="risk_management_agent", ticker=ticker)
+            continue
+            
         current_prices[ticker] = current_price  # Store the current price
 
         # Calculate current position value for this ticker
@@ -104,7 +113,12 @@ def risk_management_agent(state: AgentState):
 
         # Apply combined allocation constraint: scale individual position limits proportionally
         default_stock_allocation = 0.6  # Default 60% stock allocation
-        base_individual_limit_pct = 0.20  # Base 20% per position
+        
+        # Calculate base position limit considering maximum number of positions and target leverage
+        # Assume maximum 30 positions, target 300% total exposure (3x leverage)
+        max_expected_positions = 30
+        target_total_exposure = 3.0  # 300% of portfolio (3x leverage)
+        base_individual_limit_pct = (target_total_exposure * stock_allocation) / max_expected_positions  # ~6% per position with 60% stock allocation
         
         # Scale individual position limit based on combined allocation vs default
         # Combined allocation considers both macro and VIX signals
@@ -130,8 +144,11 @@ def risk_management_agent(state: AgentState):
         if verbose_data:
             logger.debug(f"Position constraints for {ticker}:", module="risk_management_agent")
             logger.debug(f"  Total portfolio value: ${total_portfolio_value:,.2f}", module="risk_management_agent")
+            logger.debug(f"  Max expected positions: {max_expected_positions}", module="risk_management_agent")
+            logger.debug(f"  Target leverage: {target_total_exposure:.1f}x", module="risk_management_agent")
+            logger.debug(f"  Base individual limit: {base_individual_limit_pct*100:.2f}%", module="risk_management_agent")
             logger.debug(f"  Allocation scaling factor: {allocation_scaling_factor:.3f}", module="risk_management_agent")
-            logger.debug(f"  Scaled individual limit: {scaled_individual_limit_pct*100:.1f}%", module="risk_management_agent")
+            logger.debug(f"  Scaled individual limit: {scaled_individual_limit_pct*100:.2f}%", module="risk_management_agent")
             logger.debug(f"  Allocation-constrained limit: ${allocation_constrained_limit:,.2f}", module="risk_management_agent")
             logger.debug(f"  CVaR adjustment factor: {cvar_adjustment_factor:.3f}", module="risk_management_agent")
             logger.debug(f"  CVaR-adjusted limit: ${cvar_adjusted_limit:,.2f}", module="risk_management_agent")
@@ -150,6 +167,9 @@ def risk_management_agent(state: AgentState):
                 "remaining_limit": float(remaining_position_limit),
                 "available_cash": float(portfolio.get("cash", 0)),
                 "combined_stock_allocation": float(stock_allocation),
+                "max_expected_positions": int(max_expected_positions),
+                "target_leverage": float(target_total_exposure),
+                "base_individual_limit_pct": float(base_individual_limit_pct),
             },
         }
 

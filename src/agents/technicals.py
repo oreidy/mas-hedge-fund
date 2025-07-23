@@ -42,10 +42,16 @@ def technical_analyst_agent(state: AgentState):
         progress.update_status("technical_analyst_agent", ticker, "Analyzing price data")
 
         # Get the historical price data
+        logger.debug(f"Requesting price data for {ticker} from {start_date} to {end_date}", 
+                    module="technical_analyst_agent", ticker=ticker)
+        
         prices_df = get_price_data(ticker=ticker, 
                                    start_date=start_date, 
                                    end_date=end_date,
                                    verbose_data=verbose_data)
+        
+        logger.debug(f"Received {len(prices_df)} days of price data for {ticker}", 
+                    module="technical_analyst_agent", ticker=ticker)
         
         if verbose_data:
             logger.debug(f"prices_df: {prices_df}", module="technical_analyst_agent")

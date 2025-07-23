@@ -1,0 +1,262 @@
+{
+  "date": "2022-04-07",
+  "agent_signals": {
+    "forward_looking_agent": {
+      "_portfolio_data": {
+        "stock_allocation": 0.5,
+        "bond_allocation": 0.5,
+        "current_vix": 21.55,
+        "reasoning": "Elevated VIX (21.6) indicates increased market uncertainty, using balanced allocation (50/50)"
+      }
+    },
+    "macro_agent": {
+      "_portfolio_data": {
+        "stock_allocation": 0.7,
+        "bond_allocation": 0.3,
+        "signal_summary": {
+          "stock_signals": 1,
+          "bond_signals": 0,
+          "neutral_signals": 2
+        },
+        "reasoning": {
+          "inflation": {
+            "signal": "neutral",
+            "details": "Insufficient data for inflation analysis"
+          },
+          "interest_rates": {
+            "signal": "stocks",
+            "details": "Low Fed Funds Rate: 0.33% favors stocks"
+          },
+          "economic_growth": {
+            "signal": "neutral",
+            "details": "Insufficient GDP data available"
+          }
+        }
+      }
+    },
+    "technical_analyst_agent": {
+      "AAPL": {
+        "signal": "neutral",
+        "confidence": 0
+      },
+      "MSFT": {
+        "signal": "neutral",
+        "confidence": 0
+      }
+    },
+    "sentiment_agent": {
+      "AAPL": {
+        "signal": "neutral",
+        "confidence": 52.0
+      },
+      "MSFT": {
+        "signal": "neutral",
+        "confidence": 100.0
+      }
+    },
+    "fixed_income_agent": {
+      "_portfolio_data": {
+        "SHY": {
+          "action": "sell",
+          "quantity": 113,
+          "confidence": 85.0,
+          "reasoning": "Short-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 206 shares, Current: 319 shares"
+        },
+        "TLT": {
+          "action": "sell",
+          "quantity": 49,
+          "confidence": 85.0,
+          "reasoning": "Long-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 91 shares, Current: 140 shares"
+        },
+        "bond_analysis": {
+          "bond_allocation_percentage": 40.0,
+          "total_bond_capital": 25885.372835981776,
+          "current_bond_value": 39778.75150299072,
+          "target_bond_value": 25885.372835981776,
+          "yield_curve_analysis": {
+            "curve_shape": "flat",
+            "yield_spread": 0.20999999999999996,
+            "treasury_2y": 2.54,
+            "treasury_10y": 2.75,
+            "reasoning": "Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration"
+          }
+        }
+      }
+    }
+  },
+  "llm_decisions": {
+    "AAPL": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to disagreement between technical and sentiment signals"
+    },
+    "MSFT": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to disagreement between technical and sentiment signals"
+    },
+    "SHY": {
+      "action": "sell",
+      "quantity": 113,
+      "confidence": 85.0,
+      "reasoning": "Short-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 206 shares, Current: 319 shares"
+    },
+    "TLT": {
+      "action": "sell",
+      "quantity": 49,
+      "confidence": 85.0,
+      "reasoning": "Long-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 91 shares, Current: 140 shares"
+    }
+  },
+  "portfolio_before": {
+    "cash": 64713.43208995443,
+    "positions": {
+      "AAPL": {
+        "long": 0,
+        "short": 10,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 169.3895629453013,
+        "short_margin_used": 0.0
+      },
+      "MSFT": {
+        "long": 0,
+        "short": 10,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 296.9483931362007,
+        "short_margin_used": 0.0
+      },
+      "SHY": {
+        "long": 319,
+        "short": 0,
+        "long_cost_basis": 75.0722044959634,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "TLT": {
+        "long": 140,
+        "short": 0,
+        "long_cost_basis": 112.71398132674562,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      }
+    },
+    "realized_gains": {
+      "AAPL": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "MSFT": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "SHY": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "TLT": {
+        "long": 0.0,
+        "short": 0.0
+      }
+    },
+    "margin_requirement": 0.0
+  },
+  "portfolio_after": {
+    "cash": 78650.88838800183,
+    "positions": {
+      "AAPL": {
+        "long": 0,
+        "short": 10,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 169.3895629453013,
+        "short_margin_used": 0.0
+      },
+      "MSFT": {
+        "long": 0,
+        "short": 10,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 296.9483931362007,
+        "short_margin_used": 0.0
+      },
+      "SHY": {
+        "long": 206,
+        "short": 0,
+        "long_cost_basis": 75.0722044959634,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "TLT": {
+        "long": 91,
+        "short": 0,
+        "long_cost_basis": 112.71398132674562,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      }
+    },
+    "realized_gains": {
+      "AAPL": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "MSFT": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "SHY": {
+        "long": -27.164763675883776,
+        "short": 0.0
+      },
+      "TLT": {
+        "long": -41.52313133111829,
+        "short": 0.0
+      }
+    },
+    "margin_requirement": 0.0
+  },
+  "portfolio_return": -0.0021040661388271402,
+  "market_data": {
+    "execution_prices": {
+      "AAPL": 168.21023335572733,
+      "MSFT": 288.6487982094901,
+      "SHY": 75.20784759521484,
+      "TLT": 112.42871405352102
+    },
+    "evaluation_prices": {
+      "AAPL": 169.17333984375,
+      "MSFT": 293.2315979003906,
+      "SHY": 75.20784759521484,
+      "TLT": 112.76748657226562
+    },
+    "long_exposure": 25754.65788269043,
+    "short_exposure": 4624.049377441406,
+    "gross_exposure": 30378.707260131836,
+    "net_exposure": 21130.608505249023
+  },
+  "metadata": {
+    "model_name": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "model_provider": "Groq",
+    "selected_analysts": [
+      "technical_analyst",
+      "sentiment_analyst",
+      "fundamentals_analyst",
+      "valuation_analyst",
+      "warren_buffett",
+      "bill_ackman",
+      "macro_analyst",
+      "forward_looking_analyst"
+    ],
+    "screen_mode": false,
+    "eligible_tickers": [
+      "AAPL",
+      "MSFT"
+    ],
+    "executed_trades": {
+      "AAPL": 0,
+      "MSFT": 0,
+      "SHY": 113,
+      "TLT": 49
+    },
+    "position_replacements": {}
+  }
+}

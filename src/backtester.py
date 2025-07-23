@@ -31,6 +31,7 @@ import time
 from utils.logger import logger
 from utils.tickers import get_sp500_tickers
 from utils.progress import progress
+from rl.data_collection import EpisodeCollector
 
 init(autoreset=True)
 
@@ -52,6 +53,9 @@ class Backtester:
         screen_mode: bool = False,
         max_positions: int = 30,
         transaction_cost: float = 0.005,
+        collect_training_data: bool = False,
+        training_data_dir: str = "training_data",
+        training_data_format: str = "json",
     ):
         """
         :param agent: The trading agent (Callable).
@@ -68,6 +72,9 @@ class Backtester:
         :param screen_mode: Whether running in screening mode (vs specific tickers).
         :param max_positions: Maximum number of active positions allowed.
         :param transaction_cost: Transaction cost as percentage of trade value (e.g. 0.005 = 50 basis points).
+        :param collect_training_data: Whether to collect training data for RL model training.
+        :param training_data_dir: Directory to store training episode data.
+        :param training_data_format: Format for storing training data ('json' or 'pickle').
         """
         self.agent = agent
         self._screen_mode = screen_mode
@@ -94,6 +101,18 @@ class Backtester:
 
         # Store the margin ratio (e.g. 0.5 means 50% margin required).
         self.margin_ratio = initial_margin_requirement
+
+        # Initialize data collection for RL training
+        self.collect_training_data = collect_training_data
+        self.episode_collector = None
+        if self.collect_training_data:
+            self.episode_collector = EpisodeCollector(
+                output_dir=training_data_dir,
+                format=training_data_format
+            )
+            logger.info(f"Training data collection enabled. Output directory: {training_data_dir}")
+        else:
+            logger.debug("Training data collection disabled")
 
         # Initialize portfolio with support for long/short positions (stocks + bond ETFs)
         self.portfolio_values = []
@@ -301,17 +320,24 @@ class Backtester:
 
         return 0
 
-    def get_open_positions(self):
+    def get_open_positions(self, exclude_bond_etfs=False):
         """Get all tickers with open positions (long or short)."""
         open_positions = set()
         for ticker, position in self.portfolio["positions"].items():
             if position["long"] != 0 or position["short"] != 0:
+                # Exclude bond ETFs from position count if requested
+                if exclude_bond_etfs and ticker in self.bond_etfs:
+                    continue
                 open_positions.add(ticker)
         return open_positions
 
-    def get_position_count(self):
+    def get_position_count(self, exclude_bond_etfs=False):
         """Get the current number of active positions."""
-        return len(self.get_open_positions())
+        return len(self.get_open_positions(exclude_bond_etfs=exclude_bond_etfs))
+        
+    def get_stock_position_count(self):
+        """Get the current number of stock positions (excluding bond ETFs)."""
+        return self.get_position_count(exclude_bond_etfs=True)
 
     def calculate_signal_strength(self, analyst_signals, ticker):
         """Calculate signal strength for a ticker based on analyst signals."""
@@ -341,8 +367,8 @@ class Backtester:
         return consensus_strength * agreement_factor
 
     def find_weakest_position(self, analyst_signals):
-        """Find the weakest open position based on current signal strength."""
-        open_positions = self.get_open_positions()
+        """Find the weakest open stock position based on current signal strength (excludes bond ETFs)."""
+        open_positions = self.get_open_positions(exclude_bond_etfs=True)
         
         if not open_positions:
             return None, 0.0
@@ -360,13 +386,18 @@ class Backtester:
 
     def should_open_position(self, ticker, signal_strength, analyst_signals):
         """Determine if a new position should be opened given current constraints."""
-        current_positions = self.get_position_count()
+        # For bond ETFs, always allow (they don't count toward position limit)
+        if ticker in self.bond_etfs:
+            return True, None
+            
+        # Only count stock positions toward the limit
+        current_stock_positions = self.get_stock_position_count()
         
         # If under position limit, open normally
-        if current_positions < self.max_positions:
+        if current_stock_positions < self.max_positions:
             return True, None
         
-        # At position limit - need to compare with existing positions
+        # At position limit - need to compare with existing stock positions
         weakest_ticker, weakest_strength = self.find_weakest_position(analyst_signals)
         
         if weakest_ticker is None:
@@ -381,15 +412,14 @@ class Backtester:
 
     def create_hybrid_ticker_list(self, screened_tickers):
         """Create hybrid ticker list combining screened tickers with open positions."""
-        open_positions = self.get_open_positions()
+        open_positions = self.get_open_positions(exclude_bond_etfs=True)
         screened_set = set(screened_tickers)
         
         # Combine screened tickers with open positions
         hybrid_tickers = list(screened_set.union(open_positions))
         
-        logger.info(f"Hybrid ticker list: {len(screened_tickers)} screened + {len(open_positions)} open positions = {len(hybrid_tickers)} total", module="backtester")
         
-        return hybrid_tickers
+        return hybrid_tickers, open_positions
 
     def calculate_portfolio_value(self, evaluation_prices):
         """
@@ -559,7 +589,13 @@ class Backtester:
 
             lookback_start = (current_date - timedelta(days=200)).strftime("%Y-%m-%d") # Half year lookback period plus some slack
             current_date_str = current_date.strftime("%Y-%m-%d")
-            previous_date_str = (current_date - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            # Skip if current date is not a trading day
+            if not is_trading_day(current_date_str):
+                logger.info(f"Skipping {current_date_str} - not a trading day", module="run_backtest")
+                continue
+                
+            previous_date_str = get_previous_trading_day(current_date_str)
 
             # Skip if there's no prior day to look back (i.e., first date in the range)
             if lookback_start == current_date_str:
@@ -571,8 +607,8 @@ class Backtester:
                 from utils.tickers import get_eligible_tickers_for_date
                 screened_tickers = get_eligible_tickers_for_date(current_date_str, min_days_listed=200)
                 # Create hybrid list combining screened tickers with open positions
-                eligible_tickers = self.create_hybrid_ticker_list(screened_tickers)
-                logger.info(f"Using {len(eligible_tickers)} eligible tickers for {current_date_str} (screened: {len(screened_tickers)}, open positions: {len(self.get_open_positions())}).", module="run_backtest")
+                eligible_tickers, open_positions = self.create_hybrid_ticker_list(screened_tickers)
+                logger.info(f"Using {len(eligible_tickers)} eligible tickers for {current_date_str} (screened: {len(screened_tickers)}, open positions: {len(open_positions)}).", module="run_backtest")
             else:
                 # Use the original ticker list for non-screening mode
                 eligible_tickers = self.tickers
@@ -593,7 +629,22 @@ class Backtester:
 
                     try:
                         if len(price_df) < 2:
-                            logger.warning(f"Insufficient price data for {ticker} from {previous_date_str} to {current_date_str}. Need at least 2 trading days.", module="run_backtest")
+                            logger.warning(f"Insufficient price data for {ticker} from {previous_date_str} to {current_date_str}. Got {len(price_df)} trading days, need at least 2.", module="run_backtest")
+                            
+                            # Fallback: try individual date queries if range query failed
+                            logger.debug(f"Attempting fallback individual queries for {ticker}", module="run_backtest", ticker=ticker)
+                            
+                            prev_df = get_price_data(ticker, previous_date_str, previous_date_str, self.verbose_data)
+                            curr_df = get_price_data(ticker, current_date_str, current_date_str, self.verbose_data)
+                            
+                            # Combine individual results
+                            fallback_dfs = [df for df in [prev_df, curr_df] if not df.empty]
+                            
+                            if len(fallback_dfs) >= 1:
+                                price_df = pd.concat(fallback_dfs).sort_index()
+                                logger.debug(f"Fallback successful: got {len(price_df)} days for {ticker}", module="run_backtest", ticker=ticker)
+                            else:
+                                logger.warning(f"Fallback failed: no individual data found for {ticker}", module="run_backtest", ticker=ticker)
                         
 
                         # Use current trading day's open for trade execution
@@ -604,18 +655,19 @@ class Backtester:
                         execution_prices[ticker] = execution_price
                         evaluation_prices[ticker] = evaluation_price
 
-                        if verbose_data:
+                        if self.verbose_data:
                             logger.debug(f"Execution price (current open): {execution_prices[ticker]}", module="run_backtest", ticker=ticker)
                             logger.debug(f"Evaluation price (current close): {evaluation_prices[ticker]}", module="run_backtest", ticker=ticker)
 
-                    except:
-                        logger.warning(f"Using fallback method for prices on prev_date: {previous_date_str} and current date: {current_date_str}", module="run_backtest")
+                    except Exception as e:
+                        logger.warning(f"Using fallback method for prices on prev_date: {previous_date_str} and current date: {current_date_str}. Exception: {e}", module="run_backtest")
 
                         price_df = get_price_data(ticker, previous_date_str, current_date_str, self.verbose_data)
 
+                        execution_price = price_df.iloc[-1]["open"]
                         evaluation_price = price_df.iloc[-1]["close"]
 
-                        execution_prices[ticker] = evaluation_price
+                        execution_prices[ticker] = execution_price
                         evaluation_prices[ticker] = evaluation_price   
 
             except Exception as e:
@@ -637,12 +689,19 @@ class Backtester:
                 model_name=self.model_name,
                 model_provider=self.model_provider,
                 selected_analysts=self.selected_analysts,
-                verbose_data=self.verbose_data
+                verbose_data=self.verbose_data,
+                open_positions=open_positions if self._screen_mode else set()
             )
 
             decisions = output["decisions"]
             analyst_signals = output["analyst_signals"]
 
+            # Capture portfolio state before trades for RL training data
+            portfolio_before = None
+            if self.collect_training_data:
+                import copy
+                portfolio_before = copy.deepcopy(self.portfolio)
+                previous_portfolio_value = self.portfolio_values[-1]["Portfolio Value"] if self.portfolio_values else self.initial_capital
             
             logger.debug(f"Agent decisions for {current_date_str}:", module="run_backtest")
             for ticker, decision in decisions.items():
@@ -650,9 +709,24 @@ class Backtester:
                             module="run_backtest", 
                             ticker=ticker)
             
-            # Log position summary
-            current_position_count = self.get_position_count()
-            logger.info(f"Current position count: {current_position_count}/{self.max_positions}", module="run_backtest")
+            # Log position summary with detailed breakdown
+            current_stock_positions = self.get_stock_position_count()
+            total_positions = self.get_position_count()
+            bond_positions = total_positions - current_stock_positions
+            logger.info(f"Current positions - Stocks: {current_stock_positions}/{self.max_positions}, Bonds: {bond_positions}, Total: {total_positions}", module="run_backtest")
+            
+            # Debug: Log all current open positions
+            open_positions = self.get_open_positions(exclude_bond_etfs=True)
+            if open_positions:
+                logger.info(f"Open stock positions: {sorted(list(open_positions))}", module="position_debug")
+            
+            # Debug: Count how many tickers have trading signals
+            tickers_with_signals = 0
+            for ticker in eligible_tickers:
+                has_signals = any(ticker in signals for signals in analyst_signals.values())
+                if has_signals:
+                    tickers_with_signals += 1
+            logger.info(f"Tickers with analyst signals: {tickers_with_signals}/{len(eligible_tickers)}", module="position_debug")
 
             # Execute trades for each ticker (stocks + bond ETFs)
             executed_trades = {}
@@ -662,37 +736,59 @@ class Backtester:
                 decision = decisions.get(ticker, {"action": "hold", "quantity": 0})
                 action, quantity = decision.get("action", "hold"), decision.get("quantity", 0)
                 
-                # For buy actions, check position limits
-                if action == "buy" and quantity > 0:
-                    # Calculate signal strength for this ticker
-                    signal_strength = self.calculate_signal_strength(analyst_signals, ticker)
+                # For position-opening actions (buy/short), check position limits
+                if (action == "buy" or action == "short") and quantity > 0:
+                    # Check if we already have a position in this ticker
+                    existing_position = self.portfolio["positions"][ticker]
+                    has_existing_position = existing_position["long"] > 0 or existing_position["short"] > 0
                     
-                    # Check if we should open this position
-                    should_open, ticker_to_close = self.should_open_position(ticker, signal_strength, analyst_signals)
-                    
-                    if should_open:
-                        # If we need to close a position to make room, do it first
-                        if ticker_to_close:
-                            close_position = self.portfolio["positions"][ticker_to_close]
-                            if close_position["long"] > 0:
-                                close_quantity = self.execute_trade(ticker_to_close, "sell", close_position["long"], execution_prices[ticker_to_close])
-                                executed_trades[ticker_to_close] = close_quantity
-                                position_replacements[ticker] = ticker_to_close
-                                logger.info(f"Closed position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
-                            elif close_position["short"] > 0:
-                                close_quantity = self.execute_trade(ticker_to_close, "cover", close_position["short"], execution_prices[ticker_to_close])
-                                executed_trades[ticker_to_close] = close_quantity
-                                position_replacements[ticker] = ticker_to_close
-                                logger.info(f"Covered position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
-                        
-                        # Now execute the new trade
+                    if has_existing_position:
+                        # We already have a position, execute normally (could be adding to position)
                         executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
                         executed_trades[ticker] = executed_quantity
                     else:
-                        logger.info(f"Rejected opening position for {ticker} (signal strength: {signal_strength:.3f}) - position limit reached", module="backtester")
-                        executed_trades[ticker] = 0
+                        # No existing position - check position limits before opening new position
+                        signal_strength = self.calculate_signal_strength(analyst_signals, ticker)
+                        
+                        # Debug: Log signal analysis for new positions
+                        ticker_signals = []
+                        for agent_name, agent_signals in analyst_signals.items():
+                            if ticker in agent_signals:
+                                signal = agent_signals[ticker].get("signal", "neutral")
+                                ticker_signals.append(f"{agent_name}:{signal}")
+                        logger.debug(f"Signal analysis for {ticker}: {', '.join(ticker_signals)} -> strength={signal_strength:.3f}", module="position_debug")
+                        
+                        # Check if we should open this position
+                        should_open, ticker_to_close = self.should_open_position(ticker, signal_strength, analyst_signals)
+                        
+                        # Debug: Log position opening decision
+                        current_stock_count = self.get_stock_position_count()
+                        logger.info(f"Position decision for {ticker}: signal_strength={signal_strength:.3f}, should_open={should_open}, current_positions={current_stock_count}/{self.max_positions}, replace_ticker={ticker_to_close}", module="position_debug")
+                        
+                        if should_open:
+                            # If we need to close a position to make room, do it first
+                            if ticker_to_close:
+                                close_position = self.portfolio["positions"][ticker_to_close]
+                                if close_position["long"] > 0:
+                                    close_quantity = self.execute_trade(ticker_to_close, "sell", close_position["long"], execution_prices[ticker_to_close])
+                                    executed_trades[ticker_to_close] = close_quantity
+                                    position_replacements[ticker] = ticker_to_close
+                                    logger.info(f"Closed position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                                elif close_position["short"] > 0:
+                                    close_quantity = self.execute_trade(ticker_to_close, "cover", close_position["short"], execution_prices[ticker_to_close])
+                                    executed_trades[ticker_to_close] = close_quantity
+                                    position_replacements[ticker] = ticker_to_close
+                                    logger.info(f"Covered position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                            
+                            # Now execute the new trade
+                            executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
+                            executed_trades[ticker] = executed_quantity
+                            logger.info(f"Opened new position: {ticker} {action} {executed_quantity} shares", module="position_debug")
+                        else:
+                            logger.info(f"Rejected opening position for {ticker} (signal strength: {signal_strength:.3f}) - position limit reached or signal too weak", module="position_debug")
+                            executed_trades[ticker] = 0
                 else:
-                    # For non-buy actions or existing positions, execute normally
+                    # For position-closing actions (sell/cover) or hold actions, execute normally
                     executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
                     executed_trades[ticker] = executed_quantity
 
@@ -730,6 +826,53 @@ class Backtester:
                 "Net Exposure": net_exposure,
                 "Long/Short Ratio": long_short_ratio
             })
+
+            # Collect training episode data for RL model
+            if self.collect_training_data and portfolio_before is not None:
+                # Calculate portfolio return
+                portfolio_return = (total_value - previous_portfolio_value) / previous_portfolio_value if previous_portfolio_value > 0 else 0.0
+                
+                # Create market data dictionary
+                market_data = {
+                    'execution_prices': execution_prices,
+                    'evaluation_prices': evaluation_prices,
+                    'long_exposure': long_exposure,
+                    'short_exposure': short_exposure,
+                    'gross_exposure': gross_exposure,
+                    'net_exposure': net_exposure
+                }
+                
+                # Create metadata
+                metadata = {
+                    'model_name': self.model_name,
+                    'model_provider': self.model_provider,
+                    'selected_analysts': self.selected_analysts,
+                    'screen_mode': self._screen_mode,
+                    'eligible_tickers': eligible_tickers,
+                    'executed_trades': executed_trades,
+                    'position_replacements': position_replacements
+                }
+                
+                # Collect the episode
+                try:
+                    episode = self.episode_collector.collect_episode(
+                        date=current_date_str,
+                        agent_signals=analyst_signals,
+                        llm_decisions=decisions,
+                        portfolio_before=portfolio_before,
+                        portfolio_after=copy.deepcopy(self.portfolio),
+                        portfolio_return=portfolio_return,
+                        market_data=market_data,
+                        metadata=metadata
+                    )
+                    
+                    # Save episode immediately to avoid memory issues
+                    self.episode_collector.save_episode(episode)
+                    
+                    logger.debug(f"Collected training episode for {current_date_str} with return: {portfolio_return:.4f}")
+                    
+                except Exception as e:
+                    logger.error(f"Error collecting training episode for {current_date_str}: {e}")
 
             # ---------------------------------------------------------------
             # 3) Build the table rows to display
@@ -860,7 +1003,7 @@ class Backtester:
             )
 
             table_rows.extend(date_rows)
-            print_backtest_results(table_rows)
+            print_backtest_results(date_rows)  # Show only current date rows
 
             # Update performance metrics if we have enough data
             if len(self.portfolio_values) > 3:
@@ -868,6 +1011,21 @@ class Backtester:
             
             # Clear progress display after each day of backtest
             progress.clear()
+
+        # Finalize data collection after backtest completion
+        if self.collect_training_data and self.episode_collector:
+            try:
+                # Save summary report
+                summary_path = self.episode_collector.save_summary_report()
+                logger.info(f"Training data collection completed. Summary saved to: {summary_path}")
+                
+                # Log collection statistics
+                summary = self.episode_collector.create_summary_report()
+                logger.info(f"Collected {summary['total_episodes']} training episodes from {summary['date_range'][0]} to {summary['date_range'][1]}")
+                logger.info(f"Average daily return: {summary['avg_daily_return']:.4f}")
+                
+            except Exception as e:
+                logger.error(f"Error finalizing training data collection: {e}")
 
         return performance_metrics
 
@@ -921,7 +1079,8 @@ class Backtester:
 
         final_portfolio_value = performance_df["Portfolio Value"].iloc[-1]
         total_realized_gains = sum(
-            self.portfolio["realized_gains"][ticker]["long"] for ticker in self.all_tickers
+            self.portfolio["realized_gains"][ticker]["long"] + self.portfolio["realized_gains"][ticker]["short"] 
+            for ticker in self.all_tickers
         )
         total_return = ((final_portfolio_value - self.initial_capital) / self.initial_capital) * 100
 
@@ -991,6 +1150,48 @@ class Backtester:
         print(f"Max Consecutive Losses: {Fore.RED}{max_consecutive_losses}{Style.RESET_ALL}")
 
         return performance_df
+    
+    def export_returns_to_csv(self, filename=None):
+        """Export daily portfolio returns to CSV file in benchmarking/data/ folder."""
+        if not self.portfolio_values:
+            logger.error("No portfolio data found. Run backtest first.", module="export_returns")
+            return
+        
+        # Create performance DataFrame
+        performance_df = pd.DataFrame(self.portfolio_values).set_index("Date")
+        
+        # Calculate daily returns
+        performance_df["Daily Return"] = performance_df["Portfolio Value"].pct_change()
+        
+        # Drop the first row (NaN return) and keep only Date and Daily Return
+        returns_df = performance_df[["Daily Return"]].dropna()
+        
+        # Reset index to make Date a column
+        returns_df = returns_df.reset_index()
+        
+        # Rename columns to match existing CSV format
+        returns_df.columns = ["Date", "masHedgeFund"]
+        
+        # Create filename if not provided
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"mas_hedge_fund_returns_{timestamp}.csv"
+        
+        # Ensure benchmarking/data directory exists
+        import os
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "benchmarking", "data")
+        os.makedirs(data_dir, exist_ok=True)
+        
+        # Full path for the CSV file
+        csv_path = os.path.join(data_dir, filename)
+        
+        # Save to CSV
+        returns_df.to_csv(csv_path, index=False)
+        
+        logger.info(f"Daily returns exported to: {csv_path}", module="export_returns")
+        print(f"{Fore.GREEN}Daily returns exported to: {csv_path}{Style.RESET_ALL}")
+        
+        return csv_path
 
 
 ### 4. Run the Backtest #####
@@ -1054,37 +1255,43 @@ if __name__ == "__main__":
         help="Enable debug mode with detailed logging",
     )
     parser.add_argument(
-        "--log-to-file",
-        action="store_true",
-        help="Save logs to a file in the logs directory",
-    )
-    parser.add_argument(
-        "--log-file",
-        type=str,
-        help="Specify a custom log file path",
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Minimize output (overrides debug mode)",
-    )
-    parser.add_argument(
         "--verbose-data",
         action="store_true",
         help="Show detailed data output (works with debug mode)",
+    )
+    parser.add_argument(
+        "--export-returns",
+        action="store_true",
+        help="Export daily returns to CSV file in benchmarking/data/ folder",
+    )
+    parser.add_argument(
+        "--collect-training-data",
+        action="store_true",
+        help="Collect training data for RL model training",
+    )
+    parser.add_argument(
+        "--training-data-dir",
+        type=str,
+        default="training_data",
+        help="Directory to store training episode data (default: training_data)",
+    )
+    parser.add_argument(
+        "--training-data-format",
+        type=str,
+        choices=["json", "pickle"],
+        default="json",
+        help="Format for storing training data (default: json)",
     )
 
     args = parser.parse_args()
 
     # Set up the logger with command line arguments
     setup_logger( # Review: What happens if I would delete this setup_logger? What does it do?
-        debug_mode=args.debug and not args.quiet, # Review: explain this line
-        log_to_file=args.log_to_file,
-        log_file=args.log_file
+        debug_mode=args.debug # Review: explain this line
     )
 
     # Set a global flag for verbose data output
-    verbose_data = args.verbose_data and args.debug and not args.quiet
+    verbose_data = args.verbose_data and args.debug
 
     # Parse tickers based on the selected mode
     if args.screen:
@@ -1157,11 +1364,14 @@ if __name__ == "__main__":
         model_provider=model_provider,
         selected_analysts=selected_analysts,
         initial_margin_requirement=args.margin_requirement,
-        debug_mode=args.debug and not args.quiet,
-        verbose_data=args.verbose_data and args.debug and not args.quiet,
+        debug_mode=args.debug,
+        verbose_data=args.verbose_data and args.debug,
         screen_mode=args.screen,
         max_positions=args.max_positions,
         transaction_cost=args.transaction_cost,
+        collect_training_data=args.collect_training_data,
+        training_data_dir=args.training_data_dir,
+        training_data_format=args.training_data_format,
     )
 
     # Start the timer after LLM and analysts are selected
@@ -1170,6 +1380,10 @@ if __name__ == "__main__":
     # Run the backtester
     performance_metrics = backtester.run_backtest()
     performance_df = backtester.analyze_performance()
+
+    # Export returns to CSV if requested
+    if args.export_returns:
+        backtester.export_returns_to_csv()
 
     # Stop timer after execution
     end_time = time.time()

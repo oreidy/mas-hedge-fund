@@ -35,8 +35,13 @@ def valuation_agent(state: AgentState):
 
         # Add safety check for financial metrics
         if not financial_metrics:
-            logger.warning(f"No financial metrics found for {ticker}", module="valuation_agent", ticker=ticker)
-            progress.update_status("valuation_agent", ticker, "Failed: No financial metrics found")
+            logger.warning(f"No financial metrics found for {ticker} - assigning neutral signal", module="valuation_agent", ticker=ticker)
+            progress.update_status("valuation_agent", ticker, "No data - neutral signal")
+            valuation_analysis[ticker] = {
+                "signal": "neutral",
+                "confidence": 0,
+                "reasoning": f"No financial metrics available for {ticker} - insufficient data for valuation analysis"
+            }
             continue
         
         metrics = financial_metrics[0]
@@ -73,19 +78,29 @@ def valuation_agent(state: AgentState):
             verbose_data=verbose_data
         )
 
-        # Add safety check for financial line items
+        # Handle insufficient financial line items with fallback
+        use_single_period_fallback = False
         if len(financial_line_items) < 2:
-            logger.warning(f"Insufficient financial line items for {ticker}: only {len(financial_line_items)} periods found, need at least 2", 
-                         module="valuation_agent", ticker=ticker)
-            if financial_line_items:
-                logger.debug(f"Retrieved line items: {[item.model_dump() for item in financial_line_items]}", 
-                           module="valuation_agent", ticker=ticker)
-            progress.update_status("valuation_agent", ticker, "Failed: Insufficient financial line items")
-            continue
+            logger.debug(f"Limited financial line items for {ticker}: only {len(financial_line_items)} periods found, using single-period fallback", 
+                        module="valuation_agent", ticker=ticker)
+            if len(financial_line_items) == 0:
+                # No line items at all - assign neutral signal
+                logger.warning(f"No financial line items found for {ticker} - assigning neutral signal", module="valuation_agent", ticker=ticker)
+                progress.update_status("valuation_agent", ticker, "No line items - neutral signal")
+                valuation_analysis[ticker] = {
+                    "signal": "neutral",
+                    "confidence": 0,
+                    "reasoning": f"No financial line items available for {ticker} - insufficient data for valuation analysis"
+                }
+                continue
+            else:
+                # Single period available - use fallback method
+                logger.debug(f"Using single-period fallback valuation for {ticker}", module="valuation_agent", ticker=ticker)
+                use_single_period_fallback = True
 
         # Pull the current and previous financial line items
         current_financial_line_item = financial_line_items[0]
-        previous_financial_line_item = financial_line_items[1]
+        previous_financial_line_item = financial_line_items[1] if not use_single_period_fallback else None
 
         if verbose_data:
             logger.debug(f"Current financial line item:", module="valuation_agent", ticker=ticker)
@@ -114,13 +129,16 @@ def valuation_agent(state: AgentState):
             
         # Calculate working capital change
         current_wc = getattr(current_financial_line_item, 'working_capital', None)
-        previous_wc = getattr(previous_financial_line_item, 'working_capital', None)
+        previous_wc = getattr(previous_financial_line_item, 'working_capital', None) if previous_financial_line_item else None
         
         # Track if we're using estimated data for confidence adjustment
-        using_estimated_data = False
+        using_estimated_data = use_single_period_fallback  # Fallback always uses estimated data
         
-        if current_wc is None or previous_wc is None:
-            logger.warning(f"Working capital data unavailable for {ticker}, using 0 for calculation", module="valuation_agent", ticker=ticker)
+        if use_single_period_fallback or current_wc is None or previous_wc is None:
+            if use_single_period_fallback:
+                logger.debug(f"Single-period fallback: using 0 working capital change for {ticker}", module="valuation_agent", ticker=ticker)
+            else:
+                logger.warning(f"Working capital data unavailable for {ticker}, using 0 for calculation", module="valuation_agent", ticker=ticker)
             working_capital_change = 0
             using_estimated_data = True
         else:
@@ -181,8 +199,13 @@ def valuation_agent(state: AgentState):
         market_cap = get_market_cap(ticker=ticker, end_date=end_date, verbose_data=verbose_data)
 
         if market_cap is None:
-            logger.warning(f"No market cap found for {ticker}", module="valuation_agent", ticker=ticker)
-            progress.update_status("valuation_agent", ticker, "Failed: No market cap found")
+            logger.warning(f"No market cap found for {ticker} - assigning neutral signal", module="valuation_agent", ticker=ticker)
+            progress.update_status("valuation_agent", ticker, "No market cap - neutral signal")
+            valuation_analysis[ticker] = {
+                "signal": "neutral",
+                "confidence": 0,
+                "reasoning": f"No market cap available for {ticker} - insufficient data for valuation analysis"
+            }
             continue
             
         if verbose_data:

@@ -35,7 +35,13 @@ def fundamentals_agent(state: AgentState):
         )
 
         if not financial_metrics:
-            progress.update_status("fundamentals_agent", ticker, "Failed: No financial metrics found")
+            logger.warning(f"No financial metrics found for {ticker} - assigning neutral signal", module="fundamentals_agent", ticker=ticker)
+            progress.update_status("fundamentals_agent", ticker, "No data - neutral signal")
+            fundamental_analysis[ticker] = {
+                "signal": "neutral",
+                "confidence": 0,
+                "reasoning": f"No financial metrics available for {ticker} - insufficient data for fundamental analysis"
+            }
             continue
 
         # Pull the most recent financial metrics
@@ -55,7 +61,7 @@ def fundamentals_agent(state: AgentState):
                 missing_metrics.append(metric_name)
 
         if missing_metrics:
-            logger.warning(f"Missing financial metrics: {', '.join(missing_metrics)}. Some signals might default to neutral.", 
+            logger.debug(f"Missing financial metrics: {', '.join(missing_metrics)}. Some signals might default to neutral.", 
                         module="fundamentals_agent", ticker=ticker)
 
         # Initialize signals list for different fundamental aspects

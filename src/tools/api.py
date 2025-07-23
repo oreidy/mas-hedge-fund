@@ -1,7 +1,8 @@
 import os
 import pandas as pd
 import yfinance as yf
-# import asyncio  # No longer needed
+import asyncio
+import time
 # import aiohttp  # No longer needed
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -452,7 +453,7 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
             
             # Check if current ratio data is available once before the loop
             if 'Current Assets' not in balance_sheet.index or 'Current Liabilities' not in balance_sheet.index:
-                logger.warning("Missing data for current_ratio calculation: Current Assets or Current Liabilities not found in balance sheet", 
+                logger.debug("Missing data for current_ratio calculation: Current Assets or Current Liabilities not found in balance sheet", 
                         module="fetch_financial_metrics_async", ticker=ticker)
             
             # Process the financial data
@@ -475,7 +476,7 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     # Get the market cap (with separate error handling)
                     market_cap = None
                     try:
-                        market_cap = get_historical_market_cap(ticker, report_date, verbose_data=verbose_data)
+                        market_cap = get_historical_market_cap(ticker, report_date, verbose_data=verbose_data, balance_sheet=balance_sheet, balance_sheet_column=col)
                     except Exception as market_cap_error:
                         logger.warning(f"Could not get market cap for {ticker} at {report_date}: {market_cap_error}", 
                                      module="fetch_financial_metrics_async", ticker=ticker)
@@ -637,7 +638,9 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
 def get_outstanding_shares(
     ticker: str, 
     date: str = None,   
-    verbose_data: bool = False
+    verbose_data: bool = False,
+    balance_sheet=None,
+    balance_sheet_column=None
     ) -> Optional[float]:
     """
     Get historical outstanding shares count for a company. 
@@ -655,7 +658,45 @@ def get_outstanding_shares(
     logger.debug(f"Getting outstanding shares for {ticker} at {date}", 
                 module="get_outstanding_shares", ticker=ticker)
 
+    # If balance sheet data is provided, use it directly (for fetch_financial_metrics_async)
+    if balance_sheet is not None and balance_sheet_column is not None:
+        logger.debug(f"Using provided balance sheet data for {ticker} at {date}", 
+                    module="get_outstanding_shares", ticker=ticker)
+        
+        # Get shares from the provided balance sheet column
+        shares = None
+        share_field_names = [
+            'Ordinary Shares Number',        # Primary field - most common
+            'Share Issued',                  # First fallback - total shares issued
+        ]
+        
+        for field in share_field_names:
+            if field in balance_sheet.index:
+                shares = balance_sheet[balance_sheet_column].get(field)
+                if shares and shares > 0:
+                    logger.debug(f"Found shares ({shares:,.0f}) using field '{field}' from provided balance sheet",
+                               module="get_outstanding_shares", ticker=ticker)
+                    # Cache the result
+                    _cache.set_outstanding_shares(ticker, date, float(shares))
+                    return float(shares)
+        
+        # Smart logging based on data age - older data missing is expected
+        try:
+            date_obj = datetime.strptime(date, '%Y-%m-%d')
+            years_ago = (datetime.now() - date_obj).days / 365.25
+            
+            if years_ago > 4:  # More than 4 years old
+                logger.debug(f"No valid shares data in provided balance sheet for {ticker} at {date} (expected for data >4 years old)",
+                            module="get_outstanding_shares", ticker=ticker)
+            else:  # Recent data missing is unexpected
+                logger.warning(f"No valid shares data in provided balance sheet for {ticker} at {date}",
+                              module="get_outstanding_shares", ticker=ticker)
+        except ValueError:
+            logger.warning(f"No valid shares data in provided balance sheet for {ticker} at {date}",
+                          module="get_outstanding_shares", ticker=ticker)
+        return None
 
+    # Fallback to original logic for other callers
     cached_shares = _cache.get_outstanding_shares(ticker, date)
     if cached_shares:
         logger.debug(f"Retrieved outstanding shares from cache: {cached_shares:}", 
@@ -700,6 +741,9 @@ def get_outstanding_shares(
             if verbose_data:
                 logger.debug(f"Selected annual date: {annual_date} for target date: {date}",
                 module="get_outstanding_shares", ticker=ticker)
+            if annual_date.strftime('%Y-%m-%d') != date:
+                logger.debug(f"Using {annual_date.strftime('%Y-%m-%d')} annual data for {date} (most recent available)",
+                module="get_outstanding_shares", ticker=ticker)
         
         # Get shares from that annual report by checking multiple potential field names
         shares = None
@@ -731,7 +775,7 @@ def get_outstanding_shares(
         if verbose_data:
             logger.debug("=== OUTSTANDING SHARES DETAILS ===", module="get_outstanding_shares", ticker=ticker)
             logger.debug(f"Date requested: {date}", module="get_outstanding_shares", ticker=ticker)
-            logger.debug(f"Quarter date used: {quarter_date.strftime('%Y-%m-%d')}", module="get_outstanding_shares", ticker=ticker)
+            logger.debug(f"Annual date used: {annual_date.strftime('%Y-%m-%d')}", module="get_outstanding_shares", ticker=ticker)
             
         return float(shares)
     
@@ -776,7 +820,7 @@ def get_market_cap(
         return None
 
 
-def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False) -> Optional[float]:
+def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False, balance_sheet=None, balance_sheet_column=None) -> Optional[float]:
     """
     Get historical market cap for a ticker at a specific date by retrieving shares outstanding 
     from the most recent quarterly balance sheet and adjusting for any stock splits that 
@@ -812,11 +856,23 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
         ticker_obj = yf.Ticker(ticker)
 
         # Get outstanding shares
-        shares = get_outstanding_shares(ticker, date, verbose_data)
+        shares = get_outstanding_shares(ticker, date, verbose_data, balance_sheet, balance_sheet_column)
         
         if not shares:
-            logger.warning(f"Could not determine shares outstanding for {ticker} at {date}", 
-                          module="get_historical_market_cap", ticker=ticker)
+            # Smart logging based on data age - older data missing is expected
+            try:
+                date_obj = datetime.strptime(date, '%Y-%m-%d')
+                years_ago = (datetime.now() - date_obj).days / 365.25
+                
+                if years_ago > 4:  # More than 4 years old
+                    logger.debug(f"Could not determine shares outstanding for {ticker} at {date} (expected for data >4 years old)", 
+                                module="get_historical_market_cap", ticker=ticker)
+                else:  # Recent data missing is unexpected
+                    logger.warning(f"Could not determine shares outstanding for {ticker} at {date}", 
+                                  module="get_historical_market_cap", ticker=ticker)
+            except ValueError:
+                logger.warning(f"Could not determine shares outstanding for {ticker} at {date}", 
+                              module="get_historical_market_cap", ticker=ticker)
             return None
             
 
@@ -938,28 +994,29 @@ def get_company_news(
     for ticker in ticker_list:
         if is_news_cache_valid(ticker, max_age_days=1):
             cached_news = get_company_news_from_db(ticker)
-            if cached_news:
-                # Filter by date range
-                filtered_data = []
-                for news in cached_news:
-                    try:
-                        # Check if news is within date range
-                        if (start_date is None or news.date >= start_date) and news.date <= end_date:
-                            filtered_data.append(news)
-                    except Exception as e:
-                        logger.warning(f"Error processing cached news item for {ticker}: {e}", 
-                                      module="get_company_news", ticker=ticker)
-                        continue
-                
-                if filtered_data:
-                    results[ticker] = filtered_data[:limit]
-                    cache_hits += 1
-                    logger.debug(f"Using {len(filtered_data)} cached news items from database for {ticker}", 
-                               module="get_company_news", ticker=ticker)
+            
+            # Filter by date range
+            filtered_data = []
+            for news in cached_news:
+                try:
+                    # Check if news is within date range
+                    if (start_date is None or news.date >= start_date) and news.date <= end_date:
+                        filtered_data.append(news)
+                except Exception as e:
+                    logger.warning(f"Error processing cached news item for {ticker}: {e}", 
+                                  module="get_company_news", ticker=ticker)
                     continue
-                else:
-                    logger.debug(f"No cached news items match date range for {ticker}", 
-                               module="get_company_news", ticker=ticker)
+            
+            # Always add to results if cache is valid (even if empty)
+            results[ticker] = filtered_data[:limit]
+            cache_hits += 1
+            
+            if filtered_data:
+                logger.debug(f"Using {len(filtered_data)} cached news items from database for {ticker}", 
+                           module="get_company_news", ticker=ticker)
+            else:
+                logger.debug(f"No news available for {ticker}", module="get_company_news", ticker=ticker)
+            continue
             
     # Fetch from Alpha Vantage for remaining tickers
     tickers_to_fetch = [ticker for ticker in ticker_list if ticker not in results]
@@ -977,7 +1034,7 @@ def get_company_news(
         try:
             # Add delay between requests to respect rate limits
             if i > 0:
-                time.sleep(2)  # Conservative rate limiting
+                time.sleep(1)  # Conservative rate limiting
             
             # Alpha Vantage uses format YYYYMMDDTHHMM
             if start_date:
@@ -1459,7 +1516,7 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                 # Run price data, financial metrics, and news tasks synchronously
                 price_data = loop.run_until_complete(fetch_prices_batch(batch, start_date, end_date, verbose_data))
                 metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "annual", 10, verbose_data))
-                news_data = loop.run_until_complete(get_company_news_async(batch, end_date, start_date, 1000, verbose_data))
+                news_data = get_company_news(batch, end_date, start_date, 1000, verbose_data)
             finally:
                 loop.close()
             

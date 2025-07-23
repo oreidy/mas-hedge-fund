@@ -60,6 +60,7 @@ def run_hedge_fund(
     model_name: str = "gpt-4o",
     model_provider: str = "OpenAI",
     verbose_data: bool = False,
+    open_positions: set = None,
 ):
     # Start progress tracking
     progress.start()
@@ -85,6 +86,7 @@ def run_hedge_fund(
                     "start_date": start_date,
                     "end_date": end_date,
                     "analyst_signals": {},
+                    "open_positions": open_positions or set(),
                 },
                 "metadata": {
                     "show_reasoning": show_reasoning,
@@ -277,6 +279,7 @@ def ticker_filter_node(state: AgentState):
     """Filter tickers based on agreement between technical and sentiment signals."""
     analyst_signals = state["data"].get("analyst_signals", {})
     tickers = state["data"].get("tickers", [])
+    open_positions = state["data"].get("open_positions", set())
     
     # Get signals from technicals and sentiment agents
     tech_signals = analyst_signals.get("technical_analyst_agent", {})
@@ -290,16 +293,17 @@ def ticker_filter_node(state: AgentState):
         tech_signal = tech_signals.get(ticker, {}).get("signal", "neutral")
         sentiment_signal = sentiment_signals.get(ticker, {}).get("signal", "neutral")
         
-        # Check if both agree and have non-neutral signals
-        if (tech_signal == sentiment_signal and tech_signal != "neutral"):
+        # Check if both agree and have non-neutral signals OR if ticker has open positions
+        if (tech_signal == sentiment_signal and tech_signal != "neutral") or ticker in open_positions:
             agreeing_tickers.append(ticker)
         else:
             disagreeing_tickers.append(ticker)
-            # Set disagreeing tickers to neutral for both agents
-            if ticker in tech_signals:
-                tech_signals[ticker]["signal"] = "neutral"
-            if ticker in sentiment_signals:
-                sentiment_signals[ticker]["signal"] = "neutral"
+            # Set disagreeing tickers to neutral for both agents (but not for open positions)
+            if ticker not in open_positions:
+                if ticker in tech_signals:
+                    tech_signals[ticker]["signal"] = "neutral"
+                if ticker in sentiment_signals:
+                    sentiment_signals[ticker]["signal"] = "neutral"
     
     # Store filtered ticker lists in state
     state["data"]["agreeing_tickers"] = agreeing_tickers
@@ -307,6 +311,7 @@ def ticker_filter_node(state: AgentState):
     
     # Log the agreeing tickers for visibility
     logger.info(f"Found {len(agreeing_tickers)} agreeing tickers: {agreeing_tickers}", module="ticker_filter")
+    logger.info(f"Included {len(open_positions)} open positions that bypass filtering", module="ticker_filter")
     
     return state
 
@@ -372,6 +377,7 @@ def signal_consensus_filter_node(state: AgentState):
     """Second filter: Only pass tickers where at least 4 out of 6 signals agree (non-neutral)."""
     analyst_signals = state["data"].get("analyst_signals", {})
     agreeing_tickers = state["data"].get("agreeing_tickers", [])
+    open_positions = state["data"].get("open_positions", set())
     
     # Get signals from all 6 agents
     agent_names = [
@@ -387,6 +393,11 @@ def signal_consensus_filter_node(state: AgentState):
     filtered_out_tickers = []
     
     for ticker in agreeing_tickers:
+        # Always include open positions, regardless of consensus
+        if ticker in open_positions:
+            consensus_tickers.append(ticker)
+            continue
+            
         signals = []
         for agent_name in agent_names:
             signal = analyst_signals.get(agent_name, {}).get(ticker, {}).get("signal", "neutral")
@@ -419,6 +430,7 @@ def signal_consensus_filter_node(state: AgentState):
     
     # Log the consensus results
     logger.info(f"Found {len(consensus_tickers)} consensus tickers: {consensus_tickers}", module="ticker_filter")
+    logger.info(f"Included {len([t for t in consensus_tickers if t in open_positions])} open positions that bypass consensus filtering", module="ticker_filter")
     
     return state
 
@@ -551,21 +563,6 @@ if __name__ == "__main__":
         help="Enable debug mode with detailed logging",
     )
     parser.add_argument(
-        "--log-to-file",
-        action="store_true",
-        help="Save logs to a file in the logs directory",
-    )
-    parser.add_argument(
-        "--log-file",
-        type=str,
-        help="Specify a custom log file path",
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Minimize output (overrides debug mode)",
-    )
-    parser.add_argument(
         "--verbose-data",
         action="store_true",
         help="Show detailed data output (works with debug mode)",
@@ -575,9 +572,7 @@ if __name__ == "__main__":
 
     # Set up the logger with command line arguments
     setup_logger(
-        debug_mode=args.debug and not args.quiet,
-        log_to_file=args.log_to_file,
-        log_file=args.log_file
+        debug_mode=args.debug
     )
 
     # Parse tickers based on the selected mode
@@ -706,7 +701,7 @@ if __name__ == "__main__":
         selected_analysts=selected_analysts,
         model_name=model_choice,
         model_provider=model_provider,
-        verbose_data=args.verbose_data and args.debug and not args.quiet,
+        verbose_data=args.verbose_data and args.debug,
     )
 
     # Stop timer after execution

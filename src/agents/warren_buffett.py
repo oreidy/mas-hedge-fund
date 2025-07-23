@@ -37,7 +37,7 @@ def warren_buffett_agent(state: AgentState):
     for ticker in tickers:
         progress.update_status("warren_buffett_agent", ticker, "Fetching financial metrics")
         # Fetch required data
-        metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5, verbose_data=verbose_data)
+        metrics = get_financial_metrics(ticker, end_date, period="annual", limit=3, verbose_data=verbose_data)
 
         progress.update_status("warren_buffett_agent", ticker, "Gathering financial line items")
         try:
@@ -53,7 +53,7 @@ def warren_buffett_agent(state: AgentState):
                 ],
                 end_date,
                 period="annual",
-                limit=5,
+                limit=3,
                 verbose_data=verbose_data
             )
         except Exception as e:
@@ -318,7 +318,7 @@ def analyze_fundamentals(metrics: list, verbose_data: bool = False) -> dict[str,
 
 def analyze_consistency(financial_line_items: list, verbose_data: bool = False) -> dict[str, any]:
     """Analyze earnings consistency and growth."""
-    if len(financial_line_items) < 4:  # Need at least 4 periods for trend analysis
+    if len(financial_line_items) < 3:  # Need at least 3 periods for trend analysis
         logger.debug("Insufficient historical data for consistency analysis", module="analyze_consistency")
         return {"score": 0, "details": "Insufficient historical data"}
 
@@ -331,7 +331,7 @@ def analyze_consistency(financial_line_items: list, verbose_data: bool = False) 
 
     # Check earnings growth trend
     earnings_values = [item.net_income for item in financial_line_items if item.net_income]
-    if len(earnings_values) >= 4:
+    if len(earnings_values) >= 3:
         earnings_growth = all(earnings_values[i] > earnings_values[i + 1] for i in range(len(earnings_values) - 1))
 
         if earnings_growth:
@@ -404,8 +404,8 @@ def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = 
     """Calculate intrinsic value using DCF with owner earnings."""
 
     if not financial_line_items:
-        logger.warning("Insufficient financial line items for valuation", 
-                       module="calculate_intrinsic_value")
+        logger.warning("calculate_intrinsic_value: Insufficient financial line items for valuation", 
+                       module="warren_buffett_agent")
         return {
             "intrinsic_value": None,
             "owner_earnings": None,

@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -54,7 +55,7 @@ def equity_agent(state: AgentState):
         current_prices[ticker] = risk_data.get("current_price", 0)
 
         # Calculate maximum shares allowed based on position limit and price
-        if current_prices[ticker] > 0:
+        if current_prices[ticker] > 0 and not pd.isna(current_prices[ticker]) and not pd.isna(position_limits[ticker]):
             max_shares[ticker] = int(position_limits[ticker] / current_prices[ticker])
         else:
             max_shares[ticker] = 0
@@ -132,12 +133,14 @@ def generate_trading_decision(
               - Consider both long and short opportunities based on signals
               - Maintain appropriate risk management with both long and short exposure
 
-              Available Actions:
+              Available Actions (use EXACTLY these words):
               - "buy": Open or add to long position
               - "sell": Close or reduce long position
               - "short": Open or add to short position
               - "cover": Close or reduce short position
               - "hold": No action
+              
+              IMPORTANT: Use only these 5 exact action words: buy, sell, short, cover, hold
 
               Inputs:
               - signals_by_ticker: dictionary of ticker → signals
