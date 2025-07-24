@@ -9,7 +9,7 @@ from src.data.disk_cache import DiskCache
 from src.utils.logger import logger
 
 # Create a global cache instance with disk persistence
-_cache = DiskCache(cache_dir=Path("./cache"))
+_cache = DiskCache(cache_dir=Path(__file__).parent.parent.parent / "cache")
 
 
 def get_fred_data(series_id: str, start_date: str, end_date: str, verbose_data: bool = False) -> pd.DataFrame:

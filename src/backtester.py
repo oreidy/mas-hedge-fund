@@ -1296,7 +1296,7 @@ if __name__ == "__main__":
     # Parse tickers based on the selected mode
     if args.screen:
         tickers = get_sp500_tickers()
-        logger.info(f"Using {len(tickers)} S&P 500 tickers for screening (source: Wikipedia)", module="backtester")
+        logger.debug(f"Using {len(tickers)} S&P 500 tickers for screening (source: WRDS historical data)", module="backtester")
     else:
         # Parse tickers from comma-separated string
         tickers = [ticker.strip() for ticker in args.tickers.split(",")]

@@ -22,8 +22,8 @@ from bs4 import XMLParsedAsHTMLWarning
 import warnings
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
-# Create a cache directory for SEC data
-SEC_CACHE_DIR = Path(os.path.expanduser("~/mas-hedge-fund/src/tools/cache/sec_edgar_filings"))
+# Create a cache directory for SEC data in the main cache folder
+SEC_CACHE_DIR = Path(__file__).parent.parent.parent / "cache" / "sec_edgar_filings"
 SEC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 

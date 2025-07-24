@@ -9,12 +9,21 @@ from .insider_trades_db import (
     save_insider_trades,
     is_ticker_cache_valid
 )
+from .company_news_db import (
+    get_company_news as get_company_news_from_db,
+    save_company_news,
+    is_news_cache_valid
+)
 from .models import InsiderTrade
+
+# Define project root and cache directory as absolute paths
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CACHE_DIR = PROJECT_ROOT / "cache"
 
 class DiskCache:
     """Enhanced cache with disk persistence and expiration"""
     
-    def __init__(self, cache_dir=Path("./cache")):
+    def __init__(self, cache_dir=CACHE_DIR):
         # Create cache directory if it doesn't exist
         os.makedirs(cache_dir, exist_ok=True)
         
@@ -22,8 +31,6 @@ class DiskCache:
         self.ttls = {
             "prices": timedelta(days=60),           # Price data cached for 2 months
             "financial_metrics": timedelta(days=60), # Financial metrics cached for 2 months
-            "insider_trades": timedelta(days=60),    # Insider trade data cached for 2 months
-            "company_news": timedelta(days=60),      # News cached for 2 months
             "fred_data": timedelta(days=60),         # FRED data cached for 2 months
             "sp500_membership": timedelta(days=60)   # S&P 500 membership data cached for 2 months
         }
@@ -95,30 +102,28 @@ class DiskCache:
         )
     
     def get_insider_trades(self, ticker: str, limit: Optional[int] = None) -> List[InsiderTrade]:
-        """Get cached insider trades from SQLite database"""
+        """Get insider trades from SQLite database"""
         return get_insider_trades(ticker, limit)
     
     def set_insider_trades(self, ticker: str, data: List[InsiderTrade]) -> int:
-        """Cache insider trades in SQLite database"""
+        """Save insider trades to SQLite database"""
         return save_insider_trades(ticker, data)
     
     def is_insider_trades_cache_valid(self, ticker: str, max_age_days: int = 1) -> bool:
         """Check if insider trades cache is still valid"""
         return is_ticker_cache_valid(ticker, max_age_days)
     
-    def get_company_news(self, ticker):
-        """Get cached company news"""
-        cache_key = f"company_news:{ticker}"
-        return self.caches["company_news"].get(cache_key)
+    def get_company_news(self, ticker: str):
+        """Get company news from SQLite database"""
+        return get_company_news_from_db(ticker)
     
-    def set_company_news(self, ticker, data):
-        """Cache company news with expiration"""
-        cache_key = f"company_news:{ticker}"
-        self.caches["company_news"].set(
-            cache_key, 
-            data, 
-            expire=self._get_expiration("company_news")
-        )
+    def set_company_news(self, ticker: str, data):
+        """Save company news to SQLite database"""
+        return save_company_news(ticker, data)
+    
+    def is_company_news_cache_valid(self, ticker: str, max_age_days: int = 1) -> bool:
+        """Check if company news cache is still valid"""
+        return is_news_cache_valid(ticker, max_age_days)
     
     def get_outstanding_shares(self, ticker: str, date: str):
         """Get cached outstanding shares count for a ticker at a specific date."""

@@ -68,7 +68,7 @@ def get_prices(ticker: str, start_date: str, end_date: str, verbose_data: bool =
     """
 
     # overwritten to False for the sake of clarity
-    verbose_data = False
+    # verbose_data = False
 
     # Log function call
     logger.debug(f"Fetching prices for {ticker} from {start_date} to {end_date}", module="get_prices", ticker=ticker)
@@ -80,7 +80,8 @@ def get_prices(ticker: str, start_date: str, end_date: str, verbose_data: bool =
         results = loop.run_until_complete(get_prices_async([ticker], start_date, end_date, verbose_data))
         if verbose_data:
             logger.debug(f"results: {results}", module="get_prices", ticker=ticker)
-        return results.get(ticker, []) # Review: why is it not just return results? Why .get()?
+        
+        return results.get(ticker, [])
     finally:
         loop.close() # Review: Why do I have to close the loop? Why can't I just omit this finally:?
 
@@ -89,7 +90,7 @@ async def get_prices_async(tickers: List[str], start_date: str, end_date: str, v
     """Fetch prices for multiple tickers asynchronously"""
 
     # overwritten to False for the sake of clarity
-    verbose_data = False
+    # verbose_data = False
 
     logger.debug(f"Running get_prices_async() for {len(tickers)} tickers from {start_date} to {end_date}", 
                 module="get_prices_async")
@@ -124,7 +125,7 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
     """
     
     # overwritten to False for the sake of clarity
-    verbose_data = False
+    # verbose_data = False
 
     logger.debug(f"Running fetch_prices_batch() for {len(tickers)} tickers from {start_date} to {end_date}", module="fetch_prices_batch")
 
@@ -150,15 +151,28 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
 
     # Fetch data from cache first
     for ticker in tickers:
-        cached_data = _cache.get_prices(ticker, start_date, end_date)
-        if cached_data:
-            # Convert cached data to DataFrame
-            df = pd.DataFrame(cached_data)
-            df["Date"] = pd.to_datetime(df["time"])
-            df.set_index("Date", inplace=True)
-            cached_results[ticker] = df
-            cache_hits += 1
+        # First check if ticker has ANY cached data (indicating it was prefetched)
+        all_cached_data = _cache.get_prices(ticker)  # Get all data for ticker
+        
+        if all_cached_data:
+            # Ticker was prefetched - filter for requested date range
+            cached_data = _cache.get_prices(ticker, start_date, end_date)
+            if cached_data:
+                # Convert cached data to DataFrame
+                df = pd.DataFrame(cached_data)
+                df["Date"] = pd.to_datetime(df["time"])
+                df.set_index("Date", inplace=True)
+                cached_results[ticker] = df
+                cache_hits += 1
+            else:
+                # Ticker was prefetched but no data in this date range (e.g., not listed yet)
+                # Return empty DataFrame instead of trying to re-download
+                logger.debug(f"Ticker {ticker} was prefetched but has no data for {start_date} to {end_date} (likely not listed during this period)", 
+                           module="fetch_prices_batch", ticker=ticker)
+                cached_results[ticker] = pd.DataFrame(columns=["open", "close", "high", "low", "volume"])
+                cache_hits += 1
         else:
+            # No cached data at all - needs to be fetched
             tickers_to_fetch.append(ticker)
 
     # Debug: Log cache statistics
@@ -227,11 +241,23 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
         if isinstance(data, pd.DataFrame) and not data.empty:
             # For each ticker in our fetch list
             for ticker in tickers_to_fetch:
-                # Check if this ticker exists in the data
-                if ticker in data.columns.levels[0]:
-                    # Extract the ticker-specific data
-                    ticker_data = data[ticker].copy()
-                    
+                ticker_data = None
+                
+                # Handle different MultiIndex structures from yfinance
+                if isinstance(data.columns, pd.MultiIndex):
+                    # Check if ticker is in level 0 (multiple tickers case: ('AOS', 'Close'))
+                    if ticker in data.columns.levels[0]:
+                        ticker_data = data[ticker].copy()
+                    # Check if ticker is in level 1 (single ticker case: ('Close', 'AOS'))
+                    elif len(data.columns.levels) > 1 and ticker in data.columns.levels[1]:
+                        # Extract data by filtering columns that have this ticker in level 1
+                        ticker_cols = [col for col in data.columns if col[1] == ticker]
+                        if ticker_cols:
+                            ticker_data = data[ticker_cols].copy()
+                            # Flatten the MultiIndex to just the price type names
+                            ticker_data.columns = [col[0] for col in ticker_data.columns]
+                
+                if ticker_data is not None:
                     # Ensure the column names are lowercase
                     ticker_data.columns = ticker_data.columns.str.lower()
                     
@@ -281,7 +307,7 @@ def get_price_data(ticker: str, start_date: str, end_date: str, verbose_data: bo
     """Get price data as DataFrame."""
 
     # overwritten to False for the sake of clarity
-    verbose_data = False
+    # verbose_data = False
 
     logger.debug(f"Running get_price_data() for {ticker} from {start_date} to {end_date}", 
                 module="get_price_data", ticker=ticker)
@@ -831,7 +857,7 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
                 module="get_historical_market_cap", ticker=ticker)
 
     # overwritten to False for the sake of clarity
-    verbose_data = False
+    # verbose_data = False
 
     try:
         # Check if the requested date is a trading day
@@ -1220,7 +1246,7 @@ def search_line_items(
     """
 
     # overwritten to False for the sake of clarity
-    verbose_data = False
+    # verbose_data = False
 
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)
@@ -1478,7 +1504,7 @@ async def get_price_data_batch(tickers: List[str], start_date: str, end_date: st
     return await fetch_prices_batch(tickers, start_date, end_date, verbose_data)
 
 # ===== DATA FETCHING FUNCTION FOR SRC/BACKTESTER.PY =====
-def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, batch_size: int = 20, verbose_data: bool = False):
+def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, batch_size: int = 5, verbose_data: bool = False):
     """
     Process multiple tickers efficiently with batching and parallel processing.
     Returns a dictionary with all data for each ticker.

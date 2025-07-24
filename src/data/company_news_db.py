@@ -14,7 +14,9 @@ from .models import CompanyNews
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DB_PATH = Path(__file__).parent.parent.parent / "company_news_database.db"
+CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = CACHE_DIR / "company_news_database.db"
 
 
 def setup_database():

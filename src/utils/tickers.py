@@ -19,7 +19,7 @@ except ImportError:
 # Add src directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.logger import logger
-from data.disk_cache import DiskCache
+from data.disk_cache import DiskCache, CACHE_DIR
 
 def get_nyse_tickers(include_etfs=False):
     """
@@ -360,7 +360,7 @@ def get_exchange_listing_dates(tickers: List[str]) -> Dict[str, datetime]:
     if "ipo_dates" not in cache.ttls:
         from diskcache import Cache
         cache.ttls["ipo_dates"] = timedelta(days=30)
-        cache.caches["ipo_dates"] = Cache("./cache/ipo_dates")
+        cache.caches["ipo_dates"] = Cache(CACHE_DIR / "ipo_dates")
     
     ipo_dates = {}
     tickers_to_fetch = []
@@ -723,11 +723,16 @@ def get_sp500_tickers_filtered(years_back: int = 4) -> List[str]:
     # Initialize cache
     cache = DiskCache()
     
-    # Add filtered tickers cache type with 7 day refresh
+    # Add filtered tickers cache type with 60 day refresh  
     if "filtered_tickers" not in cache.ttls:
         from diskcache import Cache
-        cache.ttls["filtered_tickers"] = timedelta(days=60)  # Weekly refresh
-        cache.caches["filtered_tickers"] = Cache("./cache/filtered_tickers")
+        cache.ttls["filtered_tickers"] = timedelta(days=60)  # 60 day refresh
+        cache.caches["filtered_tickers"] = Cache(CACHE_DIR / "filtered_tickers")
+    
+    # Reuse existing cache instance if already created
+    elif "filtered_tickers" not in cache.caches:
+        from diskcache import Cache
+        cache.caches["filtered_tickers"] = Cache(CACHE_DIR / "filtered_tickers")
     
     # Check cache first
     cache_key = f"sp500_filtered_tickers:{years_back}y"
