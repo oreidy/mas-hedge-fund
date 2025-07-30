@@ -73,17 +73,12 @@ def get_prices(ticker: str, start_date: str, end_date: str, verbose_data: bool =
     # Log function call
     logger.debug(f"Fetching prices for {ticker} from {start_date} to {end_date}", module="get_prices", ticker=ticker)
 
-    # Run the async function in a new event loop
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(get_prices_async([ticker], start_date, end_date, verbose_data))
-        if verbose_data:
-            logger.debug(f"results: {results}", module="get_prices", ticker=ticker)
-        
-        return results.get(ticker, [])
-    finally:
-        loop.close() # Review: Why do I have to close the loop? Why can't I just omit this finally:?
+    # Run the async function
+    results = asyncio.run(get_prices_async([ticker], start_date, end_date, verbose_data))
+    if verbose_data:
+        logger.debug(f"results: {results}", module="get_prices", ticker=ticker)
+    
+    return results.get(ticker, [])
 
 
 async def get_prices_async(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, List[Price]]:
@@ -265,8 +260,29 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
                     if 'adj close' in ticker_data.columns:
                         ticker_data.rename(columns={'adj close': 'close'}, inplace=True)
 
-                    # Cache the processed data
-                    _cache.set_prices(ticker, df_to_cache_format(ticker_data))
+                    # Validate data before caching - only cache if we have actual price data
+                    if not ticker_data.empty and len(ticker_data) > 0:
+                        # Additional validation: check if we have required price columns with valid data
+                        required_cols = ['open', 'high', 'low', 'close']
+                        has_valid_data = all(
+                            col in ticker_data.columns and 
+                            not ticker_data[col].isna().all() and
+                            (ticker_data[col] > 0).any()  # At least some positive prices
+                            for col in required_cols
+                        )
+                        
+                        if has_valid_data:
+                            # Cache the processed data only if validation passes
+                            _cache.set_prices(ticker, df_to_cache_format(ticker_data))
+                            logger.debug(f"Cached valid price data for {ticker}: {len(ticker_data)} records", 
+                                       module="fetch_prices_batch", ticker=ticker)
+                        else:
+                            logger.warning(f"Skipping cache for {ticker}: price data validation failed (missing/invalid required columns)", 
+                                         module="fetch_prices_batch", ticker=ticker)
+                    else:
+                        logger.debug(f"Skipping cache for {ticker}: empty DataFrame", 
+                                   module="fetch_prices_batch", ticker=ticker)
+                    
                     results[ticker] = ticker_data
                 else:
                     # Ticker not available for this date range - log warning and add empty DataFrame
@@ -415,16 +431,13 @@ def get_financial_metrics(
     logger.debug(f"Running get_financial_metrics() for {ticker} up to {end_date} (period: {period}, limit: {limit})", 
                 module="get_financial_metrics", ticker=ticker)
 
-    loop = asyncio.new_event_loop()
     try:
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(fetch_financial_metrics_async([ticker], end_date, period, limit, verbose_data))
+        results = asyncio.run(fetch_financial_metrics_async([ticker], end_date, period, limit, verbose_data))
         return results.get(ticker, [])
     except Exception as e:
         logger.error(f"Error fetching financial metrics for {ticker} before {end_date}: {e}", 
                     module="get_financial_metrics", ticker=ticker)
-    finally:
-        loop.close()
+        return []
 
 
 async def fetch_financial_metrics_async(tickers: List[str], end_date: str, period: str = "annual", limit: int = 10, verbose_data: bool = False):
@@ -819,31 +832,57 @@ def get_market_cap(
     ) -> float:
     """
     Fetch market cap for a ticker at a specific date.
-    yfinance only provides the market cap for the current day.
-    For any other date, get_historical_market_cap is called.
+    For historical dates, always uses get_historical_market_cap with proper caching.
+    For current date, tries yfinance API first, then falls back to historical calculation.
     """
 
     logger.debug(f"Running get_market_cap() for {ticker} at {end_date}", 
                 module="get_market_cap", ticker=ticker)
 
+    # For historical dates (not today), always use the historical function with caching
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    if end_date != current_date:
+        logger.debug(f"Using historical market cap calculation for {ticker} at {end_date}", 
+                    module="get_market_cap", ticker=ticker)
+        return get_historical_market_cap(ticker, end_date, verbose_data)
+
+    # For current date, check cache first, then try API, then fall back to historical
+    cached_market_cap = _cache.get_market_cap(ticker, end_date)
+    if cached_market_cap:
+        logger.debug(f"Retrieved current market cap from cache: {cached_market_cap}", 
+                    module="get_market_cap", ticker=ticker)
+        return cached_market_cap
+
+    # Try yfinance API for current market cap
     try:
         ticker_obj = yf.Ticker(ticker)
         
-        # Try using info first (current market cap, not historical)
-        market_cap = ticker_obj.info.get('marketCap')
-        logger.debug(f"Market cap for {[ticker]} is {market_cap}", module="get_market_cap")
-        
-        # If we need a historical market cap, calculate it
-        if market_cap is None or end_date != datetime.now().strftime('%Y-%m-%d'):
-            market_cap = get_historical_market_cap(ticker, end_date, verbose_data)
-            logger.debug(f"Market cap for {ticker} is either None or the end_date isn't the current date.",
-                         module="get_market_cap")
-        
-        return market_cap
+        try:
+            # Try using info for current market cap only
+            market_cap = ticker_obj.info.get('marketCap')
+            logger.debug(f"Got current market cap from API for {ticker}: {market_cap}", module="get_market_cap")
+            
+            # If API call succeeded, cache the result
+            if market_cap is not None and market_cap > 0:
+                _cache.set_market_cap(ticker, end_date, market_cap)
+                logger.debug(f"Cached current market cap for {ticker}: {market_cap}", 
+                            module="get_market_cap", ticker=ticker)
+                return market_cap
+            else:
+                # API returned None or invalid value, fall back to historical calculation
+                logger.debug(f"API returned invalid market cap, falling back to historical calculation", 
+                            module="get_market_cap", ticker=ticker)
+                return get_historical_market_cap(ticker, end_date, verbose_data)
+            
+        finally:
+            # Clean up any HTTP sessions in the ticker object
+            if hasattr(ticker_obj, '_session') and ticker_obj._session:
+                ticker_obj._session.close()
     except Exception as e:
-        logger.error(f"Error fetching market cap for {ticker}: {e}", 
-                    module="get_market_cap", ticker=ticker)
-        return None
+        logger.warning(f"API error fetching current market cap for {ticker}: {e}", 
+                      module="get_market_cap", ticker=ticker)
+        # Fall back to historical calculation on API error
+        return get_historical_market_cap(ticker, end_date, verbose_data)
 
 
 def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False, balance_sheet=None, balance_sheet_column=None) -> Optional[float]:
@@ -868,18 +907,12 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
                         module="get_historical_market_cap", ticker=ticker)
             date = adjusted_date
         
-        end_date_dt = datetime.strptime(date, '%Y-%m-%d') + timedelta(days=1) # Since end_date in yfinance is exclusive
-        end_date_str = end_date_dt.strftime('%Y-%m-%d')
-
-        # If the end date is also not a trading day, adjust it to next trading day
-        # Note: This does not create lookahead bias because we only use data for 'date' (.iloc[0]),
-        # not for 'end_date_str'. The end_date_str is only needed for yfinance API requirements.
-        if not is_trading_day(end_date_str):
-            end_date_str = get_next_trading_day(date)
-            logger.debug(f"Adjusted end date to next trading day: {end_date_str}", 
+        # Check cache first for market cap
+        cached_market_cap = _cache.get_market_cap(ticker, date)
+        if cached_market_cap:
+            logger.debug(f"Retrieved market cap from cache: {cached_market_cap}", 
                         module="get_historical_market_cap", ticker=ticker)
-
-        ticker_obj = yf.Ticker(ticker)
+            return cached_market_cap
 
         # Get outstanding shares
         shares = get_outstanding_shares(ticker, date, verbose_data, balance_sheet, balance_sheet_column)
@@ -900,18 +933,65 @@ def get_historical_market_cap(ticker: str, date: str, verbose_data: bool = False
                 logger.warning(f"Could not determine shares outstanding for {ticker} at {date}", 
                               module="get_historical_market_cap", ticker=ticker)
             return None
-            
 
-        # Get historical price
-        hist = ticker_obj.history(start=date, end=end_date_str)
+        # Try to get price from cached data first
+        cached_prices = _cache.get_prices(ticker, date, date)
+        close_price = None
         
-        if hist.empty:
-            logger.warning(f"${ticker}: possibly delisted; no price data found  (1d {date} -> {end_date_str})", 
+        if cached_prices:
+            # Use cached price data
+            price_data = cached_prices[0]  # Get the specific date
+            close_price = price_data.get('close')
+            logger.debug(f"Used cached price data for {ticker} at {date}: ${close_price}", 
+                        module="get_historical_market_cap", ticker=ticker)
+        else:
+            # Fall back to API call if price not in cache
+            logger.debug(f"Price data not in cache for {ticker} at {date}, fetching from API", 
+                        module="get_historical_market_cap", ticker=ticker)
+            
+            end_date_dt = datetime.strptime(date, '%Y-%m-%d') + timedelta(days=1) # Since end_date in yfinance is exclusive
+            end_date_str = end_date_dt.strftime('%Y-%m-%d')
+
+            # If the end date is also not a trading day, adjust it to next trading day
+            # Note: This does not create lookahead bias because we only use data for 'date' (.iloc[0]),
+            # not for 'end_date_str'. The end_date_str is only needed for yfinance API requirements.
+            if not is_trading_day(end_date_str):
+                end_date_str = get_next_trading_day(date)
+                logger.debug(f"Adjusted end date to next trading day: {end_date_str}", 
+                            module="get_historical_market_cap", ticker=ticker)
+
+            ticker_obj = yf.Ticker(ticker)
+            try:
+                hist = ticker_obj.history(start=date, end=end_date_str)
+                
+                if hist.empty:
+                    logger.warning(f"${ticker}: possibly delisted; no price data found  (1d {date} -> {end_date_str})", 
+                                  module="get_historical_market_cap", ticker=ticker)
+                    return None
+                
+                close_price = hist['Close'].iloc[0]
+            finally:
+                # Clean up any HTTP sessions in the ticker object
+                if hasattr(ticker_obj, '_session') and ticker_obj._session:
+                    ticker_obj._session.close()
+        
+        if close_price is None:
+            logger.warning(f"Could not get closing price for {ticker} at {date}", 
                           module="get_historical_market_cap", ticker=ticker)
             return None
         
-        close_price = hist['Close'].iloc[0]
         market_cap = close_price * shares
+
+        # Validate market cap before caching
+        if market_cap is not None and market_cap > 0 and not pd.isna(market_cap):
+            # Cache the calculated market cap for future use
+            _cache.set_market_cap(ticker, date, market_cap)
+            logger.debug(f"Cached valid market cap for {ticker} at {date}: ${market_cap:,.0f}", 
+                        module="get_historical_market_cap", ticker=ticker)
+        else:
+            logger.warning(f"Skipping market cap cache for {ticker} at {date}: invalid value ({market_cap})", 
+                          module="get_historical_market_cap", ticker=ticker)
+            return None
 
         # Add detailed logging for verbose_data mode
         if verbose_data:
@@ -1534,17 +1614,10 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
             # Get insider trades (this is synchronous)
             insider_results = fetch_multiple_insider_trades(batch, end_date, start_date, verbose_data)
             
-            # Create and run a new event loop for the async operations
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                # Run price data, financial metrics, and news tasks synchronously
-                price_data = loop.run_until_complete(fetch_prices_batch(batch, start_date, end_date, verbose_data))
-                metrics_data = loop.run_until_complete(fetch_financial_metrics_async(batch, end_date, "annual", 10, verbose_data))
-                news_data = get_company_news(batch, end_date, start_date, 1000, verbose_data)
-            finally:
-                loop.close()
+            # Run async operations for the batch
+            price_data = asyncio.run(fetch_prices_batch(batch, start_date, end_date, verbose_data))
+            metrics_data = asyncio.run(fetch_financial_metrics_async(batch, end_date, "annual", 10, verbose_data))
+            news_data = get_company_news(batch, end_date, start_date, 1000, verbose_data)
             
             # Merge into results dictionary
             for ticker in batch:
@@ -1618,4 +1691,6 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                 )
     
     return results
+
+
 

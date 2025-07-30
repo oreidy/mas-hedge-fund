@@ -17,6 +17,7 @@ def fixed_income_agent(state: AgentState):
     
     portfolio = state["data"]["portfolio"]
     analyst_signals = state["data"]["analyst_signals"]
+    start_date = state["data"]["start_date"]
     end_date = state["data"]["end_date"]
     
     progress.update_status("fixed_income_agent", None, "Analyzing bond allocation from risk manager")
@@ -42,7 +43,7 @@ def fixed_income_agent(state: AgentState):
     progress.update_status("fixed_income_agent", "SHY, TLT", "Fetching yield curve data")
     
     # Get yield curve data for algorithmic decision
-    yield_curve_data = get_yield_curve_data(end_date, verbose_data)
+    yield_curve_data = get_yield_curve_data(start_date, end_date, verbose_data)
     
     if verbose_data:
         logger.debug(f"Yield curve analysis:", module="fixed_income_agent")
@@ -79,14 +80,11 @@ def fixed_income_agent(state: AgentState):
     }
 
 
-def get_yield_curve_data(end_date: str, verbose_data: bool = False) -> dict:
+def get_yield_curve_data(start_date: str, end_date: str, verbose_data: bool = False) -> dict:
     """Fetch yield curve data from FRED API"""
     
-    # Calculate date range (1 week of data to ensure we get the most recent available data)
-    # Treasury data may not be published daily, so we fetch a week to capture the latest values
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    start_dt = end_dt - timedelta(days=7)
-    start_date = start_dt.strftime("%Y-%m-%d")
+    # Use the full lookback period provided by the backtester
+    # This ensures we capture the latest available Treasury data points
     
     yield_data = {}
     

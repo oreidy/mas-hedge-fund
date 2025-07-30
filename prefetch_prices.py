@@ -55,9 +55,9 @@ def prefetch_ticker_prices(ticker, start_date="2021-04-01", end_date="2025-07-01
             logger.warning(f"No valid price data for {ticker} after conversion")
             return False
         
-        # Save to cache
-        cache = DiskCache()
-        cache.set_prices(ticker, cache_data)
+        # Save to cache with explicit cleanup
+        with DiskCache() as cache:
+            cache.set_prices(ticker, cache_data)
         
         date_range = f"{hist.index.min().strftime('%Y-%m-%d')} to {hist.index.max().strftime('%Y-%m-%d')}"
         logger.info(f"Cached {len(cache_data)} price records for {ticker} ({date_range})")
@@ -68,25 +68,33 @@ def prefetch_ticker_prices(ticker, start_date="2021-04-01", end_date="2025-07-01
         return False
 
 def main():
-    """Main function to prefetch all filtered S&P 500 ticker prices"""
-    logger.info("Starting price data prefetch for filtered S&P 500 tickers")
+    """Main function to prefetch all filtered S&P 500 ticker prices and bond ETFs"""
+    logger.info("Starting price data prefetch for filtered S&P 500 tickers and bond ETFs")
     
     # Get filtered tickers (removes problematic/delisted tickers)
     tickers = get_sp500_tickers_filtered(years_back=4)
     
-    if not tickers:
+    # Add bond ETFs used by the backtester
+    bond_etfs = ["SHY", "TLT"]
+    logger.info(f"Adding bond ETFs to prefetch: {bond_etfs}")
+    
+    # Combine S&P 500 tickers with bond ETFs
+    all_tickers = tickers + bond_etfs
+    
+    if not all_tickers:
         logger.error("No tickers found to prefetch")
         return
     
-    logger.info(f"Found {len(tickers)} filtered tickers to prefetch")
+    logger.info(f"Found {len(tickers)} filtered S&P 500 tickers + {len(bond_etfs)} bond ETFs = {len(all_tickers)} total tickers to prefetch")
     
     # Track progress
     successful = 0
     failed = 0
     
     # Process each ticker
-    for i, ticker in enumerate(tickers, 1):
-        logger.info(f"[{i:3d}/{len(tickers)}] Processing {ticker}")
+    for i, ticker in enumerate(all_tickers, 1):
+        ticker_type = "Bond ETF" if ticker in bond_etfs else "Stock"
+        logger.info(f"[{i:3d}/{len(all_tickers)}] Processing {ticker} ({ticker_type})")
         
         if prefetch_ticker_prices(ticker):
             successful += 1
@@ -95,6 +103,7 @@ def main():
     
     # Summary
     logger.info(f"Prefetch completed: {successful} successful, {failed} failed")
+    logger.info(f"Stocks processed: {len(tickers)}, Bond ETFs processed: {len(bond_etfs)}")
     logger.info(f"Price data cached for date range 2021-04-01 to 2025-07-01 (or earliest available)")
 
 if __name__ == "__main__":

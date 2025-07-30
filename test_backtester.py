@@ -7,6 +7,10 @@ import time
 # Add src to path FIRST
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
+# Load environment variables from .env file FIRST
+from dotenv import load_dotenv
+load_dotenv()
+
 # Import the logger module FIRST
 from utils.logger import logger, LogLevel, setup_logger
 
@@ -43,21 +47,32 @@ def test_backtester():
     from src.utils.logger import LogLevel
     print(f"LogLevel.DEBUG value: {LogLevel.DEBUG.value}")
     
-    # Configuration for testing the actual problem date range
-    tickers = ['SHW', 'ETSY', 'DPZ']  # Tickers that had the issue
+    # Configuration for comprehensive agent testing - using tickers that showed agreeing signals
+    tickers = ['ABBV', 'ALL', 'AZO', 'BMY', 'CINF', 'DGX', 'FAST', 'HOLX', 'INCY', 'INTC']  # 10 tickers from agreeing list
     start_date = "2022-04-05"   
-    end_date = "2022-04-06"     # Date range where the error occurred
+    end_date = "2022-04-06"     # 2-day test to keep it fast but thorough
     initial_capital = 100000
-    selected_analysts = ["bill_ackman_agent"]  # Test bill ackman fallback
-    model_name = "gpt-4o"
-    model_provider = "OpenAI"
+    # Test ALL agents to ensure they're all working
+    selected_analysts = [
+        "technical_analyst", 
+        "sentiment_analyst", 
+        "fundamentals_analyst", 
+        "valuation_analyst", 
+        "warren_buffett", 
+        "bill_ackman", 
+        "macro_analyst", 
+        "forward_looking_analyst"
+    ]
+    model_name = "llama-3.1-8b-instant"  # Use working Groq model
+    model_provider = "Groq"
     screen_mode = False  # Disable screening mode to use specific tickers
     
-    print(f"Testing sentiment agent from {start_date} to {end_date}")
-    print(f"Using tickers: {tickers}")
+    print(f"Testing ALL agents from {start_date} to {end_date}")
+    print(f"Using {len(tickers)} tickers from agreeing list: {tickers}")
     print(f"Using screening mode: {screen_mode}")
     print(f"Initial capital: ${initial_capital:,}")
-    print(f"Analysts: {selected_analysts}")
+    print(f"Model: {model_name} ({model_provider})")
+    print(f"Testing {len(selected_analysts)} analysts: {selected_analysts}")
     print()
     
     # Create backtester

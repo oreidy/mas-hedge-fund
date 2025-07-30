@@ -146,13 +146,13 @@ def get_sp500_tickers_with_dates(years_back: int = 4) -> Dict[str, Dict]:
     Returns:
         Dict[str, Dict]: {ticker: {'sp500_start': datetime, 'sp500_end': datetime|None}}
     """
-    # Try to get from local cache first
-    cache = DiskCache()
-    cached_data = cache.get_sp500_membership_data(years_back)
-    if cached_data:
-        logger.debug(f"Retrieved S&P 500 membership data from cache for {len(cached_data)} tickers", 
-                    module="get_sp500_tickers_with_dates")
-        return cached_data
+    # Try to get from local cache first  
+    with DiskCache() as cache:
+        cached_data = cache.get_sp500_membership_data(years_back)
+        if cached_data:
+            logger.debug(f"Retrieved S&P 500 membership data from cache for {len(cached_data)} tickers", 
+                        module="get_sp500_tickers_with_dates")
+            return cached_data
     
     # Cache miss - fetch from WRDS
     logger.info("S&P 500 membership data not in cache, fetching from WRDS...", 
@@ -226,9 +226,10 @@ def get_sp500_tickers_with_dates(years_back: int = 4) -> Dict[str, Dict]:
         ticker_dates = apply_manual_sp500_fixes(ticker_dates)
         
         # Cache the data for future use
-        cache.set_sp500_membership_data(ticker_dates, years_back)
-        logger.debug(f"Cached S&P 500 membership data for {len(ticker_dates)} tickers", 
-                    module="get_sp500_tickers_with_dates")
+        with DiskCache() as cache:
+            cache.set_sp500_membership_data(ticker_dates, years_back)
+            logger.debug(f"Cached S&P 500 membership data for {len(ticker_dates)} tickers", 
+                        module="get_sp500_tickers_with_dates")
         
         return ticker_dates
         

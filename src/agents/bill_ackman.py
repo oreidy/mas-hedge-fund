@@ -148,7 +148,7 @@ def bill_ackman_agent(state: AgentState):
         analysis_data_by_ticker=analysis_data,
         model_name=state["metadata"]["model_name"],
         model_provider=state["metadata"]["model_provider"],
-        batch_size=30  # Process 10 tickers at a time
+        batch_size=30  
     )
     
     # Convert decisions to the expected format

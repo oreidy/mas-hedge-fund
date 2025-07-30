@@ -32,7 +32,8 @@ class DiskCache:
             "prices": timedelta(days=60),           # Price data cached for 2 months
             "financial_metrics": timedelta(days=60), # Financial metrics cached for 2 months
             "fred_data": timedelta(days=60),         # FRED data cached for 2 months
-            "sp500_membership": timedelta(days=60)   # S&P 500 membership data cached for 2 months
+            "sp500_membership": timedelta(days=60),  # S&P 500 membership data cached for 2 months
+            "market_cap": timedelta(days=60)         # Market cap data cached for 2 months
         }
         
         # Create separate caches for different data types
@@ -40,6 +41,24 @@ class DiskCache:
             data_type: Cache(os.path.join(cache_dir, data_type))
             for data_type in self.ttls.keys()
         }
+    
+    
+    def close(self):
+        """Explicitly close all cache connections"""
+        if hasattr(self, 'caches'):
+            for cache in self.caches.values():
+                try:
+                    cache.close()
+                except Exception:
+                    pass
+    
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures cleanup"""
+        self.close()
     
     def _get_expiration(self, data_type):
         """Get expiration time in seconds for data type"""
@@ -139,6 +158,22 @@ class DiskCache:
             cache_key, 
             shares, 
             expire=self._get_expiration("financial_metrics")
+        )
+
+    def get_market_cap(self, ticker: str, date: str):
+        """Get cached market cap for a ticker at a specific date."""
+        cache_key = f"{ticker}:{date}"
+        # Use dedicated market_cap cache for daily granularity
+        return self.caches["market_cap"].get(cache_key)
+
+    def set_market_cap(self, ticker: str, date: str, market_cap: float):
+        """Cache market cap for a ticker at a specific date."""
+        cache_key = f"{ticker}:{date}"
+        # Use dedicated market_cap cache for daily granularity
+        self.caches["market_cap"].set(
+            cache_key, 
+            market_cap, 
+            expire=self._get_expiration("market_cap")
         )
 
     def update_prices(self, ticker, new_data):

@@ -1,4 +1,69 @@
 {
-  "total_episodes": 0,
-  "message": "No episodes collected"
+  "total_episodes": 2,
+  "date_range": [
+    "2022-04-05",
+    "2022-04-06"
+  ],
+  "avg_daily_return": -0.002554261493226411,
+  "signal_counts": {
+    "forward_looking_agent": {
+      "bullish": 0,
+      "bearish": 0,
+      "neutral": 0
+    },
+    "macro_agent": {
+      "bullish": 0,
+      "bearish": 0,
+      "neutral": 0
+    },
+    "technical_analyst_agent": {
+      "bullish": 1,
+      "bearish": 0,
+      "neutral": 19
+    },
+    "sentiment_agent": {
+      "bullish": 1,
+      "bearish": 0,
+      "neutral": 19
+    },
+    "fundamentals_agent": {
+      "bullish": 1,
+      "bearish": 0,
+      "neutral": 13
+    },
+    "valuation_agent": {
+      "bullish": 1,
+      "bearish": 0,
+      "neutral": 13
+    },
+    "warren_buffett_agent": {
+      "bullish": 0,
+      "bearish": 0,
+      "neutral": 14
+    },
+    "bill_ackman_agent": {
+      "bullish": 0,
+      "bearish": 0,
+      "neutral": 14
+    },
+    "risk_management_agent": {
+      "bullish": 0,
+      "bearish": 0,
+      "neutral": 0
+    },
+    "fixed_income_agent": {
+      "bullish": 0,
+      "bearish": 0,
+      "neutral": 0
+    }
+  },
+  "decision_counts": {
+    "buy": 2,
+    "sell": 2,
+    "hold": 20,
+    "short": 0,
+    "cover": 0
+  },
+  "storage_format": "json",
+  "output_directory": "test_training_data"
 }

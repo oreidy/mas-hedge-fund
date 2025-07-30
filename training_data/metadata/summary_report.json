@@ -1,10 +1,10 @@
 {
-  "total_episodes": 3,
+  "total_episodes": 187,
   "date_range": [
-    "2022-04-06",
-    "2022-04-08"
+    "2022-04-01",
+    "2022-12-28"
   ],
-  "avg_daily_return": -0.0010665699996687931,
+  "avg_daily_return": 9.470898327646488e-05,
   "signal_counts": {
     "forward_looking_agent": {
       "bullish": 0,
@@ -17,34 +17,34 @@
       "neutral": 0
     },
     "technical_analyst_agent": {
-      "bullish": 0,
-      "bearish": 2,
-      "neutral": 4
+      "bullish": 5162,
+      "bearish": 3509,
+      "neutral": 84477
     },
     "sentiment_agent": {
-      "bullish": 0,
-      "bearish": 2,
-      "neutral": 4
+      "bullish": 7042,
+      "bearish": 3739,
+      "neutral": 82367
     },
     "fundamentals_agent": {
-      "bullish": 2,
-      "bearish": 0,
-      "neutral": 0
+      "bullish": 7635,
+      "bearish": 1953,
+      "neutral": 11492
     },
     "valuation_agent": {
-      "bullish": 0,
-      "bearish": 2,
-      "neutral": 0
-    },
-    "warren_buffett_agent": {
-      "bullish": 0,
-      "bearish": 0,
-      "neutral": 2
+      "bullish": 3997,
+      "bearish": 5403,
+      "neutral": 11680
     },
     "bill_ackman_agent": {
-      "bullish": 0,
-      "bearish": 2,
-      "neutral": 0
+      "bullish": 5304,
+      "bearish": 3907,
+      "neutral": 11405
+    },
+    "warren_buffett_agent": {
+      "bullish": 3744,
+      "bearish": 3642,
+      "neutral": 11198
     },
     "risk_management_agent": {
       "bullish": 0,
@@ -58,11 +58,11 @@
     }
   },
   "decision_counts": {
-    "buy": 4,
-    "sell": 2,
-    "hold": 4,
-    "short": 2,
-    "cover": 0
+    "buy": 3154,
+    "sell": 319,
+    "hold": 87682,
+    "short": 1573,
+    "cover": 746
   },
   "storage_format": "json",
   "output_directory": "training_data"

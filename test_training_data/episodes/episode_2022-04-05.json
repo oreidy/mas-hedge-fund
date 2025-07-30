@@ -1,0 +1,719 @@
+{
+  "date": "2022-04-05",
+  "agent_signals": {
+    "forward_looking_agent": {
+      "_portfolio_data": {
+        "stock_allocation": 0.5,
+        "bond_allocation": 0.5,
+        "current_vix": 21.03,
+        "reasoning": "Elevated VIX (21.0) indicates increased market uncertainty, using balanced allocation (50/50)"
+      }
+    },
+    "macro_agent": {
+      "_portfolio_data": {
+        "stock_allocation": 0.7,
+        "bond_allocation": 0.3,
+        "signal_summary": {
+          "stock_signals": 1,
+          "bond_signals": 0,
+          "neutral_signals": 2
+        },
+        "reasoning": {
+          "inflation": {
+            "signal": "neutral",
+            "details": "Insufficient data for inflation analysis"
+          },
+          "interest_rates": {
+            "signal": "stocks",
+            "details": "Low Fed Funds Rate: 0.33% favors stocks"
+          },
+          "economic_growth": {
+            "signal": "neutral",
+            "details": "Insufficient GDP data available"
+          }
+        }
+      }
+    },
+    "technical_analyst_agent": {
+      "ABBV": {
+        "signal": "neutral",
+        "confidence": 60
+      },
+      "ALL": {
+        "signal": "neutral",
+        "confidence": 20
+      },
+      "AZO": {
+        "signal": "neutral",
+        "confidence": 16
+      },
+      "BMY": {
+        "signal": "bullish",
+        "confidence": 27
+      },
+      "CINF": {
+        "signal": "neutral",
+        "confidence": 23
+      },
+      "DGX": {
+        "signal": "neutral",
+        "confidence": 41
+      },
+      "FAST": {
+        "signal": "neutral",
+        "confidence": 43
+      },
+      "HOLX": {
+        "signal": "neutral",
+        "confidence": 46
+      },
+      "INCY": {
+        "signal": "neutral",
+        "confidence": 44
+      },
+      "INTC": {
+        "signal": "neutral",
+        "confidence": 0
+      }
+    },
+    "sentiment_agent": {
+      "ABBV": {
+        "signal": "neutral",
+        "confidence": 60.0
+      },
+      "ALL": {
+        "signal": "neutral",
+        "confidence": 50.0
+      },
+      "AZO": {
+        "signal": "neutral",
+        "confidence": 72.0
+      },
+      "BMY": {
+        "signal": "bullish",
+        "confidence": 64.0
+      },
+      "CINF": {
+        "signal": "neutral",
+        "confidence": 52.0
+      },
+      "DGX": {
+        "signal": "neutral",
+        "confidence": 59.0
+      },
+      "FAST": {
+        "signal": "neutral",
+        "confidence": 100.0
+      },
+      "HOLX": {
+        "signal": "neutral",
+        "confidence": 94.0
+      },
+      "INCY": {
+        "signal": "neutral",
+        "confidence": 92.0
+      },
+      "INTC": {
+        "signal": "neutral",
+        "confidence": 67.0
+      }
+    },
+    "fundamentals_agent": {
+      "ABBV": {
+        "signal": "neutral",
+        "confidence": 50.0
+      },
+      "BMY": {
+        "signal": "bullish",
+        "confidence": 75.0
+      },
+      "CINF": {
+        "signal": "neutral",
+        "confidence": 25.0
+      },
+      "DGX": {
+        "signal": "neutral",
+        "confidence": 75.0
+      },
+      "FAST": {
+        "signal": "neutral",
+        "confidence": 75.0
+      },
+      "HOLX": {
+        "signal": "neutral",
+        "confidence": 75.0
+      },
+      "INCY": {
+        "signal": "neutral",
+        "confidence": 50.0
+      }
+    },
+    "valuation_agent": {
+      "ABBV": {
+        "signal": "neutral",
+        "confidence": 10
+      },
+      "BMY": {
+        "signal": "bullish",
+        "confidence": 11.2
+      },
+      "CINF": {
+        "signal": "neutral",
+        "confidence": 10
+      },
+      "DGX": {
+        "signal": "neutral",
+        "confidence": 28.0
+      },
+      "FAST": {
+        "signal": "neutral",
+        "confidence": 51.8
+      },
+      "HOLX": {
+        "signal": "neutral",
+        "confidence": 10
+      },
+      "INCY": {
+        "signal": "neutral",
+        "confidence": 41.3
+      }
+    },
+    "warren_buffett_agent": {
+      "ABBV": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "BMY": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "CINF": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "DGX": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "FAST": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "HOLX": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "INCY": {
+        "signal": "neutral",
+        "confidence": 0.0
+      }
+    },
+    "bill_ackman_agent": {
+      "ABBV": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "BMY": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "CINF": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "DGX": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "FAST": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "HOLX": {
+        "signal": "neutral",
+        "confidence": 0.0
+      },
+      "INCY": {
+        "signal": "neutral",
+        "confidence": 0.0
+      }
+    },
+    "risk_management_agent": {
+      "BMY": {
+        "remaining_position_limit": 5924.912319791424,
+        "current_price": 65.11418914794922,
+        "reasoning": {
+          "portfolio_value": 100000.0,
+          "current_position": 0.0,
+          "cvar_adjusted_limit": 5924.912319791424,
+          "remaining_limit": 5924.912319791424,
+          "available_cash": 100000.0,
+          "combined_stock_allocation": 0.6,
+          "max_expected_positions": 30,
+          "target_leverage": 3.0,
+          "base_individual_limit_pct": 0.05999999999999999
+        }
+      }
+    },
+    "fixed_income_agent": {
+      "_portfolio_data": {
+        "SHY": {
+          "action": "buy",
+          "quantity": 319,
+          "confidence": 85.0,
+          "reasoning": "Short-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 319 shares, Current: 0 shares"
+        },
+        "TLT": {
+          "action": "buy",
+          "quantity": 139,
+          "confidence": 85.0,
+          "reasoning": "Long-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 139 shares, Current: 0 shares"
+        },
+        "bond_analysis": {
+          "bond_allocation_percentage": 40.0,
+          "total_bond_capital": 40000.0,
+          "current_bond_value": 0.0,
+          "target_bond_value": 40000.0,
+          "yield_curve_analysis": {
+            "curve_shape": "flat",
+            "yield_spread": 0.20999999999999996,
+            "treasury_2y": 2.54,
+            "treasury_10y": 2.75,
+            "reasoning": "Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration"
+          }
+        }
+      }
+    }
+  },
+  "llm_decisions": {
+    "BMY": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Error in equity agent, defaulting to hold"
+    },
+    "ALL": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to disagreement between technical and sentiment signals"
+    },
+    "AZO": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to disagreement between technical and sentiment signals"
+    },
+    "INTC": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to disagreement between technical and sentiment signals"
+    },
+    "ABBV": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to insufficient signal consensus (need 4+ agreeing non-neutral signals)"
+    },
+    "CINF": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to insufficient signal consensus (need 4+ agreeing non-neutral signals)"
+    },
+    "DGX": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to insufficient signal consensus (need 4+ agreeing non-neutral signals)"
+    },
+    "FAST": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to insufficient signal consensus (need 4+ agreeing non-neutral signals)"
+    },
+    "HOLX": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to insufficient signal consensus (need 4+ agreeing non-neutral signals)"
+    },
+    "INCY": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 0.0,
+      "reasoning": "Filtered out due to insufficient signal consensus (need 4+ agreeing non-neutral signals)"
+    },
+    "SHY": {
+      "action": "buy",
+      "quantity": 319,
+      "confidence": 85.0,
+      "reasoning": "Short-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 319 shares, Current: 0 shares"
+    },
+    "TLT": {
+      "action": "buy",
+      "quantity": 139,
+      "confidence": 85.0,
+      "reasoning": "Long-term Treasury allocation: Flat yield curve (spread: 0.21%) indicates economic uncertainty, favoring shorter duration. Target: 139 shares, Current: 0 shares"
+    }
+  },
+  "portfolio_before": {
+    "cash": 100000,
+    "positions": {
+      "ABBV": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "ALL": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "AZO": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "BMY": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "CINF": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "DGX": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "FAST": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "HOLX": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "INCY": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "INTC": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "SHY": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "TLT": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      }
+    },
+    "realized_gains": {
+      "ABBV": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "ALL": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "AZO": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "BMY": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "CINF": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "DGX": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "FAST": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "HOLX": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "INCY": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "INTC": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "SHY": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "TLT": {
+        "long": 0.0,
+        "short": 0.0
+      }
+    },
+    "margin_requirement": 0.0
+  },
+  "portfolio_after": {
+    "cash": 59790.55810654108,
+    "positions": {
+      "ABBV": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "ALL": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "AZO": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "BMY": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "CINF": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "DGX": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "FAST": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "HOLX": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "INCY": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "INTC": {
+        "long": 0,
+        "short": 0,
+        "long_cost_basis": 0.0,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "SHY": {
+        "long": 319,
+        "short": 0,
+        "long_cost_basis": 75.18976323905774,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      },
+      "TLT": {
+        "long": 139,
+        "short": 0,
+        "long_cost_basis": 116.57419242150777,
+        "short_cost_basis": 0.0,
+        "short_margin_used": 0.0
+      }
+    },
+    "realized_gains": {
+      "ABBV": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "ALL": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "AZO": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "BMY": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "CINF": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "DGX": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "FAST": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "HOLX": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "INCY": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "INTC": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "SHY": {
+        "long": 0.0,
+        "short": 0.0
+      },
+      "TLT": {
+        "long": 0.0,
+        "short": 0.0
+      }
+    },
+    "margin_requirement": 0.0
+  },
+  "portfolio_return": -0.003302414387470053,
+  "market_data": {
+    "execution_prices": {
+      "ABBV": 142.0711881495787,
+      "ALL": 126.49109667290662,
+      "AZO": 1992.27001953125,
+      "BMY": 64.52804932096267,
+      "CINF": 123.68153335195882,
+      "DGX": 124.9512012401091,
+      "FAST": 25.909533681925282,
+      "HOLX": 75.94999694824219,
+      "INCY": 80.91000366210938,
+      "INTC": 45.63317282543199,
+      "SHY": 75.18976323905774,
+      "TLT": 116.57419242150777
+    },
+    "evaluation_prices": {
+      "ABBV": 143.4226531982422,
+      "ALL": 126.67571258544922,
+      "AZO": 2041.530029296875,
+      "BMY": 65.11418914794922,
+      "CINF": 124.17720794677734,
+      "DGX": 125.11031341552734,
+      "FAST": 25.552011489868164,
+      "HOLX": 77.66000366210938,
+      "INCY": 80.69999694824219,
+      "INTC": 44.979000091552734,
+      "SHY": 75.09932708740234,
+      "TLT": 114.55046844482422
+    },
+    "long_exposure": 39879.200454711914,
+    "short_exposure": 0.0,
+    "gross_exposure": 39879.200454711914,
+    "net_exposure": 39879.200454711914
+  },
+  "metadata": {
+    "model_name": "llama-3.1-70b-versatile",
+    "model_provider": "Groq",
+    "selected_analysts": [
+      "technical_analyst",
+      "sentiment_analyst",
+      "fundamentals_analyst",
+      "valuation_analyst",
+      "warren_buffett",
+      "bill_ackman",
+      "macro_analyst",
+      "forward_looking_analyst"
+    ],
+    "screen_mode": false,
+    "eligible_tickers": [
+      "ABBV",
+      "ALL",
+      "AZO",
+      "BMY",
+      "CINF",
+      "DGX",
+      "FAST",
+      "HOLX",
+      "INCY",
+      "INTC"
+    ],
+    "executed_trades": {
+      "ABBV": 0,
+      "ALL": 0,
+      "AZO": 0,
+      "BMY": 0,
+      "CINF": 0,
+      "DGX": 0,
+      "FAST": 0,
+      "HOLX": 0,
+      "INCY": 0,
+      "INTC": 0,
+      "SHY": 319,
+      "TLT": 139
+    },
+    "position_replacements": {}
+  }
+}

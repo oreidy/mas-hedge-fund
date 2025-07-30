@@ -2,6 +2,10 @@ import matplotlib.pyplot as plt
 
 
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -52,7 +56,7 @@ class Backtester:
         verbose_data: bool = False,
         screen_mode: bool = False,
         max_positions: int = 30,
-        transaction_cost: float = 0.005,
+        transaction_cost: float = 0.0005,
         collect_training_data: bool = False,
         training_data_dir: str = "training_data",
         training_data_format: str = "json",
@@ -376,11 +380,19 @@ class Backtester:
         weakest_ticker = None
         weakest_strength = float('inf')
         
+        # Create a list of (ticker, strength) pairs for debugging
+        position_strengths = []
+        
         for ticker in open_positions:
             strength = self.calculate_signal_strength(analyst_signals, ticker)
+            position_strengths.append((ticker, strength))
             if strength < weakest_strength:
                 weakest_strength = strength
                 weakest_ticker = ticker
+        
+        # Log position strengths for debugging
+        strength_info = ", ".join([f"{t}:{s:.3f}" for t, s in sorted(position_strengths, key=lambda x: x[1])])
+        logger.debug(f"Position strengths for replacement consideration: {strength_info}", module="position_debug")
         
         return weakest_ticker, weakest_strength
 
@@ -401,6 +413,7 @@ class Backtester:
         weakest_ticker, weakest_strength = self.find_weakest_position(analyst_signals)
         
         if weakest_ticker is None:
+            logger.debug(f"No weakest position found for replacement - no open positions to replace", module="position_debug")
             return False, None
         
         # If new signal is stronger than weakest position, replace it
@@ -408,6 +421,7 @@ class Backtester:
             logger.info(f"Replacing weak position {weakest_ticker} (strength: {weakest_strength:.3f}) with {ticker} (strength: {signal_strength:.3f})", module="backtester")
             return True, weakest_ticker
         else:
+            logger.debug(f"Not replacing weakest position {weakest_ticker} (strength: {weakest_strength:.3f}) - new signal for {ticker} is weaker (strength: {signal_strength:.3f})", module="position_debug")
             return False, None
 
     def create_hybrid_ticker_list(self, screened_tickers):
@@ -501,6 +515,7 @@ class Backtester:
 
         # Fetch data for all potential stocks
         data = get_data_for_tickers(all_potential_tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
+        
         
         # Fetch data for fixed-income assets and FRED macroeconomic data
         if self.include_fixed_income:
@@ -720,13 +735,25 @@ class Backtester:
             if open_positions:
                 logger.info(f"Open stock positions: {sorted(list(open_positions))}", module="position_debug")
             
-            # Debug: Count how many tickers have trading signals
+            # Debug: Count how many tickers have actual trading signals (not just neutral)
             tickers_with_signals = 0
+            tickers_with_actionable_signals = 0
             for ticker in eligible_tickers:
                 has_signals = any(ticker in signals for signals in analyst_signals.values())
                 if has_signals:
                     tickers_with_signals += 1
-            logger.info(f"Tickers with analyst signals: {tickers_with_signals}/{len(eligible_tickers)}", module="position_debug")
+                    # Check if any signal is bullish or bearish (actionable)
+                    has_actionable_signal = False
+                    for agent_signals in analyst_signals.values():
+                        if ticker in agent_signals:
+                            signal = agent_signals[ticker].get("signal", "neutral")
+                            if signal in ["bullish", "bearish"]:
+                                has_actionable_signal = True
+                                break
+                    if has_actionable_signal:
+                        tickers_with_actionable_signals += 1
+            
+            logger.info(f"Tickers with analyst signals: {tickers_with_signals}/{len(eligible_tickers)} (actionable: {tickers_with_actionable_signals})", module="position_debug")
 
             # Execute trades for each ticker (stocks + bond ETFs)
             executed_trades = {}
@@ -761,9 +788,9 @@ class Backtester:
                         # Check if we should open this position
                         should_open, ticker_to_close = self.should_open_position(ticker, signal_strength, analyst_signals)
                         
-                        # Debug: Log position opening decision
-                        current_stock_count = self.get_stock_position_count()
-                        logger.info(f"Position decision for {ticker}: signal_strength={signal_strength:.3f}, should_open={should_open}, current_positions={current_stock_count}/{self.max_positions}, replace_ticker={ticker_to_close}", module="position_debug")
+                        # Debug: Log position opening decision with current state
+                        current_stock_count_before = self.get_stock_position_count()
+                        logger.info(f"Position decision for {ticker}: signal_strength={signal_strength:.3f}, should_open={should_open}, current_positions={current_stock_count_before}/{self.max_positions}, replace_ticker={ticker_to_close}", module="position_debug")
                         
                         if should_open:
                             # If we need to close a position to make room, do it first
@@ -772,18 +799,30 @@ class Backtester:
                                 if close_position["long"] > 0:
                                     close_quantity = self.execute_trade(ticker_to_close, "sell", close_position["long"], execution_prices[ticker_to_close])
                                     executed_trades[ticker_to_close] = close_quantity
-                                    position_replacements[ticker] = ticker_to_close
-                                    logger.info(f"Closed position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                                    if close_quantity > 0:
+                                        position_replacements[ticker] = ticker_to_close
+                                        logger.info(f"Closed position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                                    else:
+                                        logger.warning(f"Failed to close position {ticker_to_close} - trade execution failed", module="backtester")
                                 elif close_position["short"] > 0:
                                     close_quantity = self.execute_trade(ticker_to_close, "cover", close_position["short"], execution_prices[ticker_to_close])
                                     executed_trades[ticker_to_close] = close_quantity
-                                    position_replacements[ticker] = ticker_to_close
-                                    logger.info(f"Covered position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                                    if close_quantity > 0:
+                                        position_replacements[ticker] = ticker_to_close
+                                        logger.info(f"Covered position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                                    else:
+                                        logger.warning(f"Failed to cover position {ticker_to_close} - trade execution failed", module="backtester")
                             
                             # Now execute the new trade
                             executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
                             executed_trades[ticker] = executed_quantity
-                            logger.info(f"Opened new position: {ticker} {action} {executed_quantity} shares", module="position_debug")
+                            
+                            # Log the actual result with updated position count
+                            current_stock_count_after = self.get_stock_position_count()
+                            if executed_quantity > 0:
+                                logger.info(f"Opened new position: {ticker} {action} {executed_quantity} shares (positions: {current_stock_count_before}→{current_stock_count_after})", module="position_debug")
+                            else:
+                                logger.info(f"Failed to open position: {ticker} {action} - trade execution failed (insufficient funds or other constraint)", module="position_debug")
                         else:
                             logger.info(f"Rejected opening position for {ticker} (signal strength: {signal_strength:.3f}) - position limit reached or signal too weak", module="position_debug")
                             executed_trades[ticker] = 0
@@ -1244,8 +1283,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--transaction-cost",
         type=float,
-        default=0.005,
-        help="Transaction cost as a percentage of trade value (default: 0.005 = 50 basis points)",
+        default=0.0005,
+        help="Transaction cost as a percentage of trade value (default: 0.0005 = 5 basis points)",
     )
 
     # Debugging options
