@@ -1,26 +1,32 @@
 \begin{table}[!htbp] \centering
-\begin{tabular}{@{\extracolsep{5pt}}lc}
+\begin{tabular}{@{\extracolsep{5pt}}lcccccc}
 \\[-1.8ex]\hline
 \hline \\[-1.8ex]
-& \multicolumn{1}{c}{\textit{Dependent variable: y}} \
-\cr \cline{2-2}
-\\[-1.8ex] & \multicolumn{1}{c}{Run 20250726_064159}  \\
-\\[-1.8ex] & (1) \\
+& \multicolumn{6}{c}{\textit{Dependent variable: Excess Returns}} \
+\cr \cline{2-7}
+\\[-1.8ex] & \multicolumn{1}{c}{SPY} & \multicolumn{1}{c}{HDG} & \multicolumn{1}{c}{60/40} & \multicolumn{1}{c}{MAS1} & \multicolumn{1}{c}{MAS2} & \multicolumn{1}{c}{MAS3}  \\
+\\[-1.8ex] & (1) & (2) & (3) & (4) & (5) & (6) \\
 \hline \\[-1.8ex]
- Market-RF & 0.370$^{***}$ \\
-& (0.019) \\
- Size & 0.039$^{}$ \\
-& (0.030) \\
- Value & 0.324$^{***}$ \\
-& (0.025) \\
+ Alpha & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ \\
+& (0.000) & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) \\
+ Market-RF & 0.993$^{***}$ & 0.303$^{***}$ & 0.614$^{***}$ & 0.370$^{***}$ & 0.396$^{***}$ & 0.384$^{***}$ \\
+& (0.003) & (0.008) & (0.006) & (0.019) & (0.021) & (0.019) \\
+ Size & -0.114$^{***}$ & 0.157$^{***}$ & -0.033$^{***}$ & 0.039$^{}$ & 0.023$^{}$ & 0.028$^{}$ \\
+& (0.005) & (0.013) & (0.009) & (0.030) & (0.034) & (0.030) \\
+ Value & 0.013$^{***}$ & 0.054$^{***}$ & -0.010$^{}$ & 0.324$^{***}$ & 0.369$^{***}$ & 0.274$^{***}$ \\
+& (0.004) & (0.010) & (0.007) & (0.025) & (0.028) & (0.025) \\
 \hline \\[-1.8ex]
- Observations & 812 \\
- $R^2$ & 0.380 \\
- Adjusted $R^2$ & 0.378 \\
- Residual Std. Error & 0.006 (df=808) \\
- F Statistic & 164.956$^{***}$ (df=3; 808) \\
+ Observations & 873 & 873 & 873 & 812 & 813 & 813 \\
+ $R^2$ & 0.994 & 0.725 & 0.944 & 0.380 & 0.352 & 0.380 \\
+ Adjusted $R^2$ & 0.994 & 0.724 & 0.944 & 0.378 & 0.349 & 0.378 \\
+ Residual Std. Error & 0.001 & 0.002 & 0.002 & 0.006 & 0.006 & 0.006 \\
+ & (869) & (869) & (869) & (808) & (809) & (809) \\
+ F Statistic & 48974.424$^{***}$ & 764.516$^{***}$ & 4900.325$^{***}$ & 164.956$^{***}$ & 146.387$^{***}$ & 165.610$^{***}$ \\
+ & (3; 869) & (3; 869) & (3; 869) & (3; 808) & (3; 809) & (3; 809) \\
 \hline
 \hline \\[-1.8ex]
-\textit{Note:} & \multicolumn{1}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\
+\textit{Note:} & \multicolumn{6}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\
 \end{tabular}
+\caption[Fama-French 3-Factor Model Results]{This table reports the results of Fama-French 3-factor model regressions for excess returns of investment strategies. The dependent variable is daily excess returns (total returns minus the daily risk-free rate) for each strategy. Independent variables are the three Fama-French factors: Market-RF (market excess return), Size (SMB, small minus big), and Value (HML, high minus low book-to-market). Alpha represents the intercept coefficient (risk-adjusted excess return). SPY represents the S\&P 500 ETF, HDG is a hedge fund strategy ETF, 60/40 is a traditional portfolio of 60\% SPY and 40\% AGG (bond ETF), and MAS1, MAS2, and MAS3 are implementations of the multi-agent system hedge fund. Standard errors are reported in parentheses below coefficient estimates. Degrees of freedom are shown below test statistics. Statistical significance is indicated by: * p < 0.1, ** p < 0.05, *** p < 0.01.}
+\label{tab:fama_french_3factor}
 \end{table}

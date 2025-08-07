@@ -7,17 +7,17 @@ LLM trading decisions.
 """
 
 from .data_collection import TrainingEpisode, EpisodeCollector
-from .preprocessing import DataPreprocessor, FeatureExtractor
-from .models import LSTMTradingModel
-from .training import RLTrainer
+from .preprocessing import TickerPreprocessor, FeatureExtractor
+from .models import TickerLSTMModel
+from .training import TickerLSTMTrainer
 from .inference import RLInference
 
 __all__ = [
     'TrainingEpisode',
     'EpisodeCollector', 
-    'DataPreprocessor',
+    'TickerPreprocessor',
     'FeatureExtractor',
-    'LSTMTradingModel',
-    'RLTrainer',
+    'TickerLSTMModel',
+    'TickerLSTMTrainer',
     'RLInference'
 ]

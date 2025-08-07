@@ -1,7 +1,7 @@
 """RL training module."""
 
-from .trainer import RLTrainer
+from .ticker_trainer import TickerLSTMTrainer
 
 __all__ = [
-    'RLTrainer'
+    'TickerLSTMTrainer'
 ]

@@ -153,11 +153,11 @@ def print_backtest_results(table_rows: list) -> None:
         
         # Display performance metrics if available
         if latest_summary[11]:  # Sharpe ratio
-            print(f"Sharpe Ratio: {latest_summary[10]}")
+            print(f"Sharpe Ratio: {latest_summary[11]}")
         if latest_summary[12]:  # Sortino ratio
-            print(f"Sortino Ratio: {latest_summary[11]}")
+            print(f"Sortino Ratio: {latest_summary[12]}")
         if latest_summary[13]:  # Max drawdown
-            print(f"Max Drawdown: {latest_summary[12]}")
+            print(f"Max Drawdown: {latest_summary[13]}")
 
     # Add vertical spacing
     print("\n" * 2)

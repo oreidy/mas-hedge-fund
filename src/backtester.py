@@ -16,6 +16,8 @@ import pandas as pd
 from colorama import Fore, Style, init
 import numpy as np
 import itertools
+import gc
+import psutil
 
 from llm.models import LLM_ORDER, get_model_info
 from utils.analysts import ANALYST_ORDER
@@ -26,7 +28,8 @@ from tools.api import (
     get_prices,
     get_financial_metrics,
     get_insider_trades,
-    get_data_for_tickers
+    get_data_for_tickers,
+    _cache
 )
 from utils.market_calendar import is_trading_day, get_next_trading_day, get_previous_trading_day
 from utils.display import print_backtest_results, format_backtest_row
@@ -38,6 +41,33 @@ from utils.progress import progress
 from rl.data_collection import EpisodeCollector
 
 init(autoreset=True)
+
+def monitor_and_cleanup():
+    """Monitor file descriptors and perform cleanup if needed"""
+    try:
+        fd_count = psutil.Process().num_fds()
+        logger.debug(f"Current file descriptors: {fd_count}", module="monitor_and_cleanup")
+        
+        if fd_count > 90:  # First threshold - gentle cleanup
+            logger.info(f"File descriptors ({fd_count}) above threshold, performing garbage collection", module="monitor_and_cleanup")
+            gc.collect()
+            
+            # Check again after garbage collection
+            fd_count_after_gc = psutil.Process().num_fds()
+            logger.info(f"File descriptors after GC: {fd_count_after_gc}", module="monitor_and_cleanup")
+            print("\n\n\n\n\n\n\n\n\n\n")
+            
+            if fd_count_after_gc > 200:  # Second threshold - cache reset
+                logger.warning(f"File descriptors ({fd_count_after_gc}) still high, resetting cache connections", module="monitor_and_cleanup")
+                _cache.close()
+                _cache.__init__()
+                
+                fd_count_final = psutil.Process().num_fds()
+                logger.info(f"File descriptors after cache reset: {fd_count_final}", module="monitor_and_cleanup")
+                print("\n\n\n\n\n\n\n\n\n\n")
+                
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}", module="monitor_and_cleanup")
 
 
 class Backtester:
@@ -418,7 +448,7 @@ class Backtester:
         
         # If new signal is stronger than weakest position, replace it
         if signal_strength > weakest_strength:
-            logger.info(f"Replacing weak position {weakest_ticker} (strength: {weakest_strength:.3f}) with {ticker} (strength: {signal_strength:.3f})", module="backtester")
+            logger.debug(f"Replacing weak position {weakest_ticker} (strength: {weakest_strength:.3f}) with {ticker} (strength: {signal_strength:.3f})", module="run_backtest")
             return True, weakest_ticker
         else:
             logger.debug(f"Not replacing weakest position {weakest_ticker} (strength: {weakest_strength:.3f}) - new signal for {ticker} is weaker (strength: {signal_strength:.3f})", module="position_debug")
@@ -599,7 +629,6 @@ class Backtester:
             self.portfolio_values = []
 
         for current_date in dates:
-
             logger.info(f"Running hedge fund for {current_date.strftime("%Y-%m-%d")}", module="run_backtest")
 
             lookback_start = (current_date - timedelta(days=200)).strftime("%Y-%m-%d") # Half year lookback period plus some slack
@@ -730,30 +759,16 @@ class Backtester:
             bond_positions = total_positions - current_stock_positions
             logger.info(f"Current positions - Stocks: {current_stock_positions}/{self.max_positions}, Bonds: {bond_positions}, Total: {total_positions}", module="run_backtest")
             
-            # Debug: Log all current open positions
+            # Debug: Log all current open positions (before executing trades)
             open_positions = self.get_open_positions(exclude_bond_etfs=True)
             if open_positions:
-                logger.info(f"Open stock positions: {sorted(list(open_positions))}", module="position_debug")
+                logger.info(f"Open stock positions (pre-trade): {sorted(list(open_positions))}", module="run_backtest")
             
-            # Debug: Count how many tickers have actual trading signals (not just neutral)
-            tickers_with_signals = 0
-            tickers_with_actionable_signals = 0
-            for ticker in eligible_tickers:
-                has_signals = any(ticker in signals for signals in analyst_signals.values())
-                if has_signals:
-                    tickers_with_signals += 1
-                    # Check if any signal is bullish or bearish (actionable)
-                    has_actionable_signal = False
-                    for agent_signals in analyst_signals.values():
-                        if ticker in agent_signals:
-                            signal = agent_signals[ticker].get("signal", "neutral")
-                            if signal in ["bullish", "bearish"]:
-                                has_actionable_signal = True
-                                break
-                    if has_actionable_signal:
-                        tickers_with_actionable_signals += 1
+            # Count actual trade decisions from equity agent
+            trade_decisions = sum(1 for ticker in decisions.keys() 
+                                if ticker not in ['SHY', 'TLT'] and decisions[ticker].get('action') != 'hold')
             
-            logger.info(f"Tickers with analyst signals: {tickers_with_signals}/{len(eligible_tickers)} (actionable: {tickers_with_actionable_signals})", module="position_debug")
+            logger.info(f"Trade decisions: {trade_decisions} buy/sell/short/cover orders from equity agent", module="run_backtest")
 
             # Execute trades for each ticker (stocks + bond ETFs)
             executed_trades = {}
@@ -790,7 +805,7 @@ class Backtester:
                         
                         # Debug: Log position opening decision with current state
                         current_stock_count_before = self.get_stock_position_count()
-                        logger.info(f"Position decision for {ticker}: signal_strength={signal_strength:.3f}, should_open={should_open}, current_positions={current_stock_count_before}/{self.max_positions}, replace_ticker={ticker_to_close}", module="position_debug")
+                        logger.debug(f"Position decision for {ticker}: signal_strength={signal_strength:.3f}, should_open={should_open}, current_positions={current_stock_count_before}/{self.max_positions}, replace_ticker={ticker_to_close}", module="position_debug")
                         
                         if should_open:
                             # If we need to close a position to make room, do it first
@@ -801,17 +816,17 @@ class Backtester:
                                     executed_trades[ticker_to_close] = close_quantity
                                     if close_quantity > 0:
                                         position_replacements[ticker] = ticker_to_close
-                                        logger.info(f"Closed position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                                        logger.debug(f"Closed position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="run_backtest")
                                     else:
-                                        logger.warning(f"Failed to close position {ticker_to_close} - trade execution failed", module="backtester")
+                                        logger.warning(f"Failed to close position {ticker_to_close} - trade execution failed", module="run_backtest")
                                 elif close_position["short"] > 0:
                                     close_quantity = self.execute_trade(ticker_to_close, "cover", close_position["short"], execution_prices[ticker_to_close])
                                     executed_trades[ticker_to_close] = close_quantity
                                     if close_quantity > 0:
                                         position_replacements[ticker] = ticker_to_close
-                                        logger.info(f"Covered position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="backtester")
+                                        logger.debug(f"Covered position {ticker_to_close} ({close_quantity} shares) to make room for {ticker}", module="run_backtest")
                                     else:
-                                        logger.warning(f"Failed to cover position {ticker_to_close} - trade execution failed", module="backtester")
+                                        logger.warning(f"Failed to cover position {ticker_to_close} - trade execution failed", module="run_backtest")
                             
                             # Now execute the new trade
                             executed_quantity = self.execute_trade(ticker, action, quantity, execution_prices[ticker])
@@ -820,11 +835,11 @@ class Backtester:
                             # Log the actual result with updated position count
                             current_stock_count_after = self.get_stock_position_count()
                             if executed_quantity > 0:
-                                logger.info(f"Opened new position: {ticker} {action} {executed_quantity} shares (positions: {current_stock_count_before}→{current_stock_count_after})", module="position_debug")
+                                logger.debug(f"Opened new position: {ticker} {action} {executed_quantity} shares (positions: {current_stock_count_before}→{current_stock_count_after})", module="position_debug")
                             else:
-                                logger.info(f"Failed to open position: {ticker} {action} - trade execution failed (insufficient funds or other constraint)", module="position_debug")
+                                logger.debug(f"Failed to open position: {ticker} {action} - trade execution failed (insufficient funds or other constraint)", module="position_debug")
                         else:
-                            logger.info(f"Rejected opening position for {ticker} (signal strength: {signal_strength:.3f}) - position limit reached or signal too weak", module="position_debug")
+                            logger.debug(f"Rejected opening position for {ticker} (signal strength: {signal_strength:.3f}) - position limit reached or signal too weak", module="position_debug")
                             executed_trades[ticker] = 0
                 else:
                     # For position-closing actions (sell/cover) or hold actions, execute normally
@@ -832,8 +847,36 @@ class Backtester:
                     executed_trades[ticker] = executed_quantity
 
             # ---------------------------------------------------------------
-            # 2) Now that trades have been executed, recalculate the final
-            #    portfolio value for this day.
+            # 2) Log trading summary and then recalculate portfolio value
+            # ---------------------------------------------------------------
+            
+            # Summarize trading activity for this day
+            positions_opened = sum(1 for ticker, qty in executed_trades.items() if qty > 0 and ticker not in position_replacements.values())
+            positions_closed = len([ticker for ticker in position_replacements.values() if executed_trades.get(ticker, 0) > 0])
+            replacements = len(position_replacements)
+            
+            # Count actual trade recommendations that were rejected (not filtered tickers)
+            trade_recommendations = [ticker for ticker in decisions.keys() if decisions[ticker].get('action') in ['buy', 'sell', 'short', 'cover'] and decisions[ticker].get('quantity', 0) > 0]
+            rejected_trades = sum(1 for ticker in trade_recommendations if executed_trades.get(ticker, 0) == 0)
+            
+            if positions_opened > 0 or positions_closed > 0 or rejected_trades > 0:
+                final_position_count = self.get_stock_position_count()
+                summary_parts = []
+                
+                if positions_opened > 0:
+                    summary_parts.append(f"opened: {positions_opened}")
+                if positions_closed > 0:
+                    summary_parts.append(f"closed: {positions_closed}")
+                if replacements > 0:
+                    replacement_pairs = [f"{new}->{old}" for new, old in position_replacements.items()]
+                    summary_parts.append(f"replaced: {', '.join(replacement_pairs)}")
+                if rejected_trades > 0:
+                    summary_parts.append(f"rejected: {rejected_trades}")
+                    
+                logger.info(f"Trading summary: {', '.join(summary_parts)} | Final positions: {final_position_count}/{self.max_positions}", module="run_backtest")
+
+            # ---------------------------------------------------------------
+            # 3) Now recalculate the final portfolio value for this day.
             # ---------------------------------------------------------------
 
             total_value = self.calculate_portfolio_value(evaluation_prices)
@@ -914,7 +957,7 @@ class Backtester:
                     logger.error(f"Error collecting training episode for {current_date_str}: {e}")
 
             # ---------------------------------------------------------------
-            # 3) Build the table rows to display
+            # 4) Build the table rows to display
             # ---------------------------------------------------------------
             date_rows = []
 
@@ -1005,7 +1048,7 @@ class Backtester:
                     )
                 )
             # ---------------------------------------------------------------
-            # 4) Calculate performance summary metrics
+            # 5) Calculate performance summary metrics
             # ---------------------------------------------------------------
             total_realized_gains = sum(
                 self.portfolio["realized_gains"][t]["long"] +
@@ -1048,7 +1091,10 @@ class Backtester:
             if len(self.portfolio_values) > 3:
                 self._update_performance_metrics(performance_metrics)
             
-            # Clear progress display after each day of backtest
+            # Monitor and cleanup file descriptors after each trading day
+            monitor_and_cleanup()
+            
+            # Clear progress display after each day of backtest 
             progress.clear()
 
         # Finalize data collection after backtest completion
@@ -1147,7 +1193,7 @@ class Backtester:
             annualized_sharpe = np.sqrt(252) * ((mean_daily_return - daily_rf) / std_daily_return)
         else:
             annualized_sharpe = 0
-        print(f"\nAnnualized Sharpe Ratio: {Fore.YELLOW}{annualized_sharpe:.2f}{Style.RESET_ALL}")
+        print(f"\nSharpe Ratio (4% risk-free rate): {Fore.YELLOW}{annualized_sharpe:.2f}{Style.RESET_ALL}")
 
         # Max Drawdown
         rolling_max = performance_df["Portfolio Value"].cummax()
@@ -1163,7 +1209,7 @@ class Backtester:
         winning_days = len(performance_df[performance_df["Daily Return"] > 0])
         total_days = max(len(performance_df) - 1, 1)
         win_rate = (winning_days / total_days) * 100
-        print(f"Win Rate: {Fore.GREEN}{win_rate:.2f}%{Style.RESET_ALL}")
+        print(f"Win Rate (% of days with positive returns): {Fore.GREEN}{win_rate:.2f}%{Style.RESET_ALL}")
 
         # Average Win/Loss Ratio
         positive_returns = performance_df[performance_df["Daily Return"] > 0]["Daily Return"]
@@ -1174,7 +1220,7 @@ class Backtester:
             win_loss_ratio = avg_win / avg_loss
         else:
             win_loss_ratio = float('inf') if avg_win > 0 else 0
-        print(f"Win/Loss Ratio: {Fore.GREEN}{win_loss_ratio:.2f}{Style.RESET_ALL}")
+        print(f"Win/Loss Ratio (avg winning day return / avg losing day return): {Fore.GREEN}{win_loss_ratio:.2f}{Style.RESET_ALL}")
 
         # Maximum Consecutive Wins / Losses
         returns_binary = (performance_df["Daily Return"] > 0).astype(int)

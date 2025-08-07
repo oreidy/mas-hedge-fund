@@ -127,15 +127,24 @@ class TrainingEpisode:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TrainingEpisode':
         """Create episode from dictionary."""
+        
+        # Parse agent signals, handling different data structures
+        agent_signals = {}
+        for agent_name, agent_data in data['agent_signals'].items():
+            agent_signals[agent_name] = {}
+            
+            for ticker, signal_data in agent_data.items():
+                # Skip non-ticker entries (like _portfolio_data)
+                if ticker.startswith('_'):
+                    continue
+                    
+                # Only process if it looks like a signal (has 'signal' and 'confidence' keys)
+                if isinstance(signal_data, dict) and 'signal' in signal_data and 'confidence' in signal_data:
+                    agent_signals[agent_name][ticker] = AgentSignal.from_dict(signal_data)
+        
         return cls(
             date=data['date'],
-            agent_signals={
-                agent_name: {
-                    ticker: AgentSignal.from_dict(signal_data)
-                    for ticker, signal_data in ticker_signals.items()
-                }
-                for agent_name, ticker_signals in data['agent_signals'].items()
-            },
+            agent_signals=agent_signals,
             llm_decisions={
                 ticker: LLMDecision.from_dict(decision_data)
                 for ticker, decision_data in data['llm_decisions'].items()

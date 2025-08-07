@@ -1,7 +1,7 @@
 """LSTM models for RL trading."""
 
-from .lstm_model import LSTMTradingModel
+from .ticker_lstm_model import TickerLSTMModel
 
 __all__ = [
-    'LSTMTradingModel'
+    'TickerLSTMModel'
 ]
