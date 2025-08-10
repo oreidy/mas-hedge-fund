@@ -14,7 +14,7 @@ from typing import Dict, List, Set
 import time
 
 # Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.tickers import get_sp500_tickers
 from tools.sec_edgar_scraper import fetch_multiple_insider_trades

@@ -23,7 +23,7 @@ from typing import List
 import time
 
 # Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.tickers import get_sp500_tickers_filtered
 from tools.api import fetch_financial_metrics_async, get_monthly_cache_period

@@ -112,7 +112,7 @@ class LSTMWalkForwardBacktester:
                 risk_data = risk_mgmt_signals[ticker]
                 # Extract key risk management data
                 risk_limits[ticker] = {
-                    'remaining_position_limit': risk_data.get('remaining_position_limit', 0.0),
+                    'remaining_position_limit': risk_data.get('remaining_position_limit', 0.0) * 3.0,
                     'current_price': risk_data.get('current_price', 0.0),
                     'reasoning': risk_data.get('reasoning', {})
                 }
@@ -394,6 +394,8 @@ class LSTMWalkForwardBacktester:
                     quantity = decision['quantity']
                     
                     # Validate quantity against risk management limits (remaining_position_limit is in dollars)
+                    # NOTE: During episode data collection, remaining_position_limit was effectively an absolute 
+                    # position limit due to a bug in risk_manager.py that always returned 0 for current_position_value
                     if ticker in risk_limits and action in ['buy', 'short'] and quantity > 0:
                         remaining_limit = risk_limits[ticker].get('remaining_position_limit', 0.0)  # Dollar limit
                         current_price = execution_prices[ticker]
