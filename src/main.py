@@ -52,8 +52,8 @@ def parse_hedge_fund_response(response):
 ##### Run the Hedge Fund #####
 def run_hedge_fund(
     tickers: list[str],
-    start_date: str,
-    end_date: str,
+    start_date: str,  # Data prefetch start date (automatically calculated)
+    end_date: str,    # Analysis date (the day to make investment recommendations for)
     portfolio: dict,
     show_reasoning: bool = False,
     selected_analysts: list[str] = [],
@@ -61,6 +61,7 @@ def run_hedge_fund(
     model_provider: str = "OpenAI",
     verbose_data: bool = False,
     open_positions: set = None,
+    screen_mode: bool = False,
 ):
     # Start progress tracking
     progress.start()
@@ -68,7 +69,7 @@ def run_hedge_fund(
     try:
         # Create a new workflow if analysts are customized
         if selected_analysts:
-            workflow = create_workflow(selected_analysts)
+            workflow = create_workflow(selected_analysts, screen_mode=screen_mode)
             agent = workflow.compile()
         else:
             agent = app
@@ -129,7 +130,7 @@ def start(state: AgentState):
     return state
 
 
-def create_workflow(selected_analysts=None):
+def create_workflow(selected_analysts=None, screen_mode=False):
     """Create the workflow with selected analysts."""
     workflow = StateGraph(AgentState)
     workflow.add_node("start_node", start)
@@ -160,9 +161,9 @@ def create_workflow(selected_analysts=None):
         "bill_ackman"
     }
     
-    # Use optimized workflow if all stock analysts are selected (with or without macro/forward-looking)
+    # Use optimized workflow only if all stock analysts are selected AND screen mode is enabled
     selected_set = set(selected_analysts)
-    if stock_analyst_agents.issubset(selected_set):
+    if stock_analyst_agents.issubset(selected_set) and screen_mode:
         return create_optimized_workflow(selected_analysts)
     
     # For partial analyst selection, use original workflow
@@ -537,14 +538,9 @@ if __name__ == "__main__":
         help="Screen all S&P 500 tickers instead of specifying individual tickers"
     )
     parser.add_argument(
-        "--start-date",
-        type=str,
-        help="Start date (YYYY-MM-DD). Defaults to 3 months before end date",
-    )
-    parser.add_argument(
         "--end-date",
         type=str, 
-        help="End date (YYYY-MM-DD). Defaults to today"
+        help="Analysis date (YYYY-MM-DD). Defaults to today"
     )
     parser.add_argument(
         "--show-reasoning",
@@ -633,7 +629,7 @@ if __name__ == "__main__":
             print(f"\nSelected model: {Fore.GREEN + Style.BRIGHT}{model_choice}{Style.RESET_ALL}\n")
 
     # Create the workflow with selected analysts
-    workflow = create_workflow(selected_analysts)
+    workflow = create_workflow(selected_analysts, screen_mode=args.screen)
     app = workflow.compile()
 
     if args.show_agent_graph:
@@ -644,29 +640,20 @@ if __name__ == "__main__":
             file_path += "graph.png"
         save_graph_as_png(app, file_path)
 
-    # Validate dates if provided
-    if args.start_date:
-        try:
-            datetime.strptime(args.start_date, "%Y-%m-%d")
-        except ValueError:
-            raise ValueError("Start date must be in YYYY-MM-DD format")
-
+    # Validate end date if provided
     if args.end_date:
         try:
             datetime.strptime(args.end_date, "%Y-%m-%d")
         except ValueError:
-            raise ValueError("End date must be in YYYY-MM-DD format")
+            raise ValueError("Analysis date must be in YYYY-MM-DD format")
 
-    # Set the start and end dates
+    # Set the analysis date and calculate start date for data prefetching
     end_date = args.end_date or datetime.now().strftime("%Y-%m-%d")
-    if not args.start_date:
-        # Calculate start date to ensure sufficient data for technical analysis
-        # Technical analyst needs 127 trading days for 6-month momentum calculations
-        # Using 200 calendar days to account for weekends and holidays (matches backtester.py)
-        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-        start_date = (end_date_obj - relativedelta(days=200)).strftime("%Y-%m-%d")
-    else:
-        start_date = args.start_date
+    # Calculate start date to ensure sufficient data for technical analysis
+    # Technical analyst needs 127 trading days for 6-month momentum calculations
+    # Using 200 calendar days to account for weekends and holidays (matches backtester.py)
+    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+    start_date = (end_date_obj - relativedelta(days=200)).strftime("%Y-%m-%d")
 
     # Initialize portfolio with cash amount and stock positions
     portfolio = {
@@ -688,9 +675,17 @@ if __name__ == "__main__":
         }
     }
 
+    # Automatically check and fetch missing data
+    from tools.api import smart_prefetch_missing_data
+    logger.info("Checking data availability for the requested period...", module="main")
+    smart_prefetch_missing_data(tickers, start_date, end_date, verbose_data=args.verbose_data and args.debug)
+
     # Start the timer after LLM and analysts are selected
     start_time = time.time()
 
+    # Log the trading decision date
+    logger.info(f"Making trading decisions for date: {end_date}", module="main")
+    
     # Run the hedge fund
     result = run_hedge_fund(
         tickers=tickers,
@@ -702,6 +697,7 @@ if __name__ == "__main__":
         model_name=model_choice,
         model_provider=model_provider,
         verbose_data=args.verbose_data and args.debug,
+        screen_mode=args.screen,
     )
 
     # Stop timer after execution

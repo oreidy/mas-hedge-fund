@@ -80,7 +80,7 @@ def warren_buffett_agent(state: AgentState):
 
         #Calculating intrinsic value
         progress.update_status("warren_buffett_agent", ticker, "Calculating intrinsic value")
-        intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items, verbose_data)
+        intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items, verbose_data, ticker)
 
         # Calculate total score
         total_score = fundamental_analysis["score"] + consistency_analysis["score"]
@@ -400,12 +400,12 @@ def calculate_owner_earnings(financial_line_items: list, verbose_data: bool = Fa
     }
 
 
-def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = False) -> dict[str, any]:
+def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = False, ticker: str = None) -> dict[str, any]:
     """Calculate intrinsic value using DCF with owner earnings."""
 
     if not financial_line_items:
         logger.warning("calculate_intrinsic_value: Insufficient financial line items for valuation", 
-                       module="warren_buffett_agent")
+                       module="warren_buffett_agent", ticker=ticker)
         return {
             "intrinsic_value": None,
             "owner_earnings": None,
@@ -421,7 +421,6 @@ def calculate_intrinsic_value(financial_line_items: list, verbose_data : bool = 
     # Calculate owner earnings
     earnings_data = calculate_owner_earnings(financial_line_items)
     if not earnings_data["owner_earnings"]:
-        ticker = financial_line_items[0].ticker if financial_line_items else "unknown"
         logger.warning("calculate_intrinsic_value: Owner earnings calculation failed", 
                        module="warren_buffett_agent", ticker=ticker)
         return {

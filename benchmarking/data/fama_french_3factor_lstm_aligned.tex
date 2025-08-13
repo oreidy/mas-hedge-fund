@@ -1,0 +1,32 @@
+\begin{table}[!htbp] \centering
+\begin{tabular}{@{\extracolsep{5pt}}lccccccccc}
+\\[-1.8ex]\hline
+\hline \\[-1.8ex]
+& \multicolumn{9}{c}{\textit{Dependent variable: Excess Returns}} \
+\cr \cline{2-10}
+\\[-1.8ex] & \multicolumn{1}{c}{SPY} & \multicolumn{1}{c}{HDG} & \multicolumn{1}{c}{60/40} & \multicolumn{1}{c}{LSTM} & \multicolumn{1}{c}{MAS1} & \multicolumn{1}{c}{MAS2} & \multicolumn{1}{c}{MAS3} & \multicolumn{1}{c}{MAS4} & \multicolumn{1}{c}{MAS5}  \\
+\\[-1.8ex] & (1) & (2) & (3) & (4) & (5) & (6) & (7) & (8) & (9) \\
+\hline \\[-1.8ex]
+ Alpha & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ & 0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ & -0.000$^{}$ \\
+& (0.000) & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) \\
+ Market-RF & 0.999$^{***}$ & 0.260$^{***}$ & 0.614$^{***}$ & -0.192$^{***}$ & 0.328$^{***}$ & 0.415$^{***}$ & 0.379$^{***}$ & 0.386$^{***}$ & 0.415$^{***}$ \\
+& (0.004) & (0.008) & (0.008) & (0.020) & (0.021) & (0.021) & (0.022) & (0.022) & (0.023) \\
+ Size & -0.092$^{***}$ & 0.143$^{***}$ & -0.019$^{*}$ & 0.093$^{***}$ & 0.022$^{}$ & 0.032$^{}$ & 0.015$^{}$ & 0.035$^{}$ & 0.021$^{}$ \\
+& (0.005) & (0.011) & (0.011) & (0.028) & (0.030) & (0.029) & (0.031) & (0.030) & (0.032) \\
+ Value & -0.015$^{***}$ & 0.077$^{***}$ & -0.007$^{}$ & -0.041$^{}$ & 0.322$^{***}$ & 0.286$^{***}$ & 0.272$^{***}$ & 0.316$^{***}$ & 0.308$^{***}$ \\
+& (0.005) & (0.011) & (0.010) & (0.027) & (0.029) & (0.028) & (0.030) & (0.029) & (0.030) \\
+\hline \\[-1.8ex]
+ Observations & 562 & 562 & 562 & 563 & 563 & 563 & 563 & 563 & 563 \\
+ $R^2$ & 0.993 & 0.759 & 0.935 & 0.146 & 0.385 & 0.481 & 0.396 & 0.438 & 0.442 \\
+ Adjusted $R^2$ & 0.993 & 0.757 & 0.935 & 0.141 & 0.382 & 0.479 & 0.393 & 0.435 & 0.439 \\
+ Residual Std. Error & 0.001 & 0.002 & 0.002 & 0.004 & 0.005 & 0.005 & 0.005 & 0.005 & 0.005 \\
+ & (558) & (558) & (558) & (559) & (559) & (559) & (559) & (559) & (559) \\
+ F Statistic & 26805.670$^{***}$ & 584.556$^{***}$ & 2697.234$^{***}$ & 31.822$^{***}$ & 116.584$^{***}$ & 172.977$^{***}$ & 122.205$^{***}$ & 145.163$^{***}$ & 147.823$^{***}$ \\
+ & (3; 558) & (3; 558) & (3; 558) & (3; 559) & (3; 559) & (3; 559) & (3; 559) & (3; 559) & (3; 559) \\
+\hline
+\hline \\[-1.8ex]
+\textit{Note:} & \multicolumn{9}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\
+\end{tabular}
+\caption[Fama-French 3-Factor Model Results (LSTM Period)]{This table reports the results of Fama-French 3-factor model regressions for excess returns of investment strategies during the LSTM backtest period (March 2023 - June 2025). The dependent variable is daily excess returns (total returns minus the daily risk-free rate) for each strategy. Independent variables are the three Fama-French factors: Market-RF (market excess return), Size (SMB, small minus big), and Value (HML, high minus low book-to-market). Alpha represents the intercept coefficient (risk-adjusted excess return). SPY represents the S\&P 500 ETF, HDG is a hedge fund strategy ETF, 60/40 is a traditional portfolio of 60\% SPY and 40\% AGG (bond ETF), MAS1-MAS5 are implementations of the multi-agent system hedge fund, and LSTM is the LSTM-based trading strategy. Standard errors are reported in parentheses below coefficient estimates. Degrees of freedom are shown below test statistics. Statistical significance is indicated by: * p < 0.1, ** p < 0.05, *** p < 0.01.}
+\label{tab:fama_french_3factor_lstm_aligned}
+\end{table}

@@ -1,481 +1,0 @@
-Logger level after setup: LogLevel.DEBUG
-Logger level value: 0
-DEBUG level value: 0
-2025-07-23 09:08:34 [DEBUG] test_backtester: 🔍 TEST: Debug logging is working in test_backtester.py
-2025-07-23 09:08:34 [INFO] test_backtester: ℹ️ TEST: Info logging is working in test_backtester.py
-Logger level: LogLevel.DEBUG
-DEBUG level value: 0
-LogLevel.DEBUG value: 0
-Testing sentiment agent from 2022-04-05 to 2022-04-06
-Using tickers: ['SHW', 'ETSY', 'DPZ']
-Using screening mode: False
-Initial capital: $100,000
-Analysts: ['sentiment_analyst']
-
-2025-07-23 09:08:34 [INFO]: Episode collector initialized with output directory: test_training_data
-2025-07-23 09:08:34 [INFO]: Training data collection enabled. Output directory: test_training_data
-Testing prefetch phase with data validation...
-2025-07-23 09:08:34 [INFO] prefetch_data: Pre-fetching data for the entire backtest period...
-2025-07-23 09:08:34 [DEBUG] get_nyse_calendar: Loaded NYSE calendar from cache: 1508 trading days.
-2025-07-23 09:08:34 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:08:34 [DEBUG] is_trading_day: Checking if 2022-04-06 is a trading day: True
-2025-07-23 09:08:34 [INFO] prefetch_data: Fetching historical data from 2021-04-05 to 2022-04-06
-2025-07-23 09:08:34 [INFO] prefetch_data: Prefetching data for 3 specified tickers
-2025-07-23 09:08:34 [DEBUG] get_data_for_tickers: Running get_data_for_tickers() for 3 tickers from 2021-04-05 to 2022-04-06
-2025-07-23 09:08:34 [DEBUG] sec_edgar_scraper: End date: 2022-04-06
-2025-07-23 09:08:34 [DEBUG] sec_edgar_scraper: Using temporary directory: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b
-2025-07-23 09:08:34 [DEBUG] sec_edgar_scraper: Fetching SEC filings for tickers: ['SHW', 'ETSY', 'DPZ'], start: 2021-04-05, end: 2022-04-06
-2025-07-23 09:08:34 [DEBUG] sec_edgar_scraper: Created filing object: <class 'secedgar.core.company.CompanyFilings'>
-  0%|          | 0/840 [00:00<?, ?it/s]  1%|          | 10/840 [00:01<01:23,  9.99it/s]  2%|▏         | 20/840 [00:02<01:22,  9.99it/s]  4%|▎         | 30/840 [00:03<01:21,  9.98it/s]  5%|▍         | 40/840 [00:04<01:20,  9.98it/s]  6%|▌         | 50/840 [00:05<01:19,  9.98it/s]  7%|▋         | 60/840 [00:06<01:18,  9.98it/s]  8%|▊         | 70/840 [00:07<01:17,  9.98it/s] 10%|▉         | 80/840 [00:08<01:16,  9.98it/s] 11%|█         | 90/840 [00:09<01:15,  9.98it/s] 12%|█▏        | 100/840 [00:10<01:14,  9.98it/s] 13%|█▎        | 110/840 [00:11<01:13,  9.98it/s] 14%|█▍        | 120/840 [00:12<01:12,  9.98it/s] 15%|█▌        | 130/840 [00:13<01:11,  9.98it/s] 17%|█▋        | 140/840 [00:14<01:10,  9.98it/s] 18%|█▊        | 150/840 [00:15<01:09,  9.98it/s] 19%|█▉        | 160/840 [00:16<01:08,  9.98it/s] 20%|██        | 170/840 [00:17<01:07,  9.98it/s] 21%|██▏       | 180/840 [00:18<01:06,  9.98it/s] 23%|██▎       | 190/840 [00:19<01:05,  9.98it/s] 24%|██▍       | 200/840 [00:20<01:04,  9.98it/s] 25%|██▌       | 210/840 [00:21<01:03,  9.98it/s] 26%|██▌       | 220/840 [00:22<01:02,  9.98it/s] 27%|██▋       | 230/840 [00:23<01:01,  9.98it/s] 29%|██▊       | 240/840 [00:24<01:00,  9.98it/s] 30%|██▉       | 250/840 [00:25<00:59,  9.98it/s] 31%|███       | 260/840 [00:26<00:58,  9.98it/s] 32%|███▏      | 270/840 [00:27<00:57,  9.98it/s] 33%|███▎      | 280/840 [00:28<00:56,  9.98it/s] 35%|███▍      | 290/840 [00:29<00:55,  9.98it/s] 36%|███▌      | 300/840 [00:30<00:54,  9.98it/s] 37%|███▋      | 310/840 [00:31<00:53,  9.98it/s] 38%|███▊      | 320/840 [00:32<00:52,  9.98it/s] 39%|███▉      | 330/840 [00:33<00:51,  9.98it/s] 40%|████      | 340/840 [00:34<00:50,  9.98it/s] 42%|████▏     | 350/840 [00:35<00:49,  9.98it/s] 43%|████▎     | 360/840 [00:36<00:48,  9.98it/s] 44%|████▍     | 370/840 [00:37<00:47,  9.98it/s] 45%|████▌     | 380/840 [00:38<00:46,  9.98it/s] 46%|████▋     | 390/840 [00:39<00:45,  9.98it/s] 48%|████▊     | 400/840 [00:40<00:44,  9.98it/s] 49%|████▉     | 410/840 [00:41<00:43,  9.98it/s] 50%|█████     | 420/840 [00:42<00:42,  9.98it/s] 51%|█████     | 430/840 [00:43<00:41,  9.98it/s] 52%|█████▏    | 440/840 [00:44<00:40,  9.98it/s] 54%|█████▎    | 450/840 [00:45<00:39,  9.98it/s] 55%|█████▍    | 460/840 [00:46<00:38,  9.98it/s] 56%|█████▌    | 470/840 [00:47<00:37,  9.98it/s] 57%|█████▋    | 480/840 [00:48<00:36,  9.98it/s] 58%|█████▊    | 490/840 [00:49<00:35,  9.98it/s] 60%|█████▉    | 500/840 [00:50<00:34,  9.99it/s] 61%|██████    | 510/840 [00:51<00:33,  9.99it/s] 62%|██████▏   | 520/840 [00:52<00:32,  9.98it/s] 63%|██████▎   | 530/840 [00:53<00:31,  9.98it/s] 64%|██████▍   | 540/840 [00:54<00:30,  9.98it/s] 65%|██████▌   | 550/840 [00:55<00:29,  9.98it/s] 67%|██████▋   | 560/840 [00:56<00:28,  9.98it/s] 68%|██████▊   | 570/840 [00:57<00:27,  9.98it/s] 69%|██████▉   | 580/840 [00:58<00:26,  9.98it/s] 70%|███████   | 590/840 [00:59<00:25,  9.98it/s] 71%|███████▏  | 600/840 [01:00<00:24,  9.98it/s] 73%|███████▎  | 610/840 [01:01<00:23,  9.98it/s] 74%|███████▍  | 620/840 [01:02<00:22,  9.98it/s] 75%|███████▌  | 630/840 [01:03<00:21,  9.98it/s] 76%|███████▌  | 640/840 [01:04<00:20,  9.98it/s] 77%|███████▋  | 650/840 [01:05<00:19,  9.98it/s] 79%|███████▊  | 660/840 [01:06<00:18,  9.98it/s] 80%|███████▉  | 670/840 [01:07<00:17,  9.98it/s] 81%|████████  | 680/840 [01:08<00:16,  9.98it/s] 82%|████████▏ | 690/840 [01:09<00:15,  9.98it/s] 83%|████████▎ | 700/840 [01:10<00:14,  9.98it/s] 85%|████████▍ | 710/840 [01:11<00:13,  9.99it/s] 86%|████████▌ | 720/840 [01:12<00:12,  9.99it/s] 87%|████████▋ | 730/840 [01:13<00:11,  9.98it/s] 88%|████████▊ | 740/840 [01:14<00:10,  9.98it/s] 89%|████████▉ | 750/840 [01:15<00:09,  9.98it/s] 90%|█████████ | 760/840 [01:16<00:08,  9.98it/s] 92%|█████████▏| 770/840 [01:17<00:07,  9.98it/s] 93%|█████████▎| 780/840 [01:18<00:06,  9.98it/s] 94%|█████████▍| 790/840 [01:19<00:05,  9.98it/s] 95%|█████████▌| 800/840 [01:20<00:04,  9.98it/s] 96%|█████████▋| 810/840 [01:21<00:03,  9.98it/s] 98%|█████████▊| 820/840 [01:22<00:02,  9.98it/s] 99%|█████████▉| 830/840 [01:23<00:01,  9.98it/s]100%|██████████| 840/840 [01:24<00:00,  9.98it/s]850it [01:25,  9.99it/s]                         850it [01:25,  9.98it/s]
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Saved filings to /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Directory structure:
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Root: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Dirs: ['SHW', 'ETSY', 'DPZ']
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Files: 0
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Root: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b/SHW
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Dirs: ['4']
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Files: 0
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Root: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b/SHW/4
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Dirs: []
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Files: 73
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Root: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b/ETSY
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Dirs: ['4']
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Files: 0
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Root: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b/ETSY/4
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Dirs: []
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Files: 100
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Root: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b/DPZ
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Dirs: ['4']
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Files: 0
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Root: /var/folders/16/bjjyms594_x1zgq3bcbz3sx40000gn/T/tmpyecsrs_b/DPZ/4
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Dirs: []
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper: Files: 84
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper [SHW]: Saved 0 new insider trades to database
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper [ETSY]: Saved 0 new insider trades to database
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper [DPZ]: Saved 0 new insider trades to database
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper [SHW]: Most recent trade: 2022-03-11
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper [ETSY]: Most recent trade: 2022-04-05
-2025-07-23 09:10:08 [DEBUG] sec_edgar_scraper [DPZ]: Most recent trade: 2022-04-04
-2025-07-23 09:10:08 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 3 tickers from 2021-04-05 to 2022-04-06
-2025-07-23 09:10:08 [DEBUG] fetch_prices_batch: Downloading price data for 2 tickers
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async: Running fetch_financial_metrics_async() for 3 tickers
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async: FINANCIAL METRICS CACHE STATS:
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async:   - From cache: 3/3 tickers (100.0%)
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async:   - Downloaded: 0/3 tickers (0.0%)
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async [SHW]: Sample cache financial metrics for SHW:
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async [SHW]: Metrics count: 2
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async [SHW]: Sample metric period: 2021-12-31
-2025-07-23 09:10:09 [DEBUG] fetch_financial_metrics_async [SHW]: Key ratios: ROE=0.764976202199245, D/E=7.479689807976366
-2025-07-23 09:10:09 [DEBUG] get_company_news: Running get_company_news() from 2021-04-05 to 2022-04-06 for 3 tickers
-2025-07-23 09:10:09 [DEBUG] get_company_news: COMPANY NEWS CACHE STATS:
-2025-07-23 09:10:09 [DEBUG] get_company_news:   - From cache: 0/3 tickers (0.0%)
-2025-07-23 09:10:09 [DEBUG] get_company_news:   - To download: 3/3 tickers (100.0%)
-2025-07-23 09:10:09 [DEBUG] get_company_news [SHW]: Fetching news sentiment from Alpha Vantage
-2025-07-23 09:10:09 [DEBUG] get_company_news [SHW]: Making API request for SHW with params: {'function': 'NEWS_SENTIMENT', 'tickers': 'SHW', 'time_from': '20210405T0000', 'time_to': '20220406T2359', 'apikey': '21A1QMAZHLR0883S', 'sort': 'LATEST', 'limit': 1000}
-2025-07-23 09:10:09 [DEBUG] get_company_news [SHW]: API response keys for SHW: ['items', 'sentiment_score_definition', 'relevance_score_definition', 'feed']
-2025-07-23 09:10:09 [DEBUG] get_company_news [SHW]: Alpha Vantage returned 23 raw news items for SHW
-2025-07-23 09:10:09 [DEBUG] get_company_news [SHW]: Sample raw item: title='Here's How Much You Would Have Made Owning Sherwin-Williams Stock In The Last 15 Years', date='20220406T143314'
-2025-07-23 09:10:09 [DEBUG] get_company_news [SHW]: Saved 0 new news items to database for SHW (total fetched: 23)
-2025-07-23 09:10:10 [DEBUG] get_company_news [ETSY]: Fetching news sentiment from Alpha Vantage
-2025-07-23 09:10:10 [DEBUG] get_company_news [ETSY]: Making API request for ETSY with params: {'function': 'NEWS_SENTIMENT', 'tickers': 'ETSY', 'time_from': '20210405T0000', 'time_to': '20220406T2359', 'apikey': '21A1QMAZHLR0883S', 'sort': 'LATEST', 'limit': 1000}
-2025-07-23 09:10:11 [DEBUG] get_company_news [ETSY]: API response keys for ETSY: ['items', 'sentiment_score_definition', 'relevance_score_definition', 'feed']
-2025-07-23 09:10:11 [DEBUG] get_company_news [ETSY]: Alpha Vantage returned 84 raw news items for ETSY
-2025-07-23 09:10:11 [DEBUG] get_company_news [ETSY]: Sample raw item: title='Bargain Hunting: 2 Unstoppable Stocks to Buy Now and Hold', date='20220406T123700'
-2025-07-23 09:10:11 [DEBUG] get_company_news [ETSY]: Saved 0 new news items to database for ETSY (total fetched: 84)
-2025-07-23 09:10:12 [DEBUG] get_company_news [DPZ]: Fetching news sentiment from Alpha Vantage
-2025-07-23 09:10:12 [DEBUG] get_company_news [DPZ]: Making API request for DPZ with params: {'function': 'NEWS_SENTIMENT', 'tickers': 'DPZ', 'time_from': '20210405T0000', 'time_to': '20220406T2359', 'apikey': '21A1QMAZHLR0883S', 'sort': 'LATEST', 'limit': 1000}
-2025-07-23 09:10:13 [DEBUG] get_company_news [DPZ]: API response keys for DPZ: ['items', 'sentiment_score_definition', 'relevance_score_definition', 'feed']
-2025-07-23 09:10:13 [DEBUG] get_company_news [DPZ]: Alpha Vantage returned 29 raw news items for DPZ
-2025-07-23 09:10:13 [DEBUG] get_company_news [DPZ]: Sample raw item: title='Analysts say this is the least expensive restaurant option to feed a family of four', date='20220406T171500'
-2025-07-23 09:10:13 [DEBUG] get_company_news [DPZ]: Saved 0 new news items to database for DPZ (total fetched: 29)
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers: --- DATA PREVIEW from get_data_for_tickers ---
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Sample data for ticker: SHW
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Prices sample:
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Prices data shape: (140, 6)
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: First row:                  open        high         low       close   volume        time
-Date                                                                          
-2021-09-17  286.56793  287.177016  283.290478  283.986572  1862100  2021-09-17
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Metrics sample:
- {'ticker': 'SHW', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 89057799775.0827, 'enterprise_value': None, 'price_to_earnings_ratio': 47.76753903404994, 'price_to_book_ratio': 36.54103059867172, 'price_to_sales_ratio': 4.465258755506889, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.021026793888118612, 'peg_ratio': None, 'gross_margin': 0.4283214504176569, 'operating_margin': 0.13360508608846505, 'net_margin': 0.09347893665453305, 'return_on_equity': 0.764976202199245, 'return_on_assets': 0.09021275772135852, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 0.8835912230090043, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': 7.479689807976366, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 7.13936139515161, 'book_value_per_share': None, 'free_cash_flow_per_share': 7.17076171881619}
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Insider trades count: 94
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Sample trade: {'ticker': 'SHW', 'issuer': 'SHERWIN WILLIAMS CO', 'name': 'Young Bryan J', 'title': 'SVP - Corp Strategy & Devel.', 'is_board_director': False, 'transaction_date': '2022-03-11', 'transaction_shares': 521.0, 'transaction_price_per_share': 136.85, 'transaction_value': 71298.84999999999, 'shares_owned_before_transaction': 7284.0, 'shares_owned_after_transaction': 7805.0, 'security_title': 'Common Stock', 'filing_date': '2022-03-11'}
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: News count: 23
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Sample news: {'ticker': 'SHW', 'title': "Here's How Much You Would Have Made Owning Sherwin-Williams Stock In The Last 15 Years", 'author': 'Benzinga Insights', 'source': 'Benzinga', 'date': '2022-04-06', 'url': 'https://www.benzinga.com/news/earnings/22/04/26501357/heres-how-much-you-would-have-made-owning-sherwin-williams-stock-in-the-last-15-years', 'sentiment': 'neutral'}
-2025-07-23 09:10:13 [DEBUG] prefetch_data: === DATA FETCHED SUMMARY from prefetch_data ===
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Stock tickers: ['SHW', 'ETSY', 'DPZ']
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Bond ETFs: []
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Period: 2022-04-05 to 2022-04-06
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Data structure for SHW:
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - prices: DataFrame with 140 rows, 6 columns
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - metrics: List with 2 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - insider_trades: List with 94 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - news: List with 23 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data [SHW]: 
-Prices sample:
-                  open        high         low       close   volume        time
-Date                                                                           
-2021-09-17  286.567930  287.177016  283.290478  283.986572  1862100  2021-09-17
-2021-09-20  279.423252  283.599816  278.572496  282.081940  1101600  2021-09-20
-2021-09-21  283.735177  283.996201  280.042011  280.718750   802700  2021-09-21
-2021-09-22  282.168959  284.527943  280.834806  282.294647   812600  2021-09-22
-2021-09-23  283.599796  285.813766  282.623323  284.479584   854100  2021-09-23
-2025-07-23 09:10:13 [DEBUG] prefetch_data [SHW]: 
-Metrics sample:
- {'ticker': 'SHW', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 89057799775.0827, 'enterprise_value': None, 'price_to_earnings_ratio': 47.76753903404994, 'price_to_book_ratio': 36.54103059867172, 'price_to_sales_ratio': 4.465258755506889, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.021026793888118612, 'peg_ratio': None, 'gross_margin': 0.4283214504176569, 'operating_margin': 0.13360508608846505, 'net_margin': 0.09347893665453305, 'return_on_equity': 0.764976202199245, 'return_on_assets': 0.09021275772135852, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 0.8835912230090043, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': 7.479689807976366, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 7.13936139515161, 'book_value_per_share': None, 'free_cash_flow_per_share': 7.17076171881619}
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Data structure for ETSY:
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - prices: DataFrame with 256 rows, 5 columns
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - metrics: List with 2 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - insider_trades: List with 565 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - news: List with 84 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data [ETSY]: 
-Prices sample:
-Price             open        high         low       close   volume
-Date                                                               
-2021-04-05  211.990005  211.990005  196.130005  197.199997  3628800
-2021-04-06  199.436005  208.570007  197.313004  206.009995  3038800
-2021-04-07  204.500000  205.750000  199.274994  204.020004  2208100
-2021-04-08  206.000000  216.289993  205.794998  215.389999  3606000
-2021-04-09  214.240005  221.669998  212.860001  218.570007  2723500
-2025-07-23 09:10:13 [DEBUG] prefetch_data [ETSY]: 
-Metrics sample:
- {'ticker': 'ETSY', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 27810222825.032593, 'enterprise_value': None, 'price_to_earnings_ratio': 56.352235783955635, 'price_to_book_ratio': 44.24018813467711, 'price_to_sales_ratio': 11.940258323565352, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.022345883523113112, 'peg_ratio': None, 'gross_margin': 0.718986704815651, 'operating_margin': 0.19996101521866255, 'net_margin': 0.21188615069936464, 'return_on_equity': 0.7850653575536215, 'return_on_assets': 0.12879217100852364, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 2.179218893155812, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': 5.095598446753916, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 3.885205252206549, 'book_value_per_share': None, 'free_cash_flow_per_share': 4.892407793105765}
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Data structure for DPZ:
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - prices: DataFrame with 256 rows, 5 columns
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - metrics: List with 2 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - insider_trades: List with 158 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - news: List with 29 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data [DPZ]: 
-Prices sample:
-Price             open        high         low       close  volume
-Date                                                              
-2021-04-05  353.813774  354.525195  348.397490  352.523743  701700
-2021-04-06  355.113358  364.248020  353.633603  361.098785  510000
-2021-04-07  360.690865  364.219518  357.940040  362.635406  282800
-2021-04-08  365.670835  367.103174  361.544583  364.172119  362200
-2021-04-09  363.176194  370.347326  362.995965  370.271454  440600
-2025-07-23 09:10:13 [DEBUG] prefetch_data [DPZ]: 
-Metrics sample:
- {'ticker': 'DPZ', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 19454877370.792786, 'enterprise_value': None, 'price_to_earnings_ratio': 38.111919812236216, 'price_to_book_ratio': None, 'price_to_sales_ratio': 4.464817992582408, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.028786303266078034, 'peg_ratio': None, 'gross_margin': 0.38744491233594186, 'operating_margin': 0.17910057275335392, 'net_margin': 0.11715017282201914, 'return_on_equity': -0.12126443389485207, 'return_on_assets': 0.30533683132593537, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 1.456712840314114, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': -1.3971497096117007, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 14.125384464276973, 'book_value_per_share': None, 'free_cash_flow_per_share': 15.49697740121671}
-2025-07-23 09:10:13 [INFO] prefetch_data: Data pre-fetch complete.
-✅ Prefetch completed successfully in 98.99 seconds
-If no errors above, the fix is working!
-
-Running full backtest to test fundamentals agent...
-2025-07-23 09:10:13 [INFO] prefetch_data: Pre-fetching data for the entire backtest period...
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-06 is a trading day: True
-2025-07-23 09:10:13 [INFO] prefetch_data: Fetching historical data from 2021-04-05 to 2022-04-06
-2025-07-23 09:10:13 [INFO] prefetch_data: Prefetching data for 3 specified tickers
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers: Running get_data_for_tickers() for 3 tickers from 2021-04-05 to 2022-04-06
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: End date: 2022-04-06
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [SHW]: Found cached data with 485 entries
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [SHW]: Using 94 cached trades for date range
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [ETSY]: Found cached data with 1610 entries
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [ETSY]: Using 543 cached trades for date range
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [DPZ]: Found cached data with 624 entries
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [DPZ]: Using 157 cached trades for date range
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: All tickers found in cache, no need to fetch
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [SHW]: Most recent cached trade: 2022-03-11
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [ETSY]: Most recent cached trade: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [DPZ]: Most recent cached trade: 2022-04-04
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 3 tickers from 2021-04-05 to 2022-04-06
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async: Running fetch_financial_metrics_async() for 3 tickers
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async: FINANCIAL METRICS CACHE STATS:
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async:   - From cache: 3/3 tickers (100.0%)
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async:   - Downloaded: 0/3 tickers (0.0%)
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async [SHW]: Sample cache financial metrics for SHW:
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async [SHW]: Metrics count: 2
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async [SHW]: Sample metric period: 2021-12-31
-2025-07-23 09:10:13 [DEBUG] fetch_financial_metrics_async [SHW]: Key ratios: ROE=0.764976202199245, D/E=7.479689807976366
-2025-07-23 09:10:13 [DEBUG] get_company_news: Running get_company_news() from 2021-04-05 to 2022-04-06 for 3 tickers
-2025-07-23 09:10:13 [DEBUG] get_company_news [SHW]: Using 23 cached news items from database for SHW
-2025-07-23 09:10:13 [DEBUG] get_company_news [ETSY]: Using 84 cached news items from database for ETSY
-2025-07-23 09:10:13 [DEBUG] get_company_news [DPZ]: Using 29 cached news items from database for DPZ
-2025-07-23 09:10:13 [DEBUG] get_company_news: COMPANY NEWS CACHE STATS:
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - From cache: 3/3 tickers (100.0%)
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - To download: 0/3 tickers (0.0%)
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers: --- DATA PREVIEW from get_data_for_tickers ---
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Sample data for ticker: SHW
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Prices sample:
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Prices data shape: (140, 6)
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: First row:                  open        high         low       close   volume        time
-Date                                                                          
-2021-09-17  286.56793  287.177016  283.290478  283.986572  1862100  2021-09-17
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Metrics sample:
- {'ticker': 'SHW', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 89057799775.0827, 'enterprise_value': None, 'price_to_earnings_ratio': 47.76753903404994, 'price_to_book_ratio': 36.54103059867172, 'price_to_sales_ratio': 4.465258755506889, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.021026793888118612, 'peg_ratio': None, 'gross_margin': 0.4283214504176569, 'operating_margin': 0.13360508608846505, 'net_margin': 0.09347893665453305, 'return_on_equity': 0.764976202199245, 'return_on_assets': 0.09021275772135852, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 0.8835912230090043, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': 7.479689807976366, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 7.13936139515161, 'book_value_per_share': None, 'free_cash_flow_per_share': 7.17076171881619}
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Insider trades count: 94
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Sample trade: {'ticker': 'SHW', 'issuer': 'SHERWIN WILLIAMS CO', 'name': 'Young Bryan J', 'title': 'SVP - Corp Strategy & Devel.', 'is_board_director': False, 'transaction_date': '2022-03-11', 'transaction_shares': 521.0, 'transaction_price_per_share': 136.85, 'transaction_value': 71298.84999999999, 'shares_owned_before_transaction': 7284.0, 'shares_owned_after_transaction': 7805.0, 'security_title': 'Common Stock', 'filing_date': '2022-03-11'}
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: News count: 23
-2025-07-23 09:10:13 [DEBUG] get_data_for_tickers [SHW]: Sample news: {'ticker': 'SHW', 'title': "Here's How Much You Would Have Made Owning Sherwin-Williams Stock In The Last 15 Years", 'author': 'Benzinga Insights', 'source': 'Benzinga', 'date': '2022-04-06', 'url': 'https://www.benzinga.com/news/earnings/22/04/26501357/heres-how-much-you-would-have-made-owning-sherwin-williams-stock-in-the-last-15-years', 'sentiment': 'neutral'}
-2025-07-23 09:10:13 [DEBUG] prefetch_data: === DATA FETCHED SUMMARY from prefetch_data ===
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Stock tickers: ['SHW', 'ETSY', 'DPZ']
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Bond ETFs: []
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Period: 2022-04-05 to 2022-04-06
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Data structure for SHW:
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - prices: DataFrame with 140 rows, 6 columns
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - metrics: List with 2 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - insider_trades: List with 94 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - news: List with 23 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data [SHW]: 
-Prices sample:
-                  open        high         low       close   volume        time
-Date                                                                           
-2021-09-17  286.567930  287.177016  283.290478  283.986572  1862100  2021-09-17
-2021-09-20  279.423252  283.599816  278.572496  282.081940  1101600  2021-09-20
-2021-09-21  283.735177  283.996201  280.042011  280.718750   802700  2021-09-21
-2021-09-22  282.168959  284.527943  280.834806  282.294647   812600  2021-09-22
-2021-09-23  283.599796  285.813766  282.623323  284.479584   854100  2021-09-23
-2025-07-23 09:10:13 [DEBUG] prefetch_data [SHW]: 
-Metrics sample:
- {'ticker': 'SHW', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 89057799775.0827, 'enterprise_value': None, 'price_to_earnings_ratio': 47.76753903404994, 'price_to_book_ratio': 36.54103059867172, 'price_to_sales_ratio': 4.465258755506889, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.021026793888118612, 'peg_ratio': None, 'gross_margin': 0.4283214504176569, 'operating_margin': 0.13360508608846505, 'net_margin': 0.09347893665453305, 'return_on_equity': 0.764976202199245, 'return_on_assets': 0.09021275772135852, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 0.8835912230090043, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': 7.479689807976366, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 7.13936139515161, 'book_value_per_share': None, 'free_cash_flow_per_share': 7.17076171881619}
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Data structure for ETSY:
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - prices: DataFrame with 256 rows, 6 columns
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - metrics: List with 2 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - insider_trades: List with 543 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - news: List with 84 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data [ETSY]: 
-Prices sample:
-                  open        high         low       close   volume        time
-Date                                                                           
-2021-04-05  211.990005  211.990005  196.130005  197.199997  3628800  2021-04-05
-2021-04-06  199.436005  208.570007  197.313004  206.009995  3038800  2021-04-06
-2021-04-07  204.500000  205.750000  199.274994  204.020004  2208100  2021-04-07
-2021-04-08  206.000000  216.289993  205.794998  215.389999  3606000  2021-04-08
-2021-04-09  214.240005  221.669998  212.860001  218.570007  2723500  2021-04-09
-2025-07-23 09:10:13 [DEBUG] prefetch_data [ETSY]: 
-Metrics sample:
- {'ticker': 'ETSY', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 27810222825.032593, 'enterprise_value': None, 'price_to_earnings_ratio': 56.352235783955635, 'price_to_book_ratio': 44.24018813467711, 'price_to_sales_ratio': 11.940258323565352, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.022345883523113112, 'peg_ratio': None, 'gross_margin': 0.718986704815651, 'operating_margin': 0.19996101521866255, 'net_margin': 0.21188615069936464, 'return_on_equity': 0.7850653575536215, 'return_on_assets': 0.12879217100852364, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 2.179218893155812, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': 5.095598446753916, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 3.885205252206549, 'book_value_per_share': None, 'free_cash_flow_per_share': 4.892407793105765}
-2025-07-23 09:10:13 [DEBUG] prefetch_data: Data structure for DPZ:
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - prices: DataFrame with 256 rows, 6 columns
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - metrics: List with 2 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - insider_trades: List with 157 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data:   - news: List with 29 items
-2025-07-23 09:10:13 [DEBUG] prefetch_data [DPZ]: 
-Prices sample:
-                  open        high         low       close  volume        time
-Date                                                                          
-2021-04-05  353.813774  354.525195  348.397490  352.523743  701700  2021-04-05
-2021-04-06  355.113358  364.248020  353.633603  361.098785  510000  2021-04-06
-2021-04-07  360.690865  364.219518  357.940040  362.635406  282800  2021-04-07
-2021-04-08  365.670835  367.103174  361.544583  364.172119  362200  2021-04-08
-2021-04-09  363.176194  370.347326  362.995965  370.271454  440600  2021-04-09
-2025-07-23 09:10:13 [DEBUG] prefetch_data [DPZ]: 
-Metrics sample:
- {'ticker': 'DPZ', 'calendar_date': '2021-12-31', 'report_period': '2021-12-31', 'period': 'annual', 'currency': 'USD', 'market_cap': 19454877370.792786, 'enterprise_value': None, 'price_to_earnings_ratio': 38.111919812236216, 'price_to_book_ratio': None, 'price_to_sales_ratio': 4.464817992582408, 'enterprise_value_to_ebitda_ratio': None, 'enterprise_value_to_revenue_ratio': None, 'free_cash_flow_yield': 0.028786303266078034, 'peg_ratio': None, 'gross_margin': 0.38744491233594186, 'operating_margin': 0.17910057275335392, 'net_margin': 0.11715017282201914, 'return_on_equity': -0.12126443389485207, 'return_on_assets': 0.30533683132593537, 'return_on_invested_capital': None, 'asset_turnover': None, 'inventory_turnover': None, 'receivables_turnover': None, 'days_sales_outstanding': None, 'operating_cycle': None, 'working_capital_turnover': None, 'current_ratio': 1.456712840314114, 'quick_ratio': None, 'cash_ratio': None, 'operating_cash_flow_ratio': None, 'debt_to_equity': -1.3971497096117007, 'debt_to_assets': None, 'interest_coverage': None, 'revenue_growth': None, 'earnings_growth': None, 'book_value_growth': None, 'earnings_per_share_growth': None, 'free_cash_flow_growth': None, 'operating_income_growth': None, 'ebitda_growth': None, 'payout_ratio': None, 'earnings_per_share': 14.125384464276973, 'book_value_per_share': None, 'free_cash_flow_per_share': 15.49697740121671}
-2025-07-23 09:10:13 [INFO] prefetch_data: Data pre-fetch complete.
-2025-07-23 09:10:13 [INFO] run_backtest: Starting backtest...
-2025-07-23 09:10:13 [INFO] run_backtest: Running hedge fund for 2022-04-05
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] get_price_data [SHW]: Running get_price_data() for SHW from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices [SHW]: Fetching prices for SHW from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2022-04-04 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-04 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] run_backtest [SHW]: price_df:                   open       close        high         low   volume        time
-Date                                                                           
-2022-04-04  246.368726  251.435486  251.474290  244.912761  1587500  2022-04-04
-2022-04-05  250.697809  250.396912  254.609501  249.212725  1603300  2022-04-05
-2025-07-23 09:10:13 [WARNING] run_backtest: Using fallback method for prices on prev_date: 2022-04-04 and current date: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_price_data [SHW]: Running get_price_data() for SHW from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices [SHW]: Fetching prices for SHW from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2022-04-04 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-04 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_price_data [ETSY]: Running get_price_data() for ETSY from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices [ETSY]: Fetching prices for ETSY from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2022-04-04 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-04 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] run_backtest [ETSY]: price_df:                   open       close        high         low   volume        time
-Date                                                                           
-2022-04-04  128.580002  136.169998  138.880005  126.139999  3780000  2022-04-04
-2022-04-05  135.419998  130.210007  136.869995  128.610001  3280000  2022-04-05
-2025-07-23 09:10:13 [WARNING] run_backtest: Using fallback method for prices on prev_date: 2022-04-04 and current date: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_price_data [ETSY]: Running get_price_data() for ETSY from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices [ETSY]: Fetching prices for ETSY from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2022-04-04 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-04 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_price_data [DPZ]: Running get_price_data() for DPZ from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices [DPZ]: Fetching prices for DPZ from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2022-04-04 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-04 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] run_backtest [DPZ]: price_df:                   open       close        high         low  volume        time
-Date                                                                          
-2022-04-04  380.758185  386.297363  387.311441  376.242659  586500  2022-04-04
-2022-04-05  376.931479  374.224091  385.809458  374.080565  572000  2022-04-05
-2025-07-23 09:10:13 [WARNING] run_backtest: Using fallback method for prices on prev_date: 2022-04-04 and current date: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_price_data [DPZ]: Running get_price_data() for DPZ from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices [DPZ]: Fetching prices for DPZ from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2022-04-04 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-04 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2022-04-04 to 2022-04-05
-2025-07-23 09:10:13 [INFO] run_backtest: Executing trades on 2022-04-05 00:00:00
-2025-07-23 09:10:13 [DEBUG] sentiment_agent: Accessing Sentiment Agent
-2025-07-23 09:10:13 [DEBUG] get_insider_trades [SHW]: Running get_insider_trades() to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: End date: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [SHW]: Found cached data with 485 entries
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [SHW]: Using 35 cached trades for date range
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: All tickers found in cache, no need to fetch
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [SHW]: Most recent cached trade: 2022-03-11
-2025-07-23 09:10:13 [DEBUG] get_insider_trades [SHW]: get_insider_trades received results: 35 trades
-2025-07-23 09:10:13 [DEBUG] get_company_news: Running get_company_news() from None to 2022-04-05 for 1 tickers
-2025-07-23 09:10:13 [DEBUG] get_company_news [SHW]: Using 21 cached news items from database for SHW
-2025-07-23 09:10:13 [DEBUG] get_company_news: COMPANY NEWS CACHE STATS:
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - From cache: 1/1 tickers (100.0%)
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - To download: 0/1 tickers (0.0%)
-2025-07-23 09:10:13 [DEBUG] get_insider_trades [ETSY]: Running get_insider_trades() to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: End date: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [ETSY]: Found cached data with 1610 entries
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [ETSY]: Using 45 cached trades for date range
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: All tickers found in cache, no need to fetch
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [ETSY]: Most recent cached trade: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_insider_trades [ETSY]: get_insider_trades received results: 45 trades
-2025-07-23 09:10:13 [DEBUG] get_company_news: Running get_company_news() from None to 2022-04-05 for 1 tickers
-2025-07-23 09:10:13 [DEBUG] get_company_news [ETSY]: Using 83 cached news items from database for ETSY
-2025-07-23 09:10:13 [DEBUG] get_company_news: COMPANY NEWS CACHE STATS:
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - From cache: 1/1 tickers (100.0%)
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - To download: 0/1 tickers (0.0%)
-2025-07-23 09:10:13 [DEBUG] get_insider_trades [DPZ]: Running get_insider_trades() to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: End date: 2022-04-05
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [DPZ]: Found cached data with 624 entries
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [DPZ]: Using 28 cached trades for date range
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper: All tickers found in cache, no need to fetch
-2025-07-23 09:10:13 [DEBUG] sec_edgar_scraper [DPZ]: Most recent cached trade: 2022-04-04
-2025-07-23 09:10:13 [DEBUG] get_insider_trades [DPZ]: get_insider_trades received results: 28 trades
-2025-07-23 09:10:13 [DEBUG] get_company_news: Running get_company_news() from None to 2022-04-05 for 1 tickers
-2025-07-23 09:10:13 [DEBUG] get_company_news [DPZ]: Using 27 cached news items from database for DPZ
-2025-07-23 09:10:13 [DEBUG] get_company_news: COMPANY NEWS CACHE STATS:
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - From cache: 1/1 tickers (100.0%)
-2025-07-23 09:10:13 [DEBUG] get_company_news:   - To download: 0/1 tickers (0.0%)
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: Accessing Risk Management Agent
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: Macro agent signals received: {}
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: Forward-looking agent signals received: {}
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: Combined allocation: Macro 60% stocks, Forward-looking 60% stocks, Final 60% stocks
-2025-07-23 09:10:13 [DEBUG] get_prices [SHW]: Fetching prices for SHW from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2021-10-07 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2021-10-07 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] risk_metrics: GARCH CVaR Calculation Results:
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   GARCH fitting time: 0.021 seconds
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Data points used: 124
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Expected Return: -0.0887%
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Volatility Forecast: 1.9395%
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   CVaR (95% confidence): -4.0894%
-2025-07-23 09:10:13 [DEBUG] risk_metrics: GARCH(1,1) model fitted in 0.021s for 124 data points
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: CVaR analysis for SHW:
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR (95% confidence): -4.0894%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR Risk Score: 0.2726
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: Position constraints for SHW:
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Total portfolio value: $100,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Max expected positions: 30
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Target leverage: 3.0x
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Base individual limit: 6.00%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Allocation scaling factor: 1.000
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Scaled individual limit: 6.00%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Allocation-constrained limit: $6,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR adjustment factor: 0.973
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR-adjusted limit: $5,836.42
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Current position value: $0.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Remaining position limit: $5,836.42
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Available cash: $100,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Final max position size: $5,836.42
-2025-07-23 09:10:13 [DEBUG] get_prices [ETSY]: Fetching prices for ETSY from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2021-10-07 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2021-10-07 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] risk_metrics: GARCH CVaR Calculation Results:
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   GARCH fitting time: 0.006 seconds
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Data points used: 124
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Expected Return: -0.3043%
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Volatility Forecast: 4.5433%
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   CVaR (95% confidence): -9.6757%
-2025-07-23 09:10:13 [DEBUG] risk_metrics: GARCH(1,1) model fitted in 0.006s for 124 data points
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: CVaR analysis for ETSY:
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR (95% confidence): -9.6757%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR Risk Score: 0.6450
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: Position constraints for ETSY:
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Total portfolio value: $100,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Max expected positions: 30
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Target leverage: 3.0x
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Base individual limit: 6.00%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Allocation scaling factor: 1.000
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Scaled individual limit: 6.00%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Allocation-constrained limit: $6,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR adjustment factor: 0.935
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR-adjusted limit: $5,612.97
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Current position value: $0.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Remaining position limit: $5,612.97
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Available cash: $100,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Final max position size: $5,612.97
-2025-07-23 09:10:13 [DEBUG] get_prices [DPZ]: Fetching prices for DPZ from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Running get_prices_async() for 1 tickers from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] get_prices_async: Checking if 2021-10-07 and 2022-04-05 are trading days.
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2021-10-07 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] is_trading_day: Checking if 2022-04-05 is a trading day: True
-2025-07-23 09:10:13 [DEBUG] fetch_prices_batch: Running fetch_prices_batch() for 1 tickers from 2021-10-07 to 2022-04-05
-2025-07-23 09:10:13 [DEBUG] risk_metrics: GARCH CVaR Calculation Results:
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   GARCH fitting time: 0.005 seconds
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Data points used: 124
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Expected Return: -0.1459%
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   Volatility Forecast: 2.3000%
-2025-07-23 09:10:13 [DEBUG] risk_metrics:   CVaR (95% confidence): -4.8902%
-2025-07-23 09:10:13 [DEBUG] risk_metrics: GARCH(1,1) model fitted in 0.005s for 124 data points
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: CVaR analysis for DPZ:
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR (95% confidence): -4.8902%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR Risk Score: 0.3260
-2025-07-23 09:10:13 [DEBUG] risk_management_agent: Position constraints for DPZ:
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Total portfolio value: $100,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Max expected positions: 30
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Target leverage: 3.0x
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Base individual limit: 6.00%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Allocation scaling factor: 1.000
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Scaled individual limit: 6.00%
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Allocation-constrained limit: $6,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR adjustment factor: 0.967
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   CVaR-adjusted limit: $5,804.39
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Current position value: $0.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Remaining position limit: $5,804.39
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Available cash: $100,000.00
-2025-07-23 09:10:13 [DEBUG] risk_management_agent:   Final max position size: $5,804.39
-2025-07-23 09:10:13 [DEBUG] equity_agent: Accessing Equity Agent
-Error in LLM call after 5 attempts: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
- ✓ Sentiment           [DPZ] Done                                               
- ✓ Risk Management     [DPZ] Done                                               
- ✓ Equity              [DPZ] Done                                               2025-07-23 09:10:27 [DEBUG] run_backtest: Agent decisions for 2022-04-05:
-2025-07-23 09:10:27 [DEBUG] run_backtest [SHW]:   SHW: hold 0 shares
-2025-07-23 09:10:27 [DEBUG] run_backtest [ETSY]:   ETSY: hold 0 shares
-2025-07-23 09:10:27 [DEBUG] run_backtest [DPZ]:   DPZ: hold 0 shares
-2025-07-23 09:10:27 [INFO] run_backtest: Current positions - Stocks: 0/30, Bonds: 0, Total: 0
-2025-07-23 09:10:27 [INFO] position_debug: Tickers with analyst signals: 3/3
-2025-07-23 09:10:27 [DEBUG]: Collecting episode for date: 2022-04-05
-2025-07-23 09:10:27 [DEBUG]: Episode collected for 2022-04-05. Total episodes: 1
-2025-07-23 09:10:27 [DEBUG]: Episode saved to: test_training_data/episodes/episode_2022-04-05.json
-2025-07-23 09:10:27 [DEBUG]: Collected training episode for 2022-04-05 with return: 0.0000
-
-PORTFOLIO SUMMARY:
-Cash Balance: $100,000.00
-Total Position Value: $0.00
-Total Value: $100,000.00
-Return: +0.00%
-
-
-
-❌ Backtester test failed: list assignment index out of range

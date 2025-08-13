@@ -18,7 +18,15 @@ This system employs several agents working together:
 10. Forward-Looking Agent - Analyzes future market outlook and trends
 11. Fixed-Income Agent - Makes trading decisions for bond ETFs and fixed-income securities
 
-![Multi-Agent System Architecture](images/Workflow_Image.jpg)
+## Workflow Architecture
+
+### Standard Workflow
+![Standard Workflow](images/standard_workflow.png)
+
+### Optimized Workflow
+![Optimized Workflow](images/optimized_workflow.png)
+
+**Note:** The optimized workflow is activated when screening mode is enabled and all six stock analyst agents (coloured yellow) are selected.
 
 
 **Note**: the system simulates trading decisions, it does not actually trade.
@@ -50,7 +58,7 @@ By using this software, you agree to use it solely for learning purposes.
 
 ### Option 1: Download ZIP File
 1. Download and extract the ZIP file to your desired location
-2. Navigate to the extracted directory
+2. Navigate to the mas-hedge-fund directory
 
 ### Option 2: Clone from GitHub
 ```bash
@@ -80,13 +88,13 @@ cp .env.example .env
 
 4. Set your API keys in the .env file:
 ```bash
-# For running LLMs hosted by openai (gpt-4o, gpt-4o-mini, etc.)
-# Get your OpenAI API key from https://platform.openai.com/
-OPENAI_API_KEY=your-openai-api-key
-
 # For running LLMs hosted by groq (deepseek, llama3, etc.)
 # Get your Groq API key from https://groq.com/
 GROQ_API_KEY=your-groq-api-key
+
+# For running LLMs hosted by openai (gpt-4o, gpt-4o-mini, etc.)
+# Get your OpenAI API key from https://platform.openai.com/
+OPENAI_API_KEY=your-openai-api-key
 
 # For running LLMs hosted by anthropic (claude-3-5-sonnet, claude-3-opus, claude-3-5-haiku)
 # Get your Anthropic API key from https://anthropic.com/
@@ -94,13 +102,15 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 ```
 
 **Important API Key Notes:**
-- You must set `OPENAI_API_KEY`, `GROQ_API_KEY`, or `ANTHROPIC_API_KEY` for the hedge fund to work
+- You must set `GROQ_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` for the hedge fund to work
 - **For backtesting**: A premium Groq API key is recommended for running the full backtest period (~$5 cost)
+- **For Groq users**: The "llama-4-scout-17b" model is recommended due to favorable token per minute and request per day limits. See [Groq rate limits documentation](https://console.groq.com/docs/rate-limits) for details.
+- **For free Groq API keys**: Consider reducing batch sizes in the Warren Buffett agent, Bill Ackman agent, and Equity agent to stay within rate limits
 - Financial data for AAPL, GOOGL, MSFT, NVDA, and TSLA is free and does not require an API key
 
 ### GitHub Users: Prefetch Data (Recommended)
 
-**GitHub users only:** It's recommended to run the prefetch scripts first to properly set up the caches:
+**GitHub users only:** It's recommended to run the prefetch scripts first to properly set up the caches. If you downloaded the multi-agent system hedge fund using the zip file the data is already available in the databases.
 
 ```bash
 # Navigate to the prefetch_data directory
@@ -119,6 +129,19 @@ poetry run python prefetch_company_news.py
 
 **Important:** Creating the company news database requires a premium Alpha Vantage API key due to API request limits. ZIP file users can skip this as the databases are pre-populated.
 
+**Troubleshooting:** If you encounter price-related errors (especially index out of bounds), run `prefetch_prices.py` to fix corrupted cache data.
+
+#### First-Time Data Prefetching
+
+**Note:** When prefetching data for the first time, the process can take several minutes and you may see error messages. This is normal and expected due to the following reasons:
+
+1. **Tickers not yet listed** - Some tickers may not have been publicly traded during the requested time period
+2. **Missing financial statements** - Financial statements may not be available for certain tickers or time periods
+3. **Empty financial statement line items** - Some financial statements may exist but contain empty or null values for specific line items
+4. **Different financial statement structures** - Financial companies (banks, insurance companies) have different financial statement formats and may not contain standard line items expected for other industries
+
+It was decided not to suppress errors and warnings for the sake of transparency. The prefetching process will continue and successfully cache all available data.
+
 ### File Descriptor Limit (Precautionary Measure)
 
 As a precautionary measure, it's recommended to increase the file descriptor limit before running backtests or data processing operations. This prevents potential file descriptor limit errors when the operating system reduces available descriptors during intensive operations.
@@ -135,42 +158,23 @@ ulimit -n 4096
 
 ## Usage
 
+### Performance Notes
+
+**First Run of the Day**: The first execution of `src/main.py` or `src/backtester.py` each day will take significantly longer as the system updates data caches with the most recent information (insider trades, company news, etc.). Subsequent runs on the same day are much faster as they use the cached data.
+
 ### Running the Hedge Fund
+
+The hedge fund analyzes stocks and provides investment recommendations for a specific date (defaults to today).
+
 ```bash
-# Analyze specific tickers
+# Analyze specific tickers for today
 poetry run python src/main.py --tickers AAPL,MSFT,NVDA
+
+# Analyze for a specific date
+poetry run python src/main.py --tickers AAPL,MSFT,NVDA --end-date 2024-08-10
 
 # Screen all S&P 500 tickers
 poetry run python src/main.py --screen
-```
-
-**Example Output:**
-<img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
-
-#### Complete CLI Options for main.py
-```bash
-poetry run python src/main.py [OPTIONS]
-
-Options:
-  --tickers TICKERS             Comma-separated list of stock ticker symbols
-  --screen                      Screen all S&P 500 tickers instead of specifying individual tickers
-  --start-date START_DATE       Start date (YYYY-MM-DD). Defaults to 3 months before end date
-  --end-date END_DATE           End date (YYYY-MM-DD). Defaults to today
-  --initial-cash INITIAL_CASH   Initial cash position (default: 100000.0)
-  --margin-requirement MARGIN   Initial margin requirement (default: 0.0)
-  --show-reasoning              Show reasoning from each agent
-  --show-agent-graph            Show the agent graph
-  --debug                       Enable debug mode with detailed logging
-  --verbose-data                Show detailed data output (works with debug mode)
-```
-
-#### Examples
-```bash
-# Basic analysis with reasoning
-poetry run python src/main.py --tickers AAPL,MSFT,NVDA --show-reasoning
-
-# Analyze specific time period
-poetry run python src/main.py --tickers AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01
 
 # Screen all S&P 500 stocks with custom cash amount
 poetry run python src/main.py --screen --initial-cash 50000 --show-reasoning
@@ -179,19 +183,47 @@ poetry run python src/main.py --screen --initial-cash 50000 --show-reasoning
 poetry run python src/main.py --tickers TSLA,GOOGL --debug --verbose-data
 ```
 
+
+#### Complete CLI Options for main.py
+```bash
+poetry run python src/main.py [OPTIONS]
+
+Options:
+  --tickers TICKERS             Comma-separated list of stock ticker symbols
+  --screen                      Screen all S&P 500 tickers instead of specifying individual tickers
+  --end-date END_DATE           Analysis date for investment recommendations (YYYY-MM-DD). Defaults to today
+  --initial-cash INITIAL_CASH   Initial cash position (default: 100000.0)
+  --margin-requirement MARGIN   Initial margin requirement (default: 0.0)
+  --show-reasoning              Show reasoning from each agent
+  --show-agent-graph            Show the agent graph
+  --debug                       Enable debug mode with detailed logging
+  --verbose-data                Show detailed data output (works with debug mode)
+```
+
+
 ### Running the Backtester
 
 #### Basic Usage
 ```bash
-# Backtest specific tickers
+# Thesis results reproduction command (used to generate and gather results)
+poetry run python src/backtester.py --screen --start-date 2022-04-01 --end-date 2025-06-30 --export-returns
+
+# Backtest specific tickers (the default is backtesting the last month)
 poetry run python src/backtester.py --tickers AAPL,MSFT,NVDA
 
 # Backtest all S&P 500 tickers
 poetry run python src/backtester.py --screen
-```
 
-**Example Output:**
-<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
+# Basic backtest with return export and LSTM training data collection
+poetry run python src/backtester.py --tickers AAPL,MSFT,NVDA --export-returns --collect-training-data --training-data-format json
+
+# Backtest specific period with custom settings
+poetry run python src/backtester.py --tickers AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 --initial-capital 50000
+
+# Full backtest with all options
+poetry run python src/backtester.py --tickers AAPL,MSFT,GOOGL,TSLA --start-date 2023-01-01 --end-date 2024-12-31 --initial-capital 100000 --max-positions 20 --transaction-cost 0.001 --export-returns --debug
+
+```
 
 #### Complete CLI Options for backtester.py
 ```bash
@@ -214,23 +246,6 @@ Options:
   --training-data-format FORMAT        Format for storing training data: json or pickle (default: json)
 ```
 
-#### Examples
-```bash
-# Basic backtest with return export
-poetry run python src/backtester.py --tickers AAPL,MSFT,NVDA --export-returns
-
-# Backtest specific period with custom settings
-poetry run python src/backtester.py --tickers AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 --initial-capital 50000
-
-# Backtest with training data collection
-poetry run python src/backtester.py --screen --collect-training-data --training-data-format json
-
-# Full backtest with all options
-poetry run python src/backtester.py --tickers AAPL,MSFT,GOOGL,TSLA --start-date 2023-01-01 --end-date 2024-12-31 --initial-capital 100000 --max-positions 20 --transaction-cost 0.001 --export-returns --debug
-
-# Thesis data collection (used to generate research results)
-poetry run python src/backtester.py --screen --start-date 2022-04-01 --end-date 2025-06-30 --export-returns
-```
 
 ### Running the LSTM Backtest
 
@@ -242,32 +257,15 @@ The LSTM backtest uses pre-trained machine learning models to make trading decis
 
 #### Usage
 ```bash
-poetry run python run_lstm_backtest.py [OPTIONS]
-
-Options:
-  --data-dir DATA_DIR              Directory containing episode JSON files (default: training_data/episodes)
-  --models-dir MODELS_DIR          Directory containing pre-trained models (default: models/walkforward)
-  --output-dir OUTPUT_DIR          Directory to save results (default: results/lstm_backtest)
-  --initial-capital CAPITAL        Initial portfolio capital (default: 100000.0)
-  --initial-train-size SIZE        Initial training episodes (default: 250)
-  --retrain-frequency FREQ         Retrain frequency in episodes (default: 21)
-  --max-positions MAX              Maximum number of positions (default: 30)
-  --transaction-cost COST          Transaction cost as percentage (default: 0.0005)
-  --sequence-length LENGTH         LSTM sequence length (default: 20)
-  --debug                          Enable debug logging
-  --export-csv                     Export results to CSV for benchmarking
+poetry run python src/rl/backtesting/lstm_backtest.py
 ```
 
-#### Examples
+**Note**: The LSTM backtest currently uses hardcoded parameters (100k initial capital, 250 initial training episodes, 30 max positions, 0.0005 transaction cost). This ensures comparability to the backtest that ran with the Equity agent that used a LLM. To customize these parameters, you would need to modify the values in the `main()` function of the script.
+
+#### Example
 ```bash
-# Basic LSTM backtest (requires pre-trained models)
-poetry run python run_lstm_backtest.py --export-csv
-
-# LSTM backtest with custom parameters
-poetry run python run_lstm_backtest.py --initial-capital 50000 --max-positions 20 --debug
-
-# LSTM backtest with specific data directories
-poetry run python run_lstm_backtest.py --data-dir training_data/episodes --models-dir src/rl/trained_models --output-dir results/my_lstm_test
+# Run LSTM backtest with default parameters
+poetry run python src/rl/backtesting/lstm_backtest.py
 ```
 
 ## Project Structure 

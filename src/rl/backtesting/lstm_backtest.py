@@ -264,7 +264,8 @@ class LSTMWalkForwardBacktester:
         logger.info(f"Found {len(all_historical_tickers)} historical consensus tickers for portfolio initialization")
         
         # Use historical tickers for portfolio engine initialization (to handle existing positions)
-        all_tickers = all_historical_tickers
+        # Always include bond ETFs even if they don't appear in risk management data
+        all_tickers = sorted(list(set(all_historical_tickers + ["SHY", "TLT"])))
         
         # Initialize portfolio engine
         portfolio_engine = PortfolioEngine(
@@ -360,6 +361,22 @@ class LSTMWalkForwardBacktester:
                 risk_limits=risk_limits  
             )
             
+            # Extract bond ETF decisions from episode LLM decisions (fixed income agent allocation)
+            bond_etf_decisions = {}
+            for bond_etf in ["SHY", "TLT"]:
+                if bond_etf in episode.llm_decisions and bond_etf in execution_prices:
+                    bond_decision = episode.llm_decisions[bond_etf]
+                    bond_etf_decisions[bond_etf] = {
+                        'action': bond_decision.action,
+                        'quantity': bond_decision.quantity,
+                        'confidence': bond_decision.confidence,
+                        'reasoning': bond_decision.reasoning
+                    }
+                    logger.debug(f"Bond ETF decision for {bond_etf}: {bond_decision.action} {bond_decision.quantity} shares")
+            
+            # Combine LSTM decisions with bond ETF decisions
+            all_decisions = {**lstm_decisions, **bond_etf_decisions}
+            
             # Execute trades using portfolio engine (execution_prices already defined above)
             executed_trades = {}
             
@@ -386,8 +403,8 @@ class LSTMWalkForwardBacktester:
                             executed_trades[ticker] = executed_qty
                             logger.info(f"Closed short position: covered {executed_qty} shares of {ticker}")
             
-            # Then execute LSTM decisions for current episode consensus tickers
-            for ticker, decision in lstm_decisions.items():
+            # Then execute all decisions (LSTM + bond ETF decisions)
+            for ticker, decision in all_decisions.items():
                 if ticker in execution_prices:
                     # Handle position limits like the main backtester
                     action = decision['action']
@@ -396,6 +413,7 @@ class LSTMWalkForwardBacktester:
                     # Validate quantity against risk management limits (remaining_position_limit is in dollars)
                     # NOTE: During episode data collection, remaining_position_limit was effectively an absolute 
                     # position limit due to a bug in risk_manager.py that always returned 0 for current_position_value
+                    # Bond ETFs don't have risk limits, so skip this validation for them
                     if ticker in risk_limits and action in ['buy', 'short'] and quantity > 0:
                         remaining_limit = risk_limits[ticker].get('remaining_position_limit', 0.0)  # Dollar limit
                         current_price = execution_prices[ticker]
@@ -427,12 +445,12 @@ class LSTMWalkForwardBacktester:
                             continue
                     
                     if action in ['buy', 'short'] and quantity > 0:
-                        # Check position limits
+                        # Check position limits (bond ETFs don't count toward position limits)
                         existing_position = portfolio_engine.portfolio["positions"][ticker]
                         has_existing_position = existing_position["long"] > 0 or existing_position["short"] > 0
                         
-                        if not has_existing_position:
-                            # Check if we should open new position
+                        if not has_existing_position and ticker not in portfolio_engine.bond_etfs:
+                            # Check if we should open new position (only for non-bond ETFs)
                             signal_strength = portfolio_engine.calculate_signal_strength(
                                 episode.agent_signals, ticker
                             )
@@ -463,6 +481,12 @@ class LSTMWalkForwardBacktester:
                                 )
                                 executed_trades[ticker] = executed_qty
                             # else: position limit reached, don't trade
+                        elif ticker in portfolio_engine.bond_etfs:
+                            # Bond ETFs always execute (no position limits)
+                            executed_qty = portfolio_engine.execute_trade(
+                                ticker, action, quantity, execution_prices[ticker]
+                            )
+                            executed_trades[ticker] = executed_qty
                         else:
                             # Existing position, execute normally
                             executed_qty = portfolio_engine.execute_trade(
@@ -495,8 +519,12 @@ class LSTMWalkForwardBacktester:
             analyst_signals = episode.agent_signals
             
             # Create table rows for tickers with positions or trading activity
-            # Include: current consensus tickers + any tickers that had trades executed
+            # Include: current consensus tickers + bond ETFs + any tickers that had trades executed
             all_relevant_tickers = set(available_consensus_tickers)
+            # Always include bond ETFs if they have data
+            for bond_etf in ["SHY", "TLT"]:
+                if bond_etf in execution_prices and bond_etf in evaluation_prices:
+                    all_relevant_tickers.add(bond_etf)
             
             # Add tickers with current positions
             for ticker, position in portfolio_engine.portfolio["positions"].items():
@@ -528,12 +556,12 @@ class LSTMWalkForwardBacktester:
                     position_return_pct = ((position["short_cost_basis"] - evaluation_prices[ticker]) / position["short_cost_basis"]) * 100
                 
                 # Get action and executed quantity
-                decision = lstm_decisions.get(ticker, {})
+                decision = all_decisions.get(ticker, {})
                 quantity = executed_trades.get(ticker, 0)
                 
-                # Determine action - could be from LSTM decision or legacy position closure
-                if ticker in lstm_decisions:
-                    action = decision.get("action", "hold")
+                # Determine action - could be from LSTM decision, bond ETF decision, or legacy position closure
+                if ticker in all_decisions:
+                    action = all_decisions[ticker].get("action", "hold")
                 elif quantity != 0:
                     # This was a legacy position closure (not in current episode consensus)
                     if quantity > 0:
@@ -614,6 +642,8 @@ class LSTMWalkForwardBacktester:
                 'portfolio_value_after': portfolio_value_after,
                 'daily_return': daily_return,
                 'lstm_decisions': lstm_decisions,
+                'bond_etf_decisions': bond_etf_decisions,
+                'all_decisions': all_decisions,
                 'executed_trades': executed_trades,
                 'llm_return': episode.portfolio_return,  # For comparison
                 'table_rows': date_rows  # Include table data in results

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Prefetch historical price data for filtered S&P 500 tickers and populate the cache.
-This script downloads price data from 2021-04-01 (or earliest available) to 2025-07-01.
+This script downloads price data from 2021-04-01 (or earliest available) to today's date.
 """
 import yfinance as yf
 import pandas as pd
@@ -35,8 +35,10 @@ def yfinance_to_cache_format(hist_df, ticker):
             continue
     return cache_data
 
-def prefetch_ticker_prices(ticker, start_date="2021-04-01", end_date="2025-07-01"):
+def prefetch_ticker_prices(ticker, start_date="2021-04-01", end_date=None):
     """Prefetch price data for a single ticker"""
+    if end_date is None:
+        end_date = datetime.now().strftime('%Y-%m-%d')
     try:
         logger.info(f"Fetching data for {ticker}...")
         stock = yf.Ticker(ticker)
@@ -104,7 +106,7 @@ def main():
     # Summary
     logger.info(f"Prefetch completed: {successful} successful, {failed} failed")
     logger.info(f"Stocks processed: {len(tickers)}, Bond ETFs processed: {len(bond_etfs)}")
-    logger.info(f"Price data cached for date range 2021-04-01 to 2025-07-01 (or earliest available)")
+    logger.info(f"Price data cached for date range 2021-04-01 to {datetime.now().strftime('%Y-%m-%d')} (or earliest available)")
 
 if __name__ == "__main__":
     main()

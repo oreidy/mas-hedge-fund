@@ -86,7 +86,7 @@ def bill_ackman_agent(state: AgentState):
         
         # Validate that we have actual data
         if not financial_line_items:
-            logger.warning(f"bill_ackman_agent: No financial line items returned for {ticker} - may lack sufficient historical data", module="bill_ackman_agent")
+            logger.warning(f"bill_ackman_agent: No financial line items returned for {ticker} - may lack sufficient historical data", module="bill_ackman_agent", ticker=ticker)
             analysis_data[ticker] = {
                 "signal": "neutral", 
                 "score": 0,
@@ -381,7 +381,6 @@ def analyze_business_quality(metrics: list, financial_line_items: list, verbose_
         logger.debug(f"analyze_business_quality: score from fcf and op margin: {score}", module="bill_ackman_agent", ticker=ticker)
     
     # 3. Return on Equity (ROE) check from the latest metrics
-    # (If you want multi-period ROE, you'd need that in financial_line_items as well.)
     latest_metrics = metrics[0]
     if latest_metrics.return_on_equity is None:
         logger.warning(f"ROE data not available in metrics", 
@@ -549,7 +548,7 @@ def analyze_valuation(financial_line_items: list, market_cap: float, verbose_dat
     latest = financial_line_items[0]  
     fcf = latest.free_cash_flow if latest.free_cash_flow else 0
     
-    # For demonstration, let's do a naive approach:
+    # Assumptions
     growth_rate = 0.06
     discount_rate = 0.10
     terminal_multiple = 15

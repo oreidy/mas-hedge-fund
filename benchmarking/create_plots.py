@@ -58,6 +58,12 @@ def load_mas_hedge_fund_data():
                 display_name = 'MAS1'
             elif run_name.startswith('20250731'):
                 display_name = 'MAS2'
+            elif run_name.startswith('20250805'):
+                display_name = 'MAS3'
+            elif run_name.startswith('20250806'):
+                display_name = 'MAS4'
+            elif run_name.startswith('20250808'):
+                display_name = 'MAS5'
             else:
                 display_name = f'MAS_{run_name}'
             
@@ -67,6 +73,23 @@ def load_mas_hedge_fund_data():
             print(f"Error loading {file}: {e}")
     
     return hedge_fund_runs
+
+
+def load_lstm_walk_forward_data():
+    """Load LSTM walk-forward return data."""
+    data_dir = "benchmarking/data"
+    lstm_file = "lstm_walkforward_returns_20250811_095230.csv"
+    
+    try:
+        lstm_returns = pd.read_csv(os.path.join(data_dir, lstm_file), index_col=0, parse_dates=True).iloc[:, 0]
+        print(f"Loaded LSTM walk-forward data: {len(lstm_returns)} observations from {lstm_returns.index.min()} to {lstm_returns.index.max()}")
+        return lstm_returns
+    except FileNotFoundError:
+        print(f"LSTM walk-forward data file not found: {lstm_file}")
+        return None
+    except Exception as e:
+        print(f"Error loading LSTM walk-forward data: {e}")
+        return None
 
 
 def calculate_excess_returns(returns, daily_rf_rate):
@@ -125,8 +148,8 @@ def plot_mas_runs_comparison(mas_data, daily_rf_rate, save_path=None):
     """
     plt.figure(figsize=(10, 6))
     
-    # LaTeX-style colors: darker blue and red for MAS runs
-    mas_colors = ["#0050a0", "#a30000", '#006400', '#4b0082']  # Dark blue, dark red, dark green, dark purple
+    # LaTeX-style colors: more differentiable colors for MAS runs
+    mas_colors = ["#0050a0", "#a30000", '#228B22', '#2F0040', '#FF8C00']  # Dark blue, dark red, brighter green, darker purple, dark orange
     
     for i, (run_name, returns) in enumerate(mas_data.items()):
         # Calculate excess returns
@@ -166,9 +189,130 @@ def plot_mas_runs_comparison(mas_data, daily_rf_rate, save_path=None):
     plt.close()  # Close figure to free memory
 
 
+def plot_lstm_comparison(benchmark_data, mas_data, lstm_data, daily_rf_rate, save_path=None):
+    """
+    Create a plot comparing benchmarks and MAS hedge fund runs with LSTM walk-forward model.
+    Date alignment starts from the LSTM data start date for fair comparison.
+    
+    Args:
+        benchmark_data: Dictionary of benchmark returns
+        mas_data: Dictionary of MAS hedge fund returns
+        lstm_data: LSTM walk-forward returns series
+        daily_rf_rate: Daily risk-free rate series
+        save_path: Optional path to save the plot
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Find LSTM start date for alignment
+    lstm_start_date = lstm_data.index.min()
+    print(f"Aligning all data to LSTM start date: {lstm_start_date}")
+    
+    # Align all data to start from LSTM start date
+    all_data = {**benchmark_data, **mas_data}
+    aligned_data = {}
+    for name, series in all_data.items():
+        aligned_series = series[series.index >= lstm_start_date]
+        aligned_data[name] = aligned_series
+        print(f"  {name}: {len(aligned_series)} observations from {aligned_series.index.min()} to {aligned_series.index.max()}")
+    
+    # Also align LSTM data (should be unchanged but for consistency)
+    aligned_lstm = lstm_data[lstm_data.index >= lstm_start_date]
+    print(f"  LSTM: {len(aligned_lstm)} observations from {aligned_lstm.index.min()} to {aligned_lstm.index.max()}")
+    
+    # Split back into benchmarks and MAS data
+    aligned_benchmarks = {k: v for k, v in aligned_data.items() if k in benchmark_data}
+    aligned_mas = {k: v for k, v in aligned_data.items() if k in mas_data}
+    
+    # LaTeX-style color scheme with better contrast for benchmarks
+    benchmark_colors = ["#2e2e2e", "#747474", "#A6A6A6"]  # Darker gray, medium gray, lighter gray
+    benchmark_styles = ['-', '-', '-']  # Solid lines for benchmarks
+    
+    # Plot benchmarks with different line styles and better contrast
+    for i, (bench_name, returns) in enumerate(aligned_benchmarks.items()):
+        excess_returns = calculate_excess_returns(returns, daily_rf_rate)
+        cumulative = calculate_cumulative_returns(excess_returns, start_value=100)
+        
+        plt.plot(cumulative.index, cumulative.values, 
+                label=bench_name, linewidth=1.5, 
+                linestyle=benchmark_styles[i % len(benchmark_styles)],
+                color=benchmark_colors[i % len(benchmark_colors)])
+    
+    # Calculate MAS band statistics (mean and std deviation)
+    if aligned_mas:
+        # Calculate cumulative returns for all MAS runs
+        mas_cumulative_series = []
+        common_dates = None
+        
+        for run_name, returns in aligned_mas.items():
+            excess_returns = calculate_excess_returns(returns, daily_rf_rate)
+            cumulative = calculate_cumulative_returns(excess_returns, start_value=100)
+            
+            if common_dates is None:
+                common_dates = cumulative.index
+            else:
+                # Find intersection of dates
+                common_dates = common_dates.intersection(cumulative.index)
+            
+            mas_cumulative_series.append(cumulative)
+        
+        # Align all MAS series to common dates and create DataFrame
+        mas_df = pd.DataFrame()
+        for i, series in enumerate(mas_cumulative_series):
+            mas_df[f'run_{i}'] = series.reindex(common_dates)
+        
+        # Calculate mean and standard deviation across runs
+        mas_mean = mas_df.mean(axis=1)
+        mas_std = mas_df.std(axis=1)
+        
+        # Plot MAS band
+        mas_color = "#0050a0"  # Dark blue
+        plt.plot(mas_mean.index, mas_mean.values, 
+                label='MAS Average', linewidth=2, color=mas_color)
+        
+        # Add standard deviation band
+        plt.fill_between(mas_mean.index, 
+                        mas_mean - mas_std, 
+                        mas_mean + mas_std,
+                        alpha=0.3, color=mas_color, label='MAS ±1σ')
+    
+    # Plot LSTM walk-forward model in red
+    lstm_excess_returns = calculate_excess_returns(aligned_lstm, daily_rf_rate)
+    lstm_cumulative = calculate_cumulative_returns(lstm_excess_returns, start_value=100)
+    
+    plt.plot(lstm_cumulative.index, lstm_cumulative.values, 
+            label='LSTM Walk-Forward', linewidth=2, color='#a30000')  # Red
+    
+    # LaTeX-style formatting
+    plt.xlabel('Date', fontsize=12, color='black')
+    plt.ylabel('Cumulative Excess Returns (Base = 100)', fontsize=12, color='black')
+    plt.legend(loc='upper left', fontsize=11, frameon=True, fancybox=False, edgecolor='black')
+    plt.grid(True, alpha=0.3, color='gray')
+    
+    # Make axes black
+    ax = plt.gca()
+    ax.spines['bottom'].set_color('black')
+    ax.spines['top'].set_color('black')
+    ax.spines['right'].set_color('black')
+    ax.spines['left'].set_color('black')
+    ax.tick_params(colors='black', which='both')
+    ax.xaxis.label.set_color('black')
+    ax.yaxis.label.set_color('black')
+    
+    plt.tight_layout()
+    
+    # Format x-axis to show years
+    plt.gca().tick_params(axis='x', rotation=45)
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {save_path}")
+    
+    plt.close()  # Close figure to free memory
+
+
 def plot_benchmarks_vs_mas(benchmark_data, mas_data, daily_rf_rate, save_path=None):
     """
-    Create a plot comparing benchmarks with MAS hedge fund runs.
+    Create a plot comparing benchmarks with MAS hedge fund runs (as a band with mean and std deviation).
     
     Args:
         benchmark_data: Dictionary of benchmark returns
@@ -189,7 +333,6 @@ def plot_benchmarks_vs_mas(benchmark_data, mas_data, daily_rf_rate, save_path=No
     # LaTeX-style color scheme with better contrast for benchmarks
     benchmark_colors = ["#2e2e2e", "#747474", "#A6A6A6"]  # Darker gray, medium gray, lighter gray
     benchmark_styles = ['-', '-', '-']  # Solid, dash-dot, dotted for better distinction
-    mas_colors = ["#0050a0", "#a30000"]  # Dark blue, dark red for MAS runs
     
     # Plot benchmarks with different line styles and better contrast
     for i, (bench_name, returns) in enumerate(aligned_benchmarks.items()):
@@ -201,14 +344,43 @@ def plot_benchmarks_vs_mas(benchmark_data, mas_data, daily_rf_rate, save_path=No
                 linestyle=benchmark_styles[i % len(benchmark_styles)],
                 color=benchmark_colors[i % len(benchmark_colors)])
     
-    # Plot MAS runs with solid lines
-    for i, (run_name, returns) in enumerate(aligned_mas.items()):
-        excess_returns = calculate_excess_returns(returns, daily_rf_rate)
-        cumulative = calculate_cumulative_returns(excess_returns, start_value=100)
+    # Calculate MAS band statistics (mean and std deviation)
+    if aligned_mas:
+        # Calculate cumulative returns for all MAS runs
+        mas_cumulative_series = []
+        common_dates = None
         
-        plt.plot(cumulative.index, cumulative.values, 
-                label=run_name, linewidth=2,
-                color=mas_colors[i % len(mas_colors)])
+        for run_name, returns in aligned_mas.items():
+            excess_returns = calculate_excess_returns(returns, daily_rf_rate)
+            cumulative = calculate_cumulative_returns(excess_returns, start_value=100)
+            
+            if common_dates is None:
+                common_dates = cumulative.index
+            else:
+                # Find intersection of dates
+                common_dates = common_dates.intersection(cumulative.index)
+            
+            mas_cumulative_series.append(cumulative)
+        
+        # Align all MAS series to common dates and create DataFrame
+        mas_df = pd.DataFrame()
+        for i, series in enumerate(mas_cumulative_series):
+            mas_df[f'run_{i}'] = series.reindex(common_dates)
+        
+        # Calculate mean and standard deviation across runs
+        mas_mean = mas_df.mean(axis=1)
+        mas_std = mas_df.std(axis=1)
+        
+        # Plot MAS band
+        mas_color = "#0050a0"  # Dark blue
+        plt.plot(mas_mean.index, mas_mean.values, 
+                label='MAS Average', linewidth=2, color=mas_color)
+        
+        # Add standard deviation band
+        plt.fill_between(mas_mean.index, 
+                        mas_mean - mas_std, 
+                        mas_mean + mas_std,
+                        alpha=0.3, color=mas_color, label='MAS ±1σ')
     
     # LaTeX-style formatting
     plt.xlabel('Date', fontsize=12, color='black')
@@ -239,7 +411,7 @@ def plot_benchmarks_vs_mas(benchmark_data, mas_data, daily_rf_rate, save_path=No
 
 
 def main():
-    """Main function to create both plots."""
+    """Main function to create all three plots."""
     print("Loading data...")
     
     # Load risk-free rate
@@ -259,7 +431,14 @@ def main():
         print("Error: Could not load MAS hedge fund data.")
         return
     
+    # Load LSTM walk-forward data
+    lstm_data = load_lstm_walk_forward_data()
+    if lstm_data is None:
+        print("Warning: Could not load LSTM walk-forward data. Skipping LSTM comparison plot.")
+    
     print(f"Loaded {len(benchmark_data)} benchmarks and {len(mas_data)} MAS runs.")
+    if lstm_data is not None:
+        print(f"Loaded LSTM walk-forward data with {len(lstm_data)} observations.")
     
     # Create output directory if it doesn't exist
     output_dir = "benchmarking/plots"
@@ -281,6 +460,17 @@ def main():
         daily_rf_rate, 
         save_path=os.path.join(output_dir, "benchmarks_vs_mas.png")
     )
+    
+    # Generate Plot 3: LSTM comparison (if LSTM data is available)
+    if lstm_data is not None:
+        print("\nGenerating Plot 3: LSTM Walk-Forward vs Benchmarks and MAS...")
+        plot_lstm_comparison(
+            benchmark_data, 
+            mas_data, 
+            lstm_data,
+            daily_rf_rate, 
+            save_path=os.path.join(output_dir, "lstm_comparison.png")
+        )
     
     print("\nPlot generation completed!")
 

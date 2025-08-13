@@ -105,8 +105,13 @@ def risk_management_agent(state: AgentState):
             
         current_prices[ticker] = current_price  # Store the current price
 
-        # Calculate current position value for this ticker
-        current_position_value = portfolio.get("cost_basis", {}).get(ticker, 0)
+        # Calculate current position value for this ticker 
+        position = portfolio.get("positions", {}).get(ticker, {})
+        long_shares = position.get("long", 0)
+        short_shares = position.get("short", 0)
+        
+        # Use absolute value for risk calculation - both long and short positions consume risk budget
+        current_position_value = abs((long_shares * current_price) - (short_shares * current_price))
 
         # Calculate total portfolio value using stored prices
         total_portfolio_value = portfolio.get("cash", 0) + sum(portfolio.get("cost_basis", {}).get(t, 0) for t in portfolio.get("cost_basis", {}))

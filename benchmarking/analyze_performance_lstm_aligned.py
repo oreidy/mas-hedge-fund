@@ -35,9 +35,9 @@ def load_fama_french_factors(factor_type="3factor"):
         print(f"Warning: Could not load {factor_type} Fama-French factors: {e}")
         return None
 
-def create_stargazer_table(regressions, factor_type, run_names, output_file="fama_french_results.tex"):
+def create_stargazer_table_lstm_aligned(regressions, factor_type, run_names, output_file="fama_french_results_lstm_aligned.tex"):
     """
-    Create a LaTeX table using stargazer for Fama-French regression results.
+    Create a LaTeX table using stargazer for Fama-French regression results aligned to LSTM period.
     
     Args:
         regressions: List of fitted statsmodels regression models
@@ -147,33 +147,35 @@ def create_stargazer_table(regressions, factor_type, run_names, output_file="fam
         if line.strip() == '\\end{table}':
             # Add caption before \end{table}
             if factor_type == "3factor":
-                caption = ("\\caption[Fama-French 3-Factor Model Results]{This table reports the results of Fama-French "
-                          "3-factor model regressions for excess returns of investment strategies. The dependent variable "
+                caption = ("\\caption[Fama-French 3-Factor Model Results (LSTM Period)]{This table reports the results of Fama-French "
+                          "3-factor model regressions for excess returns of investment strategies during the LSTM backtest period "
+                          "(March 2023 - June 2025). The dependent variable "
                           "is daily excess returns (total returns minus the daily risk-free rate) for each strategy. "
                           "Independent variables are the three Fama-French factors: Market-RF (market excess return), "
                           "Size (SMB, small minus big), and Value (HML, high minus low book-to-market). Alpha represents "
                           "the intercept coefficient (risk-adjusted excess return). "
                           "SPY represents the S\\&P 500 ETF, HDG is a hedge fund strategy ETF, 60/40 is a traditional "
-                          "portfolio of 60\\% SPY and 40\\% AGG (bond ETF), and MAS1-MAS5 are implementations "
-                          "of the multi-agent system hedge fund. Standard errors are reported in parentheses below "
+                          "portfolio of 60\\% SPY and 40\\% AGG (bond ETF), MAS1-MAS5 are implementations "
+                          "of the multi-agent system hedge fund, and LSTM is the LSTM-based trading strategy. Standard errors are reported in parentheses below "
                           "coefficient estimates. Degrees of freedom are shown below test statistics. "
                           "Statistical significance is indicated by: * p < 0.1, ** p < 0.05, *** p < 0.01.}")
             else:  # 5factor
-                caption = ("\\caption[Fama-French 5-Factor Model Results]{This table reports the results of Fama-French "
-                          "5-factor model regressions for excess returns of investment strategies. The dependent variable "
+                caption = ("\\caption[Fama-French 5-Factor Model Results (LSTM Period)]{This table reports the results of Fama-French "
+                          "5-factor model regressions for excess returns of investment strategies during the LSTM backtest period "
+                          "(March 2023 - June 2025). The dependent variable "
                           "is daily excess returns (total returns minus the daily risk-free rate) for each strategy. "
                           "Independent variables are the five Fama-French factors: Market-RF (market excess return), "
                           "Size (SMB, small minus big), Value (HML, high minus low book-to-market), "
                           "Profitability (RMW, robust minus weak), and Investment (CMA, conservative minus aggressive). "
                           "Alpha represents the intercept coefficient (risk-adjusted excess return). "
                           "SPY represents the S\\&P 500 ETF, HDG is a hedge fund strategy ETF, 60/40 is a traditional "
-                          "portfolio of 60\\% SPY and 40\\% AGG (bond ETF), and MAS1-MAS5 are implementations "
-                          "of the multi-agent system hedge fund. Standard errors are reported in parentheses below "
+                          "portfolio of 60\\% SPY and 40\\% AGG (bond ETF), MAS1-MAS5 are implementations "
+                          "of the multi-agent system hedge fund, and LSTM is the LSTM-based trading strategy. Standard errors are reported in parentheses below "
                           "coefficient estimates. Degrees of freedom are shown below test statistics. "
                           "Statistical significance is indicated by: * p < 0.1, ** p < 0.05, *** p < 0.01.}")
             
             final_lines.append(caption)
-            final_lines.append(f"\\label{{tab:fama_french_{factor_type}}}")
+            final_lines.append(f"\\label{{tab:fama_french_{factor_type}_lstm_aligned}}")
         
         final_lines.append(line)
     
@@ -185,7 +187,7 @@ def create_stargazer_table(regressions, factor_type, run_names, output_file="fam
     
     return latex_table
 
-def create_performance_latex_table(summaries, output_file="performance_summary.tex"):
+def create_performance_latex_table(summaries, output_file="performance_summary_lstm_aligned.tex"):
     """
     Create a LaTeX table for standard performance metrics.
     
@@ -209,42 +211,62 @@ def create_performance_latex_table(summaries, output_file="performance_summary.t
         ('Kurtosis', 'Kurtosis', '%.4f')
     ]
     
-    # Create column names mapping
-    column_mapping = {}
+    # Define the desired column order: benchmarks, LSTM, then MAS strategies
+    desired_order = ['SPY', 'HDG', '60/40 Portfolio', 'LSTM']
+    
+    # Add MAS strategies in order
+    mas_strategies = []
     for key in summaries.keys():
-        if key == '60/40 Portfolio':
-            column_mapping[key] = '60/40'
-        elif key.startswith('LLM_20250726'):
-            column_mapping[key] = 'MAS1'
+        if key.startswith('LLM_20250726'):
+            mas_strategies.append(('MAS1', key))
         elif key.startswith('LLM_20250731'):
-            column_mapping[key] = 'MAS2'
+            mas_strategies.append(('MAS2', key))
         elif key.startswith('LLM_20250805'):
-            column_mapping[key] = 'MAS3'
+            mas_strategies.append(('MAS3', key))
         elif key.startswith('LLM_20250806'):
-            column_mapping[key] = 'MAS4'
+            mas_strategies.append(('MAS4', key))
         elif key.startswith('LLM_20250808'):
-            column_mapping[key] = 'MAS5'
-        else:
-            column_mapping[key] = key
+            mas_strategies.append(('MAS5', key))
+    
+    # Sort MAS strategies by their number
+    mas_strategies.sort(key=lambda x: x[0])
+    
+    # Create ordered list of asset keys and their display names
+    ordered_assets = []
+    ordered_display_names = []
+    
+    # Add benchmarks and LSTM in fixed order
+    for asset in desired_order:
+        if asset in summaries:
+            ordered_assets.append(asset)
+            if asset == '60/40 Portfolio':
+                ordered_display_names.append('60/40')
+            else:
+                ordered_display_names.append(asset)
+    
+    # Add MAS strategies
+    for display_name, asset_key in mas_strategies:
+        ordered_assets.append(asset_key)
+        ordered_display_names.append(display_name)
     
     # Start building LaTeX table
     latex_lines = [
         "\\begin{table}[htbp]",
         "\\centering",
-        "\\begin{tabular}{l" + "c" * len(summaries) + "}",
+        "\\begin{tabular}{l" + "c" * len(ordered_assets) + "}",
         "\\toprule"
     ]
     
-    # Create header row with mapped names
-    header_names = [column_mapping[key] for key in summaries.keys()]
-    header = "Metric & " + " & ".join(header_names) + " \\\\"
+    # Create header row with ordered display names
+    header = "Metric & " + " & ".join(ordered_display_names) + " \\\\"
     latex_lines.append(header)
     latex_lines.append("\\midrule")
     
     # Add each metric row
     for metric_key, metric_display, format_str in metrics_to_include:
         row_values = []
-        for asset_name, summary in summaries.items():
+        for asset_name in ordered_assets:
+            summary = summaries[asset_name]
             if metric_key in summary and summary[metric_key] is not None:
                 if isinstance(summary[metric_key], (int, float)) and not np.isnan(summary[metric_key]):
                     row_values.append(format_str % summary[metric_key])
@@ -260,8 +282,8 @@ def create_performance_latex_table(summaries, output_file="performance_summary.t
     latex_lines.extend([
         "\\bottomrule",
         "\\end{tabular}",
-        "\\caption[Performance Summary Statistics]{This table reports annualized performance metrics for three benchmark strategies: SPY (S\\&P 500 ETF), HDG (hedge fund strategy ETF), and a traditional 60/40 portfolio consisting of 60 percent SPY and 40 percent AGG (a bond ETF). These are compared with MAS1-MAS5, five implementations of a multi-agent system hedge fund. All returns are total returns, calculated by adding the daily risk-free rate to the daily excess returns. Reported metrics include Annual Return, Annualized Standard Deviation, Sharpe Ratio, Beta relative to SPY where applicable, Annual Alpha, Minimum and Maximum Daily Returns, Skewness, and Kurtosis.}",
-        "\\label{tab:performance_summary}",
+        "\\caption[Performance Summary Statistics (LSTM Period)]{This table reports annualized performance metrics for three benchmark strategies: SPY (S\\&P 500 ETF), HDG (hedge fund strategy ETF), and a traditional 60/40 portfolio consisting of 60 percent SPY and 40 percent AGG (a bond ETF). These are compared with MAS1-MAS5 (five implementations of a multi-agent system hedge fund) and the LSTM trading strategy. All data is aligned to the LSTM backtest period (March 2023 - June 2025) for fair comparison. All returns are total returns, calculated by adding the daily risk-free rate to the daily excess returns. Reported metrics include Annual Return, Annualized Standard Deviation, Sharpe Ratio, Beta relative to SPY where applicable, Annual Alpha, Minimum and Maximum Daily Returns, Skewness, and Kurtosis.}",
+        "\\label{tab:performance_summary_lstm_aligned}",
         "\\end{table}"
     ])
     
@@ -489,56 +511,70 @@ def summarize_performance(returns, market_returns=None, daily_risk_free_rate=Non
 def main():
     data_dir = "benchmarking/data"
 
-    # Load daily risk-free rate
+    # Load LSTM data first to get the date range
+    lstm_file = "lstm_walkforward_returns_20250811_095230.csv"
+    try:
+        lstm_returns = pd.read_csv(os.path.join(data_dir, lstm_file), index_col=0, parse_dates=True).iloc[:, 0]
+        print(f"LSTM backtest period: {lstm_returns.index.min()} to {lstm_returns.index.max()}")
+        print(f"LSTM observations: {len(lstm_returns)}")
+        lstm_date_range = lstm_returns.index
+    except FileNotFoundError as e:
+        print(f"Error loading LSTM data: {e}")
+        return
+
+    # Load daily risk-free rate and align to LSTM dates
     daily_rf_rate = load_daily_risk_free_rate()
+    if daily_rf_rate is not None:
+        daily_rf_rate = daily_rf_rate.reindex(lstm_date_range).dropna()
+        print(f"Risk-free rate observations aligned to LSTM period: {len(daily_rf_rate)}")
     
-    # Load benchmark returns
+    # Load benchmark returns and align to LSTM dates
     try:
         spy_returns = pd.read_csv(os.path.join(data_dir, "spy_returns.csv"), index_col=0, parse_dates=True).iloc[:, 0]
         hdg_returns = pd.read_csv(os.path.join(data_dir, "hdg_returns.csv"), index_col=0, parse_dates=True).iloc[:, 0]
         agg_returns = pd.read_csv(os.path.join(data_dir, "agg_returns.csv"), index_col=0, parse_dates=True).iloc[:, 0]
         portfolio_60_40_returns = pd.read_csv(os.path.join(data_dir, "60_40_portfolio_returns.csv"), index_col=0, parse_dates=True).iloc[:, 0]
+        
+        # Align all benchmark data to LSTM date range
+        spy_returns = spy_returns.reindex(lstm_date_range).dropna()
+        hdg_returns = hdg_returns.reindex(lstm_date_range).dropna()
+        portfolio_60_40_returns = portfolio_60_40_returns.reindex(lstm_date_range).dropna()
+        
+        print(f"SPY observations aligned to LSTM period: {len(spy_returns)}")
+        print(f"HDG observations aligned to LSTM period: {len(hdg_returns)}")
+        print(f"60/40 observations aligned to LSTM period: {len(portfolio_60_40_returns)}")
+        
     except FileNotFoundError as e:
-        print(f"Error loading return data: {e}. Please ensure download_benchmarks.py has been run.")
+        print(f"Error loading benchmark data: {e}. Please ensure download_benchmarks.py has been run.")
         return
 
-    # Load all strategy returns files (hedge fund and LSTM)
+    # Load all MAS strategy returns files and align to LSTM dates
     hedge_fund_files = [f for f in os.listdir(data_dir) if f.startswith("mas_hedge_fund_returns_") and f.endswith(".csv")]
-    lstm_files = [f for f in os.listdir(data_dir) if f.startswith("lstm_trading_returns_") and f.endswith(".csv")]
     
-    if not hedge_fund_files and not lstm_files:
-        print("No strategy returns files found. Please ensure you have files starting with 'mas_hedge_fund_returns_' or 'lstm_trading_returns_' in benchmarking/data/")
+    if not hedge_fund_files:
+        print("No MAS strategy returns files found.")
         return
     
     hedge_fund_runs = {}
     
-    # Load LLM hedge fund runs
+    # Load MAS hedge fund runs and align to LSTM dates
     for file in sorted(hedge_fund_files):
         try:
             run_name = file.replace("mas_hedge_fund_returns_", "").replace(".csv", "")
             returns = pd.read_csv(os.path.join(data_dir, file), index_col=0, parse_dates=True).iloc[:, 0]
+            # Align to LSTM date range
+            returns = returns.reindex(lstm_date_range).dropna()
             returns.name = f"LLM Run {run_name}"
             hedge_fund_runs[f"LLM_{run_name}"] = returns
-            print(f"Loaded LLM hedge fund run: {run_name}")
-        except Exception as e:
-            print(f"Error loading {file}: {e}")
-    
-    # Load LSTM trading runs
-    for file in sorted(lstm_files):
-        try:
-            run_name = file.replace("lstm_trading_returns_", "").replace(".csv", "")
-            returns = pd.read_csv(os.path.join(data_dir, file), index_col=0, parse_dates=True).iloc[:, 0]
-            returns.name = f"LSTM Run {run_name}"
-            hedge_fund_runs[f"LSTM_{run_name}"] = returns
-            print(f"Loaded LSTM trading run: {run_name}")
+            print(f"Loaded MAS hedge fund run: {run_name}, observations aligned to LSTM period: {len(returns)}")
         except Exception as e:
             print(f"Error loading {file}: {e}")
     
     if not hedge_fund_runs:
-        print("No valid hedge fund returns files could be loaded.")
+        print("No valid MAS hedge fund returns files could be loaded.")
         return
 
-    print("\n--- Performance Summary ---")
+    print("\n--- Performance Summary (LSTM-Aligned Period) ---")
     if daily_rf_rate is not None:
         print("Using daily risk-free rates for excess return calculations")
     else:
@@ -548,7 +584,7 @@ def main():
     benchmark_summaries = {}
     
     # Summarize SPY performance
-    print("\nSPY Performance:")
+    print("\nSPY Performance (LSTM period):")
     spy_summary = summarize_performance(spy_returns, daily_risk_free_rate=daily_rf_rate)
     benchmark_summaries['SPY'] = spy_summary
     for metric, value in spy_summary.items():
@@ -558,7 +594,7 @@ def main():
             print(f"  {metric}: {value}")
 
     # Summarize HDG performance (vs. SPY)
-    print("\nHDG Performance (vs. SPY):")
+    print("\nHDG Performance (vs. SPY, LSTM period):")
     hdg_summary = summarize_performance(hdg_returns, market_returns=spy_returns, daily_risk_free_rate=daily_rf_rate)
     benchmark_summaries['HDG'] = hdg_summary
     for metric, value in hdg_summary.items():
@@ -568,7 +604,7 @@ def main():
             print(f"  {metric}: {value}")
 
     # Summarize 60/40 Portfolio performance (vs. SPY)
-    print("\n60/40 Portfolio Performance (vs. SPY):")
+    print("\n60/40 Portfolio Performance (vs. SPY, LSTM period):")
     portfolio_60_40_summary = summarize_performance(portfolio_60_40_returns, market_returns=spy_returns, daily_risk_free_rate=daily_rf_rate)
     benchmark_summaries['60/40 Portfolio'] = portfolio_60_40_summary
     for metric, value in portfolio_60_40_summary.items():
@@ -577,13 +613,12 @@ def main():
         else:
             print(f"  {metric}: {value}")
 
-    # Analyze each strategy run individually
+    # Analyze each MAS strategy run individually (aligned to LSTM period)
     hedge_fund_summaries = {}
-    print(f"\n--- Individual Strategy Run Analysis ({len(hedge_fund_runs)} runs) ---")
+    print(f"\n--- Individual MAS Strategy Run Analysis (LSTM-aligned period, {len(hedge_fund_runs)} runs) ---")
     
     for run_name, returns in hedge_fund_runs.items():
-        strategy_type = "LLM" if run_name.startswith("LLM_") else "LSTM"
-        print(f"\n{strategy_type} Strategy Run {run_name} Performance (vs. SPY):")
+        print(f"\nMAS Strategy Run {run_name} Performance (vs. SPY, LSTM period):")
         summary = summarize_performance(returns, market_returns=spy_returns, daily_risk_free_rate=daily_rf_rate)
         hedge_fund_summaries[run_name] = summary
         
@@ -592,75 +627,31 @@ def main():
                 print(f"  {metric}: {value:.4f}")
             else:
                 print(f"  {metric}: {value}")
+
+    # Analyze LSTM performance
+    print(f"\n--- LSTM Strategy Performance ---")
+    print(f"\nLSTM Strategy Performance (vs. SPY):")
+    lstm_summary = summarize_performance(lstm_returns, market_returns=spy_returns, daily_risk_free_rate=daily_rf_rate)
+    lstm_summaries = {"LSTM": lstm_summary}
+    
+    for metric, value in lstm_summary.items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            print(f"  {metric}: {value:.4f}")
+        else:
+            print(f"  {metric}: {value}")
     
     # Simple summary across runs
-    llm_runs = len([k for k in hedge_fund_runs.keys() if k.startswith("LLM_")])
-    lstm_runs = len([k for k in hedge_fund_runs.keys() if k.startswith("LSTM_")])
-    print(f"\nAnalyzed {llm_runs} LLM hedge fund runs and {lstm_runs} LSTM trading runs.")
+    mas_runs = len([k for k in hedge_fund_runs.keys() if k.startswith("LLM_")])
+    print(f"\nAnalyzed {mas_runs} MAS hedge fund runs and 1 LSTM trading run, all aligned to LSTM backtest period.")
     
     # Generate LaTeX tables
-    print("\nGenerating LaTeX tables...")
+    print("\nGenerating LSTM-aligned LaTeX table...")
     
-    # Create performance summary table for all assets (benchmarks + strategies)
-    all_summaries = {**benchmark_summaries, **hedge_fund_summaries}
-    print(f"Creating performance summary LaTeX table for {len(all_summaries)} assets...")
-    performance_latex = create_performance_latex_table(all_summaries, "performance_summary.tex")
-    print("Performance summary LaTeX table saved to benchmarking/data/performance_summary.tex")
-    
-    # Generate combined Fama-French tables (benchmarks + strategies)
-    print("\nGenerating combined Fama-French LaTeX tables...")
-    
-    # Collect regression models for combined LaTeX table
-    combined_models_3factor = []
-    combined_models_5factor = []
-    combined_names = []
-    
-    # Add benchmarks first
-    for benchmark_name, summary in benchmark_summaries.items():
-        combined_names.append(benchmark_name)
-        
-        if 'regression_models' in summary:
-            if '3factor' in summary['regression_models']:
-                combined_models_3factor.append(summary['regression_models']['3factor'])
-            if '5factor' in summary['regression_models']:
-                combined_models_5factor.append(summary['regression_models']['5factor'])
-    
-    # Add strategies
-    for run_name, summary in hedge_fund_summaries.items():
-        # Use simplified names for strategies
-        if run_name.startswith('LLM_20250726'):
-            combined_names.append('MAS1')
-        elif run_name.startswith('LLM_20250731'):
-            combined_names.append('MAS2')
-        elif run_name.startswith('LLM_20250805'):
-            combined_names.append('MAS3')
-        elif run_name.startswith('LLM_20250806'):
-            combined_names.append('MAS4')
-        elif run_name.startswith('LLM_20250808'):
-            combined_names.append('MAS5')
-        else:
-            combined_names.append(f"Strategy {run_name}")
-        
-        if 'regression_models' in summary:
-            if '3factor' in summary['regression_models']:
-                combined_models_3factor.append(summary['regression_models']['3factor'])
-            if '5factor' in summary['regression_models']:
-                combined_models_5factor.append(summary['regression_models']['5factor'])
-    
-    # Create combined Fama-French tables
-    if combined_models_3factor:
-        print(f"Creating combined 3-factor LaTeX table for {len(combined_models_3factor)} assets...")
-        latex_3factor_combined = create_stargazer_table(combined_models_3factor, "3factor", 
-                                                      combined_names[:len(combined_models_3factor)], 
-                                                      "fama_french_3factor.tex")
-        print("Combined 3-factor LaTeX table saved to benchmarking/data/fama_french_3factor.tex")
-    
-    if combined_models_5factor:
-        print(f"Creating combined 5-factor LaTeX table for {len(combined_models_5factor)} assets...")
-        latex_5factor_combined = create_stargazer_table(combined_models_5factor, "5factor", 
-                                                      combined_names[:len(combined_models_5factor)], 
-                                                      "fama_french_5factor.tex")
-        print("Combined 5-factor LaTeX table saved to benchmarking/data/fama_french_5factor.tex")
+    # Create performance summary table for all assets (benchmarks + MAS strategies + LSTM)
+    all_summaries = {**benchmark_summaries, **hedge_fund_summaries, **lstm_summaries}
+    print(f"Creating performance summary LaTeX table for {len(all_summaries)} assets (LSTM-aligned period)...")
+    performance_latex = create_performance_latex_table(all_summaries, "performance_summary_lstm_aligned.tex")
+    print("Performance summary LaTeX table saved to benchmarking/data/performance_summary_lstm_aligned.tex")
 
 if __name__ == "__main__":
     main()

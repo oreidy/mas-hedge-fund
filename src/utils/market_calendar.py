@@ -102,7 +102,7 @@ def get_next_trading_day(date_str):
     
     return current_date.strftime('%Y-%m-%d')
 
-def adjust_date_range(start_date, end_date): # Review: Do I even need this function in my project?
+def adjust_date_range(start_date, end_date):
     """
     Adjust date range to valid trading days.
     If start_date is not a trading day, use the previous trading day.

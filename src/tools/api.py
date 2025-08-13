@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import List, Dict, Optional, Any, Union
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from pathlib import Path
 import traceback
 import requests
@@ -106,7 +107,7 @@ async def get_prices_async(tickers: List[str], start_date: str, end_date: str, v
         except ValueError as e:
             logger.warning(f"Warning: {e} - continuing with original dates", module="get_prices_async")
 
-    df_results = await fetch_prices_batch(tickers, start_date, end_date, verbose_data) # Review: Why do I need "await" here?
+    df_results = await fetch_prices_batch(tickers, start_date, end_date, verbose_data)
     if verbose_data:
         logger.debug(f"df_results: {df_results}", module="get_prices_async", ticker=tickers)
     return {ticker: df_to_price_objects(df, ticker) for ticker, df in df_results.items()}
@@ -146,29 +147,38 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
 
     # Fetch data from cache first
     for ticker in tickers:
-        # First check if ticker has ANY cached data (indicating it was prefetched)
-        all_cached_data = _cache.get_prices(ticker)  # Get all data for ticker
-        
-        if all_cached_data:
-            # Ticker was prefetched - filter for requested date range
-            cached_data = _cache.get_prices(ticker, start_date, end_date)
-            if cached_data:
-                # Convert cached data to DataFrame
-                df = pd.DataFrame(cached_data)
-                df["Date"] = pd.to_datetime(df["time"])
-                df.set_index("Date", inplace=True)
-                cached_results[ticker] = df
-                cache_hits += 1
-            else:
-                # Ticker was prefetched but no data in this date range (e.g., not listed yet)
-                # Return empty DataFrame instead of trying to re-download
-                logger.debug(f"Ticker {ticker} was prefetched but has no data for {start_date} to {end_date} (likely not listed during this period)", 
-                           module="fetch_prices_batch", ticker=ticker)
-                cached_results[ticker] = pd.DataFrame(columns=["open", "close", "high", "low", "volume"])
-                cache_hits += 1
+        # Check for cached data in the requested date range
+        cached_data = _cache.get_prices(ticker, start_date, end_date)
+        if cached_data:
+            # Convert cached data to DataFrame
+            df = pd.DataFrame(cached_data)
+            df["Date"] = pd.to_datetime(df["time"])
+            df.set_index("Date", inplace=True)
+            cached_results[ticker] = df
+            cache_hits += 1
         else:
-            # No cached data at all - needs to be fetched
-            tickers_to_fetch.append(ticker)
+            # No cached data for this date range - check if this is recent missing data or historical gap
+            all_cached_data = _cache.get_prices(ticker)  # Get all data for ticker
+            
+            if all_cached_data:
+                # Find the latest cached date for this ticker
+                latest_cached_date = max([entry["time"] for entry in all_cached_data])
+                
+                # Determine gap type
+                if start_date > latest_cached_date:
+                    # Missing recent data - fetch it
+                    logger.debug(f"Missing recent data for {ticker}: latest cached data is {latest_cached_date}, requesting from {start_date}", 
+                               module="fetch_prices_batch", ticker=ticker)
+                    tickers_to_fetch.append(ticker)
+                else:
+                    # Historical gap before ticker was listed - skip it
+                    logger.debug(f"Ticker {ticker} has no data for {start_date} to {end_date} (likely not listed during this period)", 
+                               module="fetch_prices_batch", ticker=ticker)
+                    cached_results[ticker] = pd.DataFrame(columns=["open", "close", "high", "low", "volume"])
+                    cache_hits += 1
+            else:
+                # No cached data at all - needs to be fetched
+                tickers_to_fetch.append(ticker)
 
     # Debug: Log cache statistics
     if verbose_data:
@@ -272,8 +282,8 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
                         )
                         
                         if has_valid_data:
-                            # Cache the processed data only if validation passes
-                            _cache.set_prices(ticker, df_to_cache_format(ticker_data))
+                            # Cache the processed data only if validation passes - use update_prices to merge with existing data
+                            _cache.update_prices(ticker, df_to_cache_format(ticker_data))
                             logger.debug(f"Cached valid price data for {ticker}: {len(ticker_data)} records", 
                                        module="fetch_prices_batch", ticker=ticker)
                         else:
@@ -308,14 +318,14 @@ async def fetch_prices_batch(tickers: List[str], start_date: str, end_date: str,
                 logger.debug(f"Date range: {results[ticker].index.min()} to {results[ticker].index.max()}",
                         module="fetch_prices_batch", ticker=ticker)
                 logger.debug(f"First row:\n{results[ticker].head(1)}" ,
-                        module="fetch_prices_batch", ticker=ticker)# Review: Doees this make sense if there is only one ticker?
+                        module="fetch_prices_batch", ticker=ticker)
                 logger.debug(f"Last row:\n{results[ticker].tail(1)}",
                         module="fetch_prices_batch", ticker=ticker)
 
         return results
         
     except Exception as e:
-        logger.error(f"Error fetching batch price data: {e}", module="fetch_prices_batch") # Review: why "as e:" ?
+        logger.error(f"Error fetching batch price data: {e}", module="fetch_prices_batch")
         return cached_results
 
 
@@ -368,14 +378,15 @@ def df_to_price_objects(df: pd.DataFrame, ticker: str = "UNKNOWN") -> List[Price
                           module="df_to_price_objects", ticker=ticker)
     
     prices = []
+    volume_errors = []
+    
     for _, row in df.iterrows():
         # Handle volume conversion with fallback for NaN values
         try:
             volume = int(row['volume'])
         except (ValueError, TypeError):
             volume = 0
-            logger.critical(f"Volume conversion failed for ticker {ticker} on date {row.name.strftime('%Y-%m-%d')} - value: {row['volume']}, setting to 0", 
-                          module="df_to_price_objects", ticker=ticker)
+            volume_errors.append(row.name.strftime('%Y-%m-%d'))
         
         price = Price(
             open=float(row['open']),
@@ -386,6 +397,11 @@ def df_to_price_objects(df: pd.DataFrame, ticker: str = "UNKNOWN") -> List[Price
             time=row.name.strftime('%Y-%m-%d')
         )
         prices.append(price)
+    
+    # Log consolidated volume error message if any errors occurred
+    if volume_errors:
+        logger.error(f"Volume conversion failed for ticker {ticker} on {len(volume_errors)} dates ({volume_errors[0]} to {volume_errors[-1]}) - values: nan, setting to 0", 
+                     module="df_to_price_objects", ticker=ticker)
     return prices
 
 
@@ -460,7 +476,9 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
         
         cached_data = _cache.get_financial_metrics(ticker, monthly_period, period)
         if cached_data:
-            filtered_data = [metric for metric in cached_data if metric["report_period"] <= end_date]
+            # Apply 60-day delay for financial statement availability to avoid look-ahead bias
+            financial_cutoff_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
+            filtered_data = [metric for metric in cached_data if metric["report_period"] <= financial_cutoff_date]
             filtered_data.sort(key=lambda x: x["report_period"], reverse=True)
             if filtered_data:
                 cache_hits += 1
@@ -501,7 +519,9 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                     break
                 
                 report_date = col.strftime('%Y-%m-%d')
-                if report_date > end_date:
+                # Apply 60-day delay for financial statement availability to avoid look-ahead bias
+                financial_cutoff_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
+                if report_date > financial_cutoff_date:
                     continue
                 
                 # Calculate metrics from financial statements
@@ -589,7 +609,7 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                         price_to_book_ratio=market_cap / stockholders_equity if market_cap and stockholders_equity and stockholders_equity > 0 else None,
                         price_to_sales_ratio=market_cap / total_revenue if market_cap and total_revenue and total_revenue > 0 else None,
                         enterprise_value=None,  # Would need to calculate
-                        enterprise_value_to_ebitda_ratio=None, # Review: Why are some of these metrics equal to None?
+                        enterprise_value_to_ebitda_ratio=None,
                         enterprise_value_to_revenue_ratio=None,
                         free_cash_flow_yield=free_cash_flow / market_cap if market_cap and free_cash_flow else None,
                         gross_margin=float(income_stmt.loc['Gross Profit', col]) / total_revenue if 'Gross Profit' in income_stmt.index and total_revenue else None,
@@ -635,8 +655,8 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
             return ticker, []
     
     # Create tasks for all tickers
-    tasks = [fetch_ticker_metrics(ticker) for ticker in tickers] # Review: What are these tasks for?
-    results = await asyncio.gather(*tasks) # Review: what is the * and the .gather
+    tasks = [fetch_ticker_metrics(ticker) for ticker in tickers]
+    results = await asyncio.gather(*tasks)
     
     # Debug: Log cache statistics
     if verbose_data:
@@ -649,11 +669,10 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
         logger.debug(f"  - Downloaded: {total_tickers - cache_hits}/{total_tickers} tickers ({download_percentage:.1f}%)", 
                     module="fetch_financial_metrics_async")
     
-    # Review: Can the following code be simplified?
     # Debug: Data preview
     if verbose_data:
-        for source in ['cache', 'download']: # Review: Why does it know where the data is from?
-            previewed = False # Review: what is this for?
+        for source in ['cache', 'download']:
+            previewed = False
             for ticker, info in results_dict.items():
                 if info['source'] == source and info['data']:
                     logger.debug(f"Sample {source} financial metrics for {ticker}:",
@@ -671,7 +690,7 @@ async def fetch_financial_metrics_async(tickers: List[str], end_date: str, perio
                 break
 
     # Convert results to dictionary
-    return {ticker: metrics for ticker, metrics in results} # Review: What does this line of code do?
+    return {ticker: metrics for ticker, metrics in results}
 
 # ===== GET OUTSTANDING SHARES =====
 def get_outstanding_shares(
@@ -1207,12 +1226,16 @@ def get_company_news(
             if 'Error Message' in data:
                 logger.error(f"Alpha Vantage API error for {ticker}: {data['Error Message']}", 
                            module="get_company_news", ticker=ticker)
+                # Still save empty result to mark cache as fresh
+                save_company_news(ticker, [])
                 results[ticker] = []
                 continue
                 
             if 'Information' in data:
                 logger.warning(f"Alpha Vantage API response: {data}", 
                              module="get_company_news", ticker=ticker)
+                # Still save empty result to mark cache as fresh
+                save_company_news(ticker, [])
                 results[ticker] = []
                 continue
                 
@@ -1331,8 +1354,9 @@ def search_line_items(
     logger.debug(f"Running search_line_items() for {ticker}: {line_items}", 
                 module="search_line_items", ticker=ticker)
     
-    # First check if we have this data in cache
-    cached_line_items = _cache.get_line_items(ticker, end_date, period, line_items)
+    # First check if we have this data in cache using 60-day delay for financial statement availability
+    financial_cutoff_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
+    cached_line_items = _cache.get_line_items(ticker, financial_cutoff_date, period, line_items)
     if cached_line_items:
         logger.debug(f"Retrieved line items for {ticker} from cache", 
                   module="search_line_items", ticker=ticker)
@@ -1402,8 +1426,9 @@ def search_line_items(
         # Sort columns in descending order such that the newest is first
         sorted_columns = sorted(common_columns, reverse=True)
 
-        # Filter columns by end_date 
-        valid_columns = [col for col in sorted_columns if col.strftime('%Y-%m-%d') <= end_date]
+        # Filter columns by end_date with 60-day delay for financial statement availability to avoid look-ahead bias
+        financial_cutoff_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
+        valid_columns = [col for col in sorted_columns if col.strftime('%Y-%m-%d') <= financial_cutoff_date]
 
         # Filter out columns with too many NaN values
         filtered_valid_columns = []
@@ -1564,7 +1589,7 @@ def search_line_items(
         # Cache the downloaded data
         if results:
             cache_data = [item.model_dump() for item in results]
-            _cache.set_line_items(ticker, end_date, period, line_items, cache_data)
+            _cache.set_line_items(ticker, financial_cutoff_date, period, line_items, cache_data)
         
         return results
     
@@ -1574,14 +1599,6 @@ def search_line_items(
         return []
 
 
-# ===== REVIEW: LIKELY A USELESS FUNCTION =====
-async def get_price_data_batch(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False) -> Dict[str, pd.DataFrame]:
-    """Get price data as DataFrames for multiple tickers in one batch request"""
-
-    from utils.logger import logger
-    logger.debug(f"Running get_price_data_batch() for {len(tickers)} tickers from {start_date} to {end_date}", 
-                module="get_price_data_batch")
-    return await fetch_prices_batch(tickers, start_date, end_date, verbose_data)
 
 # ===== DATA FETCHING FUNCTION FOR SRC/BACKTESTER.PY =====
 def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, batch_size: int = 5, verbose_data: bool = False):
@@ -1691,6 +1708,176 @@ def get_data_for_tickers(tickers: List[str], start_date: str, end_date: str, bat
                 )
     
     return results
+
+
+def check_data_coverage(tickers: List[str], start_date: str, end_date: str) -> Dict[str, Dict[str, bool]]:
+    """
+    Check if cached data covers the requested date range for all data types.
+    Trading-days aware - only checks for data on actual trading days.
+    
+    Returns:
+        Dict with structure: {ticker: {data_type: is_complete, ...}, ...}
+    """
+    coverage = {}
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    
+    for ticker in tickers:
+        ticker_coverage = {
+            'prices': False,
+            'financial_metrics': False,
+            'insider_trades': False,
+            'company_news': False
+        }
+        
+        # Check price data coverage - ensure we have data for trading days in range
+        cached_prices = _cache.get_prices(ticker)
+        if cached_prices:
+            price_dates = set([p["time"] for p in cached_prices])
+            
+            # Get NYSE trading days in the requested range
+            from utils.market_calendar import get_nyse_calendar
+            nyse_calendar = get_nyse_calendar()
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_dt = datetime.strptime(min(end_date, current_date), '%Y-%m-%d').date()
+            
+            required_trading_days = [
+                d for d in nyse_calendar 
+                if start_dt <= d <= end_dt
+            ]
+            
+            # Check if we have data for at least 90% of required trading days
+            if required_trading_days:
+                covered_days = [d for d in required_trading_days if d.strftime('%Y-%m-%d') in price_dates]
+                coverage_ratio = len(covered_days) / len(required_trading_days)
+                ticker_coverage['prices'] = coverage_ratio >= 0.9  # Allow for some missing data
+        
+        # Check financial metrics (should have data within last 6 months)
+        cached_metrics = _cache.get_financial_metrics(ticker, get_monthly_cache_period(end_date), "annual")
+        ticker_coverage['financial_metrics'] = bool(cached_metrics)
+        
+        # Check insider trades (should be valid within 1 day)
+        ticker_coverage['insider_trades'] = _cache.is_insider_trades_cache_valid(ticker, max_age_days=1)
+        
+        # Check company news (should be valid within 1 day) 
+        ticker_coverage['company_news'] = _cache.is_company_news_cache_valid(ticker, max_age_days=1)
+        
+        coverage[ticker] = ticker_coverage
+    
+    return coverage
+
+
+def smart_prefetch_missing_data(tickers: List[str], start_date: str, end_date: str, verbose_data: bool = False):
+    """
+    Automatically detect and fetch missing data for the requested period.
+    Only fetches actual gaps to minimize API calls and avoid redundant downloads.
+    """
+    logger.info("Checking data coverage and fetching missing data...", module="smart_prefetch")
+    
+    coverage = check_data_coverage(tickers, start_date, end_date)
+    
+    # Separate tickers by what data they're missing
+    missing_prices = [t for t, cov in coverage.items() if not cov['prices']]
+    missing_metrics = [t for t, cov in coverage.items() if not cov['financial_metrics']]
+    missing_insider = [t for t, cov in coverage.items() if not cov['insider_trades']]
+    missing_news = [t for t, cov in coverage.items() if not cov['company_news']]
+    
+    # Log what's missing
+    if any([missing_prices, missing_metrics, missing_insider, missing_news]):
+        logger.info(f"Missing data detected:", module="smart_prefetch")
+        if missing_prices:
+            logger.info(f"  - Prices: {len(missing_prices)} tickers", module="smart_prefetch")
+        if missing_metrics:
+            logger.info(f"  - Financial metrics: {len(missing_metrics)} tickers", module="smart_prefetch")
+        if missing_insider:
+            logger.info(f"  - Insider trades: {len(missing_insider)} tickers", module="smart_prefetch")
+        if missing_news:
+            logger.info(f"  - Company news: {len(missing_news)} tickers", module="smart_prefetch")
+    else:
+        logger.info("All stock data is up-to-date", module="smart_prefetch")
+    
+    # Fetch missing data efficiently - determine gaps for each ticker
+    if missing_prices or missing_metrics or missing_insider or missing_news:
+        all_missing_tickers = list(set(missing_prices + missing_metrics + missing_insider + missing_news))
+        
+        # Group tickers by the type of gap they need
+        gap_tickers = []  # Tickers that need gap filling (have some data, missing recent)
+        full_tickers = []  # Tickers that need full historical range (no cached data)
+        
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        
+        for ticker in all_missing_tickers:
+            cached_prices = _cache.get_prices(ticker)
+            
+            if cached_prices and ticker in missing_prices:
+                # Has some cached data but missing recent prices - only fetch the gap
+                price_dates = [p["time"] for p in cached_prices]
+                latest_cached = max(price_dates)
+                
+                # Get next trading day after latest cached date to avoid non-trading day gaps
+                from utils.market_calendar import get_next_trading_day, get_previous_trading_day, is_trading_day
+                
+                try:
+                    # Check if we already have data up to the current trading day
+                    current_trading_day = get_previous_trading_day(current_date) if not is_trading_day(current_date) else current_date
+                    end_trading_day = get_previous_trading_day(end_date) if not is_trading_day(end_date) else end_date
+                    
+                    if latest_cached >= min(end_trading_day, current_trading_day):
+                        # Already have current data, no gap needed
+                        continue
+                        
+                    # Find the next trading day after latest cached
+                    gap_start = get_next_trading_day(latest_cached)
+                    
+                    if gap_start <= min(end_trading_day, current_trading_day):
+                        gap_tickers.append((ticker, gap_start, min(end_trading_day, current_trading_day)))
+                        logger.info(f"Gap identified for {ticker}: {gap_start} to {min(end_trading_day, current_trading_day)}", module="smart_prefetch")
+                except Exception as e:
+                    logger.warning(f"Could not calculate trading day gap for {ticker}: {e}. Using full range.", module="smart_prefetch")
+                    full_tickers.append(ticker)
+                
+            elif ticker in missing_prices or not cached_prices:
+                # No cached price data or missing other data types - need full range
+                full_tickers.append(ticker)
+        
+        # Fetch gap data efficiently
+        if gap_tickers:
+            logger.info(f"Fetching gap data for {len(gap_tickers)} tickers", module="smart_prefetch")
+            
+            # Group tickers with similar gap periods to batch efficiently
+            gap_groups = {}
+            for ticker, gap_start, gap_end in gap_tickers:
+                gap_key = f"{gap_start}_to_{gap_end}"
+                if gap_key not in gap_groups:
+                    gap_groups[gap_key] = []
+                gap_groups[gap_key].append(ticker)
+            
+            # Fetch each gap group
+            for gap_key, gap_ticker_list in gap_groups.items():
+                gap_start, gap_end = gap_key.split('_to_')
+                logger.info(f"Fetching gap {gap_start} to {gap_end} for {len(gap_ticker_list)} tickers", module="smart_prefetch")
+                get_data_for_tickers(gap_ticker_list, gap_start, gap_end, verbose_data=verbose_data)
+        
+        # Fetch full range data for tickers with no cache or missing non-price data
+        if full_tickers:
+            logger.info(f"Fetching full historical data for {len(full_tickers)} tickers", module="smart_prefetch")
+            
+            # Extend date range for technical analysis (needs ~200 days)
+            extended_start = (datetime.strptime(start_date, '%Y-%m-%d') - relativedelta(days=200)).strftime('%Y-%m-%d')
+            get_data_for_tickers(full_tickers, extended_start, end_date, verbose_data=verbose_data)
+        
+        logger.info("Missing data fetch completed", module="smart_prefetch")
+    
+    # Always prefetch bond ETF prices (minimal overhead, needed for fixed income analysis)
+    logger.debug("Checking bond ETF price coverage...", module="smart_prefetch")
+    bond_etfs = ["SHY", "TLT"]
+    bond_coverage = check_data_coverage(bond_etfs, start_date, end_date)
+    
+    bond_missing_prices = [t for t, cov in bond_coverage.items() if not cov['prices']]
+    if bond_missing_prices:
+        logger.debug(f"Prefetching bond ETF prices for: {bond_missing_prices}", module="smart_prefetch")
+        asyncio.run(fetch_prices_batch(bond_missing_prices, start_date, end_date, verbose_data))
+    else:
+        logger.debug("Bond ETF prices are up-to-date", module="smart_prefetch")
 
 
 

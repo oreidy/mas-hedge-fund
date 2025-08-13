@@ -493,58 +493,62 @@ class Backtester:
 
     def prefetch_data(self):
         """Pre-fetch all data needed for the backtest period."""
+        
+        logger.info("Checking data coverage for backtest period...", module="prefetch_data")
 
-        logger.info("Pre-fetching data for the entire backtest period...", module="prefetch_data")
-
-        # Convert string dates to datetime objects
+        # Convert string dates to datetime objects and adjust for trading days
         start_date_dt = datetime.strptime(self.start_date, "%Y-%m-%d")
         end_date_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
 
-        # Check if the start and end dates are trading days
+        # Check if the start and end dates are trading days (keep existing logic)
         start_valid = is_trading_day(start_date_dt)
         end_valid = is_trading_day(end_date_dt)
 
-        # Notify if start and end date are not trading days with suggestion for other dates.
         if not start_valid:
-            next_day = get_next_trading_day(start_date_dt)
             prev_day = get_previous_trading_day(start_date_dt)
-            logger.info(f"Start date {start_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.", module="prefetch_data")
-            
-            # Automatically adjust to next trading day instead of exiting
             self.start_date = prev_day
             logger.info(f"Automatically adjusted start date to previous trading day: {self.start_date}", module="prefetch_data")
 
-    
         if not end_valid:
-            next_day = get_next_trading_day(end_date_dt)
             prev_day = get_previous_trading_day(end_date_dt)
-            logger.info(f"End date {end_date_dt} is not a trading day. Consider using {prev_day} or {next_day} instead.", module="prefetch_data")
-            
-            # Automatically adjust to previous trading day instead of exiting
             self.end_date = prev_day
             logger.info(f"Automatically adjusted end date to previous trading day: {self.end_date}", module="prefetch_data")
             
-        # Fetch up to one year worth of data before start_date
+        # Extend historical range for analysis (keep existing logic)
         adjusted_start_date_dt = datetime.strptime(self.start_date, "%Y-%m-%d")
         historical_start_dt = adjusted_start_date_dt - relativedelta(years=1)
         historical_start_str = historical_start_dt.strftime("%Y-%m-%d")
 
-        logger.info(f"Fetching historical data from {historical_start_str} to {self.end_date}", module="prefetch_data")
-
-        # Get all potential tickers that could be eligible during the backtest period
-        # This includes tickers that might not be eligible at the start but become eligible later
+        # Get tickers (keep existing logic)
         if self._screen_mode:
-            # When screening, get tickers that were listed on stock exchange during backtesting period
             from utils.tickers import get_tickers_for_prefetch
             all_potential_tickers = get_tickers_for_prefetch(self.start_date, self.end_date, years_back=4)
-            logger.info(f"Prefetching data for {len(all_potential_tickers)} tickers listed during backtest period", module="prefetch_data")
+            logger.info(f"Checking {len(all_potential_tickers)} tickers listed during backtest period", module="prefetch_data")
         else:
-            # When running specific tickers, use the provided list
             all_potential_tickers = self.tickers
-            logger.info(f"Prefetching data for {len(all_potential_tickers)} specified tickers", module="prefetch_data")
+            logger.info(f"Checking {len(all_potential_tickers)} specified tickers", module="prefetch_data")
 
-        # Fetch data for all potential stocks
-        data = get_data_for_tickers(all_potential_tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
+        # NEW: Intelligent coverage check
+        from tools.api import check_data_coverage
+        coverage = check_data_coverage(all_potential_tickers, historical_start_str, self.end_date)
+        
+        incomplete_tickers = [t for t, cov in coverage.items() if not all(cov.values())]
+        
+        if not incomplete_tickers:
+            logger.info(f"All data is complete for period ({self.start_date} to {self.end_date}), skipping prefetch", module="prefetch_data")
+            return
+
+        logger.info(f"Found {len(incomplete_tickers)} tickers with incomplete data", module="prefetch_data")
+        
+        # Log what's missing for transparency
+        for data_type in ['prices', 'financial_metrics', 'insider_trades', 'company_news']:
+            missing = [t for t, cov in coverage.items() if not cov[data_type]]
+            if missing:
+                logger.info(f"  - Missing {data_type}: {len(missing)} tickers", module="prefetch_data")
+
+        # Fetch missing data using existing logic
+        logger.info(f"Fetching missing data from {historical_start_str} to {self.end_date}", module="prefetch_data")
+        data = get_data_for_tickers(incomplete_tickers, historical_start_str, self.end_date, verbose_data=self.verbose_data)
         
         
         # Fetch data for fixed-income assets and FRED macroeconomic data
@@ -629,7 +633,7 @@ class Backtester:
             self.portfolio_values = []
 
         for current_date in dates:
-            logger.info(f"Running hedge fund for {current_date.strftime("%Y-%m-%d")}", module="run_backtest")
+            logger.info(f"Running hedge fund for {current_date.strftime('%Y-%m-%d')}", module="run_backtest")
 
             lookback_start = (current_date - timedelta(days=200)).strftime("%Y-%m-%d") # Half year lookback period plus some slack
             current_date_str = current_date.strftime("%Y-%m-%d")
@@ -725,16 +729,19 @@ class Backtester:
             
             logger.info(f"Executing trades on {current_date}", module="run_backtest")
 
+            # Agents analyze data through previous trading day to avoid look-ahead bias
+            # This ensures agents only have access to data that would be available before market open
             output = self.agent( 
                 tickers=eligible_tickers,
-                start_date=lookback_start, # Review: Is only needed by technicals and risk manager agent?
-                end_date=current_date_str,
+                start_date=lookback_start,
+                end_date=previous_date_str,  # Agents use data through previous day to avoid look-ahead bias
                 portfolio=self.portfolio,
                 model_name=self.model_name,
                 model_provider=self.model_provider,
                 selected_analysts=self.selected_analysts,
                 verbose_data=self.verbose_data,
-                open_positions=open_positions if self._screen_mode else set()
+                open_positions=open_positions if self._screen_mode else set(),
+                screen_mode=self._screen_mode
             )
 
             decisions = output["decisions"]
@@ -1371,8 +1378,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set up the logger with command line arguments
-    setup_logger( # Review: What happens if I would delete this setup_logger? What does it do?
-        debug_mode=args.debug # Review: explain this line
+    setup_logger(
+        debug_mode=args.debug
     )
 
     # Set a global flag for verbose data output

@@ -1,0 +1,20 @@
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lccccccccc}
+\toprule
+Metric & SPY & HDG & 60/40 & LSTM & MAS1 & MAS2 & MAS3 & MAS4 & MAS5 \\
+\midrule
+Ann. Return & 0.2240 & 0.0509 & 0.1482 & 0.0452 & 0.0697 & 0.0571 & 0.0542 & 0.0344 & 0.0455 \\
+Ann. Std Dev & 0.1608 & 0.0569 & 0.1030 & 0.0748 & 0.0945 & 0.1001 & 0.1002 & 0.1008 & 0.1048 \\
+Sharpe Ratio & 1.0893 & 0.0361 & 0.9646 & -0.0486 & 0.2204 & 0.0818 & 0.0533 & -0.1441 & -0.0320 \\
+Beta & N/A & 0.2759 & 0.6226 & -0.1709 & 0.2705 & 0.3674 & 0.3285 & 0.3342 & 0.3584 \\
+Ann. Alpha & N/A & -0.0426 & -0.0084 & 0.0262 & -0.0218 & -0.0492 & -0.0470 & -0.0656 & -0.0586 \\
+Min Return & -0.0587 & -0.0200 & -0.0349 & -0.0270 & -0.0370 & -0.0413 & -0.0435 & -0.0377 & -0.0451 \\
+Max Return & 0.1049 & 0.0265 & 0.0637 & 0.0360 & 0.0209 & 0.0284 & 0.0244 & 0.0334 & 0.0227 \\
+Skewness & 1.1129 & 0.0877 & 0.9766 & 0.6799 & -0.4457 & -0.5458 & -0.6031 & -0.3317 & -0.6511 \\
+Kurtosis & 22.9525 & 8.5867 & 18.3360 & 9.0642 & 2.8042 & 4.0829 & 4.7233 & 3.9621 & 4.3537 \\
+\bottomrule
+\end{tabular}
+\caption[Performance Summary Statistics (LSTM Period)]{This table reports annualized performance metrics for three benchmark strategies: SPY (S\&P 500 ETF), HDG (hedge fund strategy ETF), and a traditional 60/40 portfolio consisting of 60 percent SPY and 40 percent AGG (a bond ETF). These are compared with MAS1-MAS5 (five implementations of a multi-agent system hedge fund) and the LSTM trading strategy. All data is aligned to the LSTM backtest period (March 2023 - June 2025) for fair comparison. All returns are total returns, calculated by adding the daily risk-free rate to the daily excess returns. Reported metrics include Annual Return, Annualized Standard Deviation, Sharpe Ratio, Beta relative to SPY where applicable, Annual Alpha, Minimum and Maximum Daily Returns, Skewness, and Kurtosis.}
+\label{tab:performance_summary_lstm_aligned}
+\end{table}
