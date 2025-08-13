@@ -1,6 +1,6 @@
-# AI Hedge Fund
+# MAS Hedge Fund
 
-This is a proof of concept for an AI-powered hedge fund.  The goal of this project is to explore the use of AI to make trading decisions.  This project is for **educational** purposes only and is not intended for real trading or investment.
+This is a proof of concept for a multi-agent system hedge fund.  The goal of this project is to explore the use of AI to make trading decisions. This project is for **educational** purposes only and is not intended for real trading or investment.
 
 **Note for ZIP file users:** If you downloaded this project as a ZIP file, you can ignore all GitHub-specific instructions throughout this README.
 
@@ -105,7 +105,6 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 - You must set `GROQ_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` for the hedge fund to work
 - **For backtesting**: A premium Groq API key is recommended for running the full backtest period (~$5 cost)
 - **For Groq users**: The "llama-4-scout-17b" model is recommended due to favorable token per minute and request per day limits. See [Groq rate limits documentation](https://console.groq.com/docs/rate-limits) for details.
-- **For free Groq API keys**: Consider reducing batch sizes in the Warren Buffett agent, Bill Ackman agent, and Equity agent to stay within rate limits
 - Financial data for AAPL, GOOGL, MSFT, NVDA, and TSLA is free and does not require an API key
 
 ### GitHub Users: Prefetch Data (Recommended)
@@ -158,10 +157,6 @@ ulimit -n 4096
 
 ## Usage
 
-### Performance Notes
-
-**First Run of the Day**: The first execution of `src/main.py` or `src/backtester.py` each day will take significantly longer as the system updates data caches with the most recent information (insider trades, company news, etc.). Subsequent runs on the same day are much faster as they use the cached data.
-
 ### Running the Hedge Fund
 
 The hedge fund analyzes stocks and provides investment recommendations for a specific date (defaults to today).
@@ -177,7 +172,7 @@ poetry run python src/main.py --tickers AAPL,MSFT,NVDA --end-date 2024-08-10
 poetry run python src/main.py --screen
 
 # Screen all S&P 500 stocks with custom cash amount
-poetry run python src/main.py --screen --initial-cash 50000 --show-reasoning
+poetry run python src/main.py --tickers WMT --initial-cash 50000 --show-reasoning
 
 # Debug mode with detailed output
 poetry run python src/main.py --tickers TSLA,GOOGL --debug --verbose-data
